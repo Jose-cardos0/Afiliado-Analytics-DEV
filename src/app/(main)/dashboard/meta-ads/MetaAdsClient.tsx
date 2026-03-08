@@ -238,8 +238,8 @@ export default function MetaAdsClient() {
   const createAd = async () => {
     const hasImage = imageHash.trim() || imageUrl.trim();
     const hasVideo = mediaType === "video" && videoId.trim();
-    if (!adLink.trim() || !adMessage.trim()) {
-      setError("Preencha link e texto do anúncio.");
+    if (!adMessage.trim()) {
+      setError("Preencha o texto do anúncio. O link de destino pode ser deixado em branco e gerado depois no ATI.");
       return;
     }
     if (mediaType === "image" && !hasImage) {
@@ -718,13 +718,13 @@ export default function MetaAdsClient() {
           </div>
           <div>
             <label className="block text-sm font-medium text-text-primary mb-1 flex items-center gap-1">
-              <Link2 className="h-4 w-4" /> Link de destino
+              <Link2 className="h-4 w-4" /> Link de destino <span className="text-text-secondary font-normal">(opcional — pode gerar no ATI depois)</span>
             </label>
             <input
               type="url"
               value={adLink}
               onChange={(e) => setAdLink(e.target.value)}
-              placeholder="https://shope.ee/...?utm_content=AD_ID"
+              placeholder="Deixe em branco ou ex.: https://shope.ee/...?utm_content=AD_ID"
               className="w-full rounded-md border border-dark-border bg-dark-bg py-2 px-3 text-text-primary text-sm placeholder-text-secondary/60"
             />
           </div>
@@ -1045,7 +1045,7 @@ export default function MetaAdsClient() {
               type="button"
               onClick={createAd}
               disabled={
-                !adLink.trim() || !adMessage.trim() || loading ||
+                !adMessage.trim() || loading ||
                 (mediaType === "image" && !imageHash.trim() && !imageUrl.trim()) ||
                 (mediaType === "video" && (!videoId.trim() || (!imageHash.trim() && !imageUrl.trim())))
               }
@@ -1058,23 +1058,37 @@ export default function MetaAdsClient() {
         </div>
       )}
 
-      {/* Sucesso: step 4 concluído com createdAdId */}
+      {/* Sucesso: popup quando anúncio criado (step 4 com createdAdId) */}
       {step === 4 && createdAdId && (
-        <div className="mt-6 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-6 max-w-xl">
-          <h2 className="text-lg font-semibold text-emerald-400 flex items-center gap-2">
-            <CheckCircle2 className="h-5 w-5" />
-            Anúncio criado
-          </h2>
-          <p className="text-sm text-text-secondary mt-1">
-            ID do anúncio: <code className="bg-dark-bg px-1 rounded text-text-primary">{createdAdId}</code>. Use esse valor no link de destino (utm_content) para cruzar com a Shopee no ATI.
-          </p>
-          <button
-            type="button"
-            onClick={handleReset}
-            className="mt-4 rounded-md bg-shopee-orange px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60" onClick={handleReset}>
+          <div
+            className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-6 max-w-xl w-full shadow-xl"
+            onClick={(e) => e.stopPropagation()}
           >
-            Criar outra campanha
-          </button>
+            <h2 className="text-lg font-semibold text-emerald-400 flex items-center gap-2">
+              <CheckCircle2 className="h-5 w-5 flex-shrink-0" />
+              Anúncio criado
+            </h2>
+            <p className="text-sm text-text-secondary mt-2">
+              ID do anúncio: <code className="bg-dark-bg px-1 rounded text-text-primary">{createdAdId}</code>. No ATI, use o botão &quot;Gerar link de anúncio&quot; na campanha para colocar esse ID no link da Shopee e publicar.
+            </p>
+            <div className="mt-5 flex flex-wrap gap-3">
+              <button
+                type="button"
+                onClick={handleReset}
+                className="rounded-md bg-shopee-orange px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
+              >
+                Criar outra campanha
+              </button>
+              <button
+                type="button"
+                onClick={() => { handleReset(); router.push("/dashboard/ati"); }}
+                className="rounded-md border border-dark-border bg-dark-bg px-4 py-2 text-sm font-semibold text-text-primary hover:bg-dark-border"
+              >
+                IR PARA O ATI
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </>

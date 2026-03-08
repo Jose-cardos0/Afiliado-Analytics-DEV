@@ -93,22 +93,26 @@ export async function GET(req: Request) {
       );
     }
 
-    const metaJson = (await metaRes.json()) as { insights?: Array<{
-      ad_id: string;
-      ad_name: string;
-      adset_id: string;
-      adset_name: string;
-      campaign_id: string;
-      campaign_name: string;
-      spend: number;
-      clicks: number;
-      impressions: number;
-      ctr: number;
-      cpc: number;
-    }> };
+    const metaJson = (await metaRes.json()) as {
+      insights?: Array<{
+        ad_id: string;
+        ad_name: string;
+        adset_id: string;
+        adset_name: string;
+        campaign_id: string;
+        campaign_name: string;
+        spend: number;
+        clicks: number;
+        impressions: number;
+        ctr: number;
+        cpc: number;
+      }>;
+      campaignStatusMap?: Record<string, string>;
+    };
     const shopeeJson = (await shopeeRes.json()) as { data?: ShopeeRow[] };
 
     const insights = metaJson.insights ?? [];
+    const campaignStatus = metaJson.campaignStatusMap ?? {};
     const shopeeRows = shopeeJson.data ?? [];
     const shopeeBySubId = aggregateShopeeBySubId(shopeeRows);
 
@@ -131,7 +135,13 @@ export async function GET(req: Request) {
       const levelClickDiscrepancy = getLevelClickDiscrepancy(clickDiscrepancyPct);
       const levelCpa = getLevelCpa(cpa);
       const levelRoas = getLevelRoas(roas);
-      const status = getCreativeStatus(roas, m.cpc, clickDiscrepancyPct, cpa);
+      const status = getCreativeStatus(
+        roas,
+        m.cpc,
+        clickDiscrepancyPct,
+        cpa,
+        cost > 0 || clicksMeta > 0
+      );
       const diagnosis = getCreativeDiagnosis(
         status,
         roas,
@@ -195,6 +205,7 @@ export async function GET(req: Request) {
     return NextResponse.json({
       creatives,
       validated,
+      campaignStatus,
       dateStart: start,
       dateEnd: end,
     });

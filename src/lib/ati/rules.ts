@@ -48,6 +48,7 @@ export function getLevelRoas(roas: number): MetricLevel {
 /**
  * Status principal do criativo (Fase de Teste).
  * Regras:
+ * - Pending: sem entrega ainda (custo e cliques zerados) → não avaliar
  * - Excelente: ROAS >= 2.5 (ou ROAS > 4.0 mesmo com CPC amarelo)
  * - Ruim: ROAS < 1.3 OU Dif. Cliques > 40% OU CPC > 0.25
  * - Bom: o resto
@@ -56,8 +57,11 @@ export function getCreativeStatus(
   roas: number,
   cpcMeta: number,
   clickDiscrepancyPct: number,
-  cpa: number
+  cpa: number,
+  hasActivity: boolean
 ): CreativeStatus {
+  if (!hasActivity) return "pending";
+
   // Exceção de Ouro: ROAS > 4.0 → Excelente mesmo com CPC amarelo
   if (roas >= ATI_THRESHOLDS.creativeExceptionRoas) return "excellent";
 
@@ -85,6 +89,10 @@ export function getCreativeDiagnosis(
   levelClick: MetricLevel,
   orders: number
 ): string {
+  if (status === "pending") {
+    return "Anúncio sem entrega no período. Ative e aguarde dados para ver a avaliação.";
+  }
+
   if (status === "excellent") {
     if (levelCpc === "good" || levelCpc === "bad")
       return "Apesar do clique estar caro, sua conversão está altíssima. Pode escalar!";

@@ -1,5 +1,7 @@
 /**
  * Busca insights do Meta Ads (campanhas, conjuntos, anúncios) para o período.
+ * Inclui TODOS os anúncios da conta (rascunho, pausados, inativos), com métricas zeradas quando não há entrega no período.
+ * Ordena pelos mais recentes primeiro.
  * GET /api/meta/insights?start=YYYY-MM-DD&end=YYYY-MM-DD
  */
 
@@ -20,6 +22,16 @@ export type MetaAdInsight = {
   impressions: number;
   ctr: number;
   cpc: number;
+};
+
+type AdFromApi = {
+  id: string;
+  name?: string;
+  adset_id?: string;
+  campaign_id?: string;
+  created_time?: string;
+  adset?: { name?: string };
+  campaign?: { name?: string };
 };
 
 async function getAdAccounts(accessToken: string): Promise<{ id: string; name: string }[]> {
@@ -55,8 +67,6 @@ async function getInsights(
 
   const out: MetaAdInsight[] = [];
   let data = json.data ?? [];
-
-  // Paginar se houver next
   let nextUrl: string | null = json.paging?.next ?? null;
   while (data.length > 0 || nextUrl) {
     for (const row of data) {
@@ -88,8 +98,104 @@ async function getInsights(
     data = nextJson.data ?? [];
     nextUrl = nextJson.paging?.next ?? null;
   }
-
   return out;
+}
+
+/** Lista todos os ads da conta (qualquer status), para aparecer no ATI mesmo sem entrega no período. */
+async function getAllAds(accessToken: string, adAccountId: string): Promise<AdFromApi[]> {
+  const fields = "id,name,adset_id,campaign_id,created_time,adset{name},campaign{name}";
+  const params = new URLSearchParams({
+    access_token: accessToken,
+    fields,
+    limit: "500",
+  });
+  const url = `${GRAPH_BASE}/${adAccountId}/ads?${params.toString()}`;
+  const res = await fetch(url);
+  const json = (await res.json()) as {
+    data?: AdFromApi[];
+    paging?: { next?: string };
+    error?: { message: string };
+  };
+  if (json.error) throw new Error(json.error.message || "Meta API error");
+
+  const out: AdFromApi[] = [];
+  let data = json.data ?? [];
+  let nextUrl: string | null = json.paging?.next ?? null;
+  while (data.length > 0 || nextUrl) {
+    out.push(...data);
+    if (!nextUrl) break;
+    const nextRes = await fetch(nextUrl);
+    const nextJson = (await nextRes.json()) as { data?: AdFromApi[]; paging?: { next?: string } };
+    data = nextJson.data ?? [];
+    nextUrl = nextJson.paging?.next ?? null;
+  }
+  return out;
+}
+
+/** Status das campanhas da conta (effective_status: ACTIVE, PAUSED, etc.). */
+async function getCampaignsStatus(accessToken: string, adAccountId: string): Promise<Map<string, string>> {
+  const params = new URLSearchParams({
+    access_token: accessToken,
+    fields: "id,effective_status",
+    limit: "500",
+  });
+  const url = `${GRAPH_BASE}/${adAccountId}/campaigns?${params.toString()}`;
+  const res = await fetch(url);
+  const json = (await res.json()) as {
+    data?: Array<{ id: string; effective_status?: string }>;
+    paging?: { next?: string };
+    error?: { message: string };
+  };
+  if (json.error) throw new Error(json.error.message || "Meta API error");
+  const out = new Map<string, string>();
+  let data = json.data ?? [];
+  let nextUrl: string | null = json.paging?.next ?? null;
+  while (data.length > 0 || nextUrl) {
+    for (const c of data) {
+      if (c.id) out.set(c.id, c.effective_status ?? "UNKNOWN");
+    }
+    if (!nextUrl) break;
+    const nextRes = await fetch(nextUrl);
+    const nextJson = (await nextRes.json()) as { data?: Array<{ id: string; effective_status?: string }>; paging?: { next?: string } };
+    data = nextJson.data ?? [];
+    nextUrl = nextJson.paging?.next ?? null;
+  }
+  return out;
+}
+
+function toInsightFromAd(ad: AdFromApi): MetaAdInsight {
+  return {
+    ad_id: String(ad.id ?? ""),
+    ad_name: String(ad.name ?? ad.id ?? "Sem nome"),
+    adset_id: String(ad.adset_id ?? ""),
+    adset_name: String(ad.adset?.name ?? ad.adset_id ?? ""),
+    campaign_id: String(ad.campaign_id ?? ""),
+    campaign_name: String(ad.campaign?.name ?? ad.campaign_id ?? ""),
+    spend: 0,
+    clicks: 0,
+    impressions: 0,
+    ctr: 0,
+    cpc: 0,
+  };
+}
+
+/** Mapeamento: id do anúncio que está rodando (cópia) -> id exibido no ATI (original). Mescla linhas por display_ad_id. */
+function applyMappingAndMerge(rows: MetaAdInsight[], mapping: Map<string, string>): MetaAdInsight[] {
+  const byDisplayId = new Map<string, MetaAdInsight>();
+  for (const row of rows) {
+    const displayId = mapping.get(row.ad_id) ?? row.ad_id;
+    const existing = byDisplayId.get(displayId);
+    if (existing) {
+      existing.spend += row.spend;
+      existing.clicks += row.clicks;
+      existing.impressions += row.impressions;
+      existing.ctr = existing.impressions > 0 ? (existing.clicks / existing.impressions) * 100 : 0;
+      existing.cpc = existing.clicks > 0 ? existing.spend / existing.clicks : 0;
+    } else {
+      byDisplayId.set(displayId, { ...row, ad_id: displayId });
+    }
+  }
+  return Array.from(byDisplayId.values());
 }
 
 export async function GET(req: Request) {
@@ -132,22 +238,58 @@ export async function GET(req: Request) {
       );
     }
 
-    // Busca insights em TODAS as contas (ex.: Honey Garden HGARDEN1 + Sua conta)
+    // Por conta: busca insights (métricas do período), ads e status das campanhas
     const allInsights: MetaAdInsight[] = [];
+    const campaignStatusMap: Record<string, string> = {};
     for (const account of accounts) {
       const accountId = account.id;
       try {
-        const insights = await getInsights(token, accountId, start, end);
-        allInsights.push(...insights);
+        const [insights, ads, statusMap] = await Promise.all([
+          getInsights(token, accountId, start, end),
+          getAllAds(token, accountId),
+          getCampaignsStatus(token, accountId),
+        ]);
+        statusMap.forEach((status, id) => {
+          campaignStatusMap[id] = status;
+        });
+        const insightByAdId = new Map<string, MetaAdInsight>();
+        for (const i of insights) insightByAdId.set(i.ad_id, i);
+        // Ordena ads por created_time (mais recentes primeiro)
+        const sortedAds = [...ads].sort((a, b) => {
+          const ta = a.created_time ? new Date(a.created_time).getTime() : 0;
+          const tb = b.created_time ? new Date(b.created_time).getTime() : 0;
+          return tb - ta;
+        });
+        for (const ad of sortedAds) {
+          const existing = insightByAdId.get(ad.id);
+          if (existing) {
+            allInsights.push(existing);
+          } else {
+            allInsights.push(toInsightFromAd(ad));
+          }
+        }
+        // Não incluímos insights de anúncios/campanhas já excluídos no Meta — o app reflete só o que existe na conta.
       } catch (err) {
-        // Uma conta pode falhar (ex.: sem permissão); continua nas outras
         continue;
       }
     }
 
+    const { data: mappingRows } = await supabase
+      .from("meta_ad_display_mapping")
+      .select("delivering_ad_id, display_ad_id")
+      .eq("user_id", user.id);
+    const mapping = new Map<string, string>();
+    if (mappingRows) {
+      for (const r of mappingRows) {
+        mapping.set(String(r.delivering_ad_id), String(r.display_ad_id));
+      }
+    }
+    const mergedInsights = applyMappingAndMerge(allInsights, mapping);
+
     return NextResponse.json({
       adAccounts: accounts.map((a) => ({ id: a.id, name: a.name })),
-      insights: allInsights,
+      insights: mergedInsights,
+      campaignStatusMap,
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Erro ao buscar dados do Meta";

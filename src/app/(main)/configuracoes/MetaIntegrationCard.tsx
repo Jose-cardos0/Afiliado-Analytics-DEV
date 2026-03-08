@@ -147,9 +147,7 @@ export default function MetaIntegrationCard({
         </div>
 
         <p className="text-xs text-text-secondary/70">
-          Use um <strong>token de longa duração</strong> com permissões{" "}
-          <code className="bg-dark-bg px-1 rounded">ads_management</code> e{" "}
-          <code className="bg-dark-bg px-1 rounded">ads_read</code>. Gere no{" "}
+          Gere um token no{" "}
           <a
             href={META_TOKEN_URL}
             target="_blank"
@@ -158,7 +156,9 @@ export default function MetaIntegrationCard({
           >
             Graph API Explorer <ExternalLink className="h-3 w-3" />
           </a>{" "}
-          ou no Gerenciador de Negócios do Meta. Não é necessário Pixel — apenas este token.
+          com permissões <code className="bg-dark-bg px-1 rounded">ads_management</code>,{" "}
+          <code className="bg-dark-bg px-1 rounded">ads_read</code> e{" "}
+          <code className="bg-dark-bg px-1 rounded">pages_manage_ads</code>. Cole aqui e salve. Se o servidor tiver <strong>App ID e App Secret</strong> do Meta configurados (variáveis <code className="bg-dark-bg px-1 rounded">META_APP_ID</code> e <code className="bg-dark-bg px-1 rounded">META_APP_SECRET</code>), o token será trocado automaticamente por um de <strong>~60 dias</strong> ao salvar.
         </p>
       </div>
     </section>

@@ -19,6 +19,7 @@ import {
   Target,
   MousePointerClick,
   Search,
+  CheckCircle,
 } from "lucide-react";
 import type { ATICreativeRow } from "@/lib/ati/types";
 import type { MetricLevel } from "@/lib/ati/types";
@@ -30,6 +31,19 @@ function formatBRL(value: number): string {
 
 function formatPct(value: number): string {
   return `${value.toFixed(1)}%`;
+}
+
+/** Monta o link final com utm_content=adId, substituindo qualquer utm_content já existente. */
+function buildLinkWithUtmContent(baseLink: string, adId: string): string {
+  const trimmed = baseLink.trim();
+  if (!trimmed || !adId) return trimmed;
+  try {
+    const url = new URL(trimmed);
+    url.searchParams.set("utm_content", adId);
+    return url.toString();
+  } catch {
+    return trimmed.includes("?") ? `${trimmed}&utm_content=${adId}` : `${trimmed}?utm_content=${adId}`;
+  }
 }
 
 type Grouped = { campaignId: string; campaignName: string; adSets: { adSetId: string; adSetName: string; ads: ATICreativeRow[] }[] }[];
@@ -73,6 +87,14 @@ function StatusBadge({ status }: { status: ATICreativeRow["status"] }) {
       </span>
     );
   }
+  if (status === "pending") {
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-dark-border/50 text-text-secondary px-2.5 py-0.5 text-xs font-semibold">
+        <span className="w-2 h-2 rounded-full bg-text-secondary" />
+        Aguardando dados
+      </span>
+    );
+  }
   return (
     <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/20 text-amber-400 px-2.5 py-0.5 text-xs font-semibold">
       <span className="w-2 h-2 rounded-full bg-amber-500" />
@@ -88,6 +110,9 @@ function AdAccordionItem({
   onToggle,
   onValidate,
   validatingId,
+  onOpenLinkModal,
+  hasExistingLink,
+  onExpandedFetchLink,
 }: {
   row: ATICreativeRow;
   dateLabel: string;
@@ -95,8 +120,16 @@ function AdAccordionItem({
   onToggle: (id: string) => void;
   onValidate: (r: ATICreativeRow) => void;
   validatingId: string | null;
+  onOpenLinkModal: (r: ATICreativeRow) => void;
+  hasExistingLink: boolean | undefined;
+  onExpandedFetchLink: (r: ATICreativeRow) => void;
 }) {
   const isOpen = expandedId === row.adId;
+
+  useEffect(() => {
+    if (isOpen && row) onExpandedFetchLink(row);
+  }, [isOpen, row.adId]);
+
   const profit = row.commission - row.cost;
   const isProfitPositive = profit >= 0;
 
@@ -105,7 +138,7 @@ function AdAccordionItem({
       <button
         type="button"
         onClick={() => onToggle(row.adId)}
-        className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left hover:bg-dark-bg/40 transition-colors"
+        className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left hover:bg-dark-bg/40 transition-colors cursor-pointer"
       >
         <span className="font-medium text-text-primary truncate">{row.adName}</span>
         <span className="flex items-center gap-2 flex-shrink-0">
@@ -116,6 +149,29 @@ function AdAccordionItem({
 
       {isOpen && (
         <div className="border-t border-dark-border bg-dark-bg/30 p-4 space-y-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => onOpenLinkModal(row)}
+              className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold hover:opacity-90 ${
+                hasExistingLink === true
+                  ? "bg-emerald-600 text-white"
+                  : "bg-shopee-orange text-white"
+              }`}
+            >
+              {hasExistingLink === true ? (
+                <>
+                  <CheckCircle className="h-3.5 w-3.5" />
+                  Editado com Sucesso
+                </>
+              ) : (
+                <>
+                  <Link2 className="h-3.5 w-3.5" />
+                  Gerar link de anúncio
+                </>
+              )}
+            </button>
+          </div>
           {/* Cards de resumo (estilo print) */}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3">
             <div className="rounded-lg bg-dark-card border border-dark-border p-3">
@@ -222,11 +278,13 @@ function AdAccordionItem({
                   ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-200"
                   : row.status === "bad"
                     ? "bg-red-500/10 border-red-500/30 text-red-200"
-                    : "bg-amber-500/10 border-amber-500/30 text-amber-200"
+                    : row.status === "pending"
+                      ? "bg-dark-border/20 border-dark-border text-text-secondary"
+                      : "bg-amber-500/10 border-amber-500/30 text-amber-200"
               }`}
             >
               <p className="font-semibold mb-0.5">
-                {row.status === "excellent" ? "Pronto para escala" : row.status === "bad" ? "Criativo ruim" : "Criativo bom"}
+                {row.status === "excellent" ? "Pronto para escala" : row.status === "bad" ? "Criativo ruim" : row.status === "pending" ? "Aguardando dados" : "Criativo bom"}
               </p>
               <p className="opacity-90">{row.diagnosis}</p>
             </div>
@@ -266,6 +324,21 @@ export default function ATIClient() {
   const [filterAdSet, setFilterAdSet] = useState("");
   const [filterAd, setFilterAd] = useState("");
 
+  const [linkModalOpen, setLinkModalOpen] = useState(false);
+  const [linkModalAd, setLinkModalAd] = useState<ATICreativeRow | null>(null);
+  const [linkModalAdId, setLinkModalAdId] = useState("");
+  const [linkModalShopeeLink, setLinkModalShopeeLink] = useState("");
+  const [linkModalPublishing, setLinkModalPublishing] = useState(false);
+  const [linkModalError, setLinkModalError] = useState<string | null>(null);
+  const [linkModalErrorDetail, setLinkModalErrorDetail] = useState<string | null>(null);
+  const [linkModalTitle, setLinkModalTitle] = useState<"Gerar link de anúncio" | "Editar link de anúncio">("Gerar link de anúncio");
+  const [linkModalLoadingLink, setLinkModalLoadingLink] = useState(false);
+  const [adIdToHasLink, setAdIdToHasLink] = useState<Record<string, boolean>>({});
+  const [campaignStatus, setCampaignStatus] = useState<Record<string, string>>({});
+  const [campaignTogglingId, setCampaignTogglingId] = useState<string | null>(null);
+  const [expandedCampaigns, setExpandedCampaigns] = useState<Record<string, boolean>>({});
+  const [expandedAdSets, setExpandedAdSets] = useState<Record<string, boolean>>({});
+
   const load = async () => {
     setLoading(true);
     setError(null);
@@ -275,10 +348,12 @@ export default function ATIClient() {
       if (!res.ok) throw new Error(json?.error ?? "Erro ao carregar");
       setCreatives(json.creatives ?? []);
       setValidated(json.validated ?? []);
+      setCampaignStatus((json.campaignStatus as Record<string, string>) ?? {});
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erro");
       setCreatives([]);
       setValidated([]);
+      setCampaignStatus({});
     } finally {
       setLoading(false);
     }
@@ -319,6 +394,65 @@ export default function ATIClient() {
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erro");
     }
+  };
+
+  const handleCampaignStatusToggle = async (campaignId: string) => {
+    const current = campaignStatus[campaignId];
+    const isActive = current === "ACTIVE";
+    const nextStatus = isActive ? "PAUSED" : "ACTIVE";
+    setCampaignTogglingId(campaignId);
+    try {
+      const res = await fetch("/api/meta/campaigns/status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ campaign_id: campaignId, status: nextStatus }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error ?? "Erro ao atualizar campanha");
+      setCampaignStatus((prev) => ({ ...prev, [campaignId]: nextStatus }));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erro ao alterar status");
+    } finally {
+      setCampaignTogglingId(null);
+    }
+  };
+
+  const toggleCampaign = (campaignId: string) => {
+    setExpandedCampaigns((prev) => ({ ...prev, [campaignId]: !prev[campaignId] }));
+  };
+  const toggleAdSet = (adSetId: string) => {
+    setExpandedAdSets((prev) => ({ ...prev, [adSetId]: !prev[adSetId] }));
+  };
+
+  const handleExpandedFetchLink = (row: ATICreativeRow) => {
+    if (adIdToHasLink[row.adId] !== undefined) return;
+    fetch(`/api/meta/ads/current-link?ad_id=${encodeURIComponent(row.adId)}`)
+      .then((r) => r.json())
+      .then((json: { link?: string | null }) => {
+        setAdIdToHasLink((prev) => ({ ...prev, [row.adId]: Boolean(json?.link) }));
+      })
+      .catch(() => {});
+  };
+
+  const handleOpenLinkModal = (row: ATICreativeRow) => {
+    setLinkModalAd(row);
+    setLinkModalAdId(row.adId);
+    setLinkModalShopeeLink("");
+    setLinkModalError(null);
+    setLinkModalErrorDetail(null);
+    setLinkModalTitle("Gerar link de anúncio");
+    setLinkModalOpen(true);
+    setLinkModalLoadingLink(true);
+    fetch(`/api/meta/ads/current-link?ad_id=${encodeURIComponent(row.adId)}`)
+      .then((r) => r.json())
+      .then((json: { link?: string | null }) => {
+        const hasLink = Boolean(json?.link);
+        setLinkModalTitle(hasLink ? "Editar link de anúncio" : "Gerar link de anúncio");
+        if (json?.link) setLinkModalShopeeLink(json.link);
+        setAdIdToHasLink((prev) => ({ ...prev, [row.adId]: hasLink }));
+      })
+      .catch(() => {})
+      .finally(() => setLinkModalLoadingLink(false));
   };
 
   const filteredAndGrouped = useMemo(() => {
@@ -502,43 +636,173 @@ export default function ATIClient() {
           </div>
         ) : (
           <div className="space-y-6">
-            {filteredAndGrouped.map((camp) => (
-              <div key={camp.campaignId} className="rounded-xl border border-dark-border bg-dark-card overflow-hidden">
-                <div className="px-4 py-3 bg-dark-bg/50 border-b border-dark-border">
-                  <h3 className="text-base font-bold text-text-primary font-heading">{camp.campaignName}</h3>
-                  <p className="text-xs text-text-secondary mt-0.5">Campanha</p>
-                </div>
-                <div className="p-4 space-y-4">
-                  {camp.adSets.map((set) => (
-                    <div key={set.adSetId}>
-                      <h4 className="text-sm font-semibold text-text-secondary mb-2 pl-1 border-l-2 border-shopee-orange pl-2">
-                        {set.adSetName}
-                      </h4>
-                      <p className="text-xs text-text-secondary/80 mb-3 pl-3">Conjunto de anúncios</p>
-                      <div className="space-y-2">
-                        {set.ads.map((row) => (
-                          <AdAccordionItem
-                            key={row.adId}
-                            row={row}
-                            dateLabel={dateLabel}
-                            expandedId={expandedAdId}
-                            onToggle={setExpandedAdId}
-                            onValidate={handleValidate}
-                            validatingId={validatingId}
-                          />
-                        ))}
+            {filteredAndGrouped.map((camp) => {
+              const campaignOpen = expandedCampaigns[camp.campaignId];
+              return (
+                <div key={camp.campaignId} className="rounded-xl border border-dark-border bg-dark-card overflow-hidden">
+                  <div className="px-4 py-3 bg-dark-bg/50 border-b border-dark-border flex items-center justify-between gap-3">
+                    <button
+                      type="button"
+                      onClick={() => toggleCampaign(camp.campaignId)}
+                      className="flex items-center gap-2 flex-1 min-w-0 text-left hover:opacity-90 transition-opacity cursor-pointer"
+                    >
+                      {campaignOpen ? (
+                        <ChevronUp className="h-5 w-5 flex-shrink-0 text-text-secondary" />
+                      ) : (
+                        <ChevronDown className="h-5 w-5 flex-shrink-0 text-text-secondary" />
+                      )}
+                      <div className="min-w-0">
+                        <h3 className="text-base font-bold text-text-primary font-heading truncate">{camp.campaignName}</h3>
+                        <p className="text-xs text-text-secondary mt-0.5">Campanha</p>
                       </div>
+                    </button>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={campaignStatus[camp.campaignId] === "ACTIVE"}
+                      disabled={campaignTogglingId === camp.campaignId}
+                      onClick={(e) => { e.stopPropagation(); handleCampaignStatusToggle(camp.campaignId); }}
+                      title={campaignStatus[camp.campaignId] === "ACTIVE" ? "Pausar campanha no Facebook" : "Ativar campanha no Facebook"}
+                      className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-shopee-orange focus:ring-offset-2 focus:ring-offset-dark-card disabled:opacity-50 ${
+                        campaignStatus[camp.campaignId] === "ACTIVE" ? "bg-emerald-500" : "bg-dark-border"
+                      }`}
+                    >
+                      <span
+                        className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow ring-0 transition ${
+                          campaignStatus[camp.campaignId] === "ACTIVE" ? "translate-x-5" : "translate-x-0.5"
+                        }`}
+                      />
+                    </button>
+                  </div>
+                  {campaignOpen && (
+                    <div className="border-t border-dark-border">
+                      {camp.adSets.map((set) => {
+                        const adSetOpen = expandedAdSets[set.adSetId];
+                        return (
+                          <div key={set.adSetId} className="border-b border-dark-border/50 last:border-b-0">
+                            <button
+                              type="button"
+                              onClick={() => toggleAdSet(set.adSetId)}
+                              className="w-full flex items-center gap-2 px-4 py-2.5 pl-6 text-left hover:bg-dark-bg/40 transition-colors border-l-2 border-shopee-orange cursor-pointer"
+                            >
+                              {adSetOpen ? (
+                                <ChevronUp className="h-4 w-4 flex-shrink-0 text-text-secondary" />
+                              ) : (
+                                <ChevronDown className="h-4 w-4 flex-shrink-0 text-text-secondary" />
+                              )}
+                              <div className="min-w-0">
+                                <span className="text-sm font-semibold text-text-primary block truncate">{set.adSetName}</span>
+                                <span className="text-xs text-text-secondary">Conjunto de anúncios</span>
+                              </div>
+                            </button>
+                            {adSetOpen && (
+                              <div className="bg-dark-bg/20 pl-6 pr-4 py-3 space-y-2">
+                                {set.ads.map((row) => (
+                                  <AdAccordionItem
+                                    key={row.adId}
+                                    row={row}
+                                    dateLabel={dateLabel}
+                                    expandedId={expandedAdId}
+                                    onToggle={(id) => setExpandedAdId((prev) => (prev === id ? null : id))}
+                                    onValidate={handleValidate}
+                                    validatingId={validatingId}
+                                    onOpenLinkModal={handleOpenLinkModal}
+                                    hasExistingLink={adIdToHasLink[row.adId]}
+                                    onExpandedFetchLink={handleExpandedFetchLink}
+                                  />
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
-                  ))}
+                  )}
                 </div>
-              </div>
-            ))}
+              );
+            })}
             {filteredAndGrouped.length === 0 && creatives.length > 0 && (
               <p className="text-center text-text-secondary py-6">Nenhum resultado para os filtros informados.</p>
             )}
           </div>
         )}
       </section>
+
+      {linkModalOpen && linkModalAd && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60" onClick={() => setLinkModalOpen(false)}>
+          <div className="bg-dark-card border border-dark-border rounded-xl shadow-xl max-w-lg w-full p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-text-primary">{linkModalLoadingLink ? "Link de anúncio" : linkModalTitle}</h3>
+            {linkModalAdId && adIdToHasLink[linkModalAdId] === true && (
+              <div className="rounded-lg border border-amber-500/50 bg-amber-500/10 p-3">
+                <p className="text-sm font-medium text-amber-200">
+                  ATENÇÃO: Ao editar o link do anúncio, você perderá todos os dados do anúncio atual e iniciará um novo. Aconselhamos que crie um novo AD ao invés de alterar este!
+                </p>
+              </div>
+            )}
+            <p className="text-sm text-text-secondary">
+              Anúncio: <strong className="text-text-primary">{linkModalAd.adName}</strong>
+            </p>
+            <div>
+              <label className="block text-sm font-medium text-text-primary mb-1">Seu link da Shopee</label>
+              <input type="url" value={linkModalShopeeLink} onChange={(e) => setLinkModalShopeeLink(e.target.value)} placeholder="https://s.shopee.com.br/60MfL7egOy" className="w-full rounded-md border border-dark-border bg-dark-bg py-2 px-3 text-text-primary text-sm placeholder-text-secondary/60" />
+            </div>
+            <p className="text-xs text-text-secondary">
+              Ao clicar em publicar, vamos ativar sua campanha com seu link de vendas da shopee e o ATI iniciará.
+            </p>
+            {linkModalError && (
+              <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 space-y-1">
+                <p className="text-sm font-medium text-red-400">{linkModalError}</p>
+                {linkModalErrorDetail && <p className="text-xs text-red-300/90">{linkModalErrorDetail}</p>}
+                <p className="text-xs text-text-secondary mt-1">Abra o Console do navegador (F12 → Console) para ver o objeto completo do erro.</p>
+              </div>
+            )}
+            <div className="flex gap-2 justify-end">
+              <button type="button" onClick={() => setLinkModalOpen(false)} className="rounded-md border border-dark-border py-2 px-4 text-sm font-medium text-text-secondary hover:bg-dark-bg">Cancelar</button>
+              <button
+                type="button"
+                disabled={!linkModalAdId || !linkModalShopeeLink.trim() || linkModalPublishing}
+                onClick={async () => {
+                  const finalLink = buildLinkWithUtmContent(linkModalShopeeLink, linkModalAdId);
+                  setLinkModalPublishing(true);
+                  setLinkModalError(null);
+                  setLinkModalErrorDetail(null);
+                  try {
+                    const res = await fetch("/api/meta/ads/update-link", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ad_id: linkModalAdId, link: finalLink }) });
+                    const json = await res.json().catch(() => ({}));
+                    if (!res.ok) {
+                      const step = json?.step ? ` [etapa: ${json.step}]` : "";
+                      const errMsg = json?.error ?? "Erro ao atualizar";
+                      const fullMsg = `${errMsg}${step}`;
+                      const metaErr = json?.meta_error;
+                      const detail = metaErr?.message || metaErr?.error_user_msg
+                        ? `Meta: ${metaErr.error_user_msg || metaErr.message}${metaErr.code != null ? ` (código ${metaErr.code})` : ""}`
+                        : null;
+                      console.error("[ATI] update-link falhou:", { status: res.status, step: json?.step, error: json?.error, meta_error: json?.meta_error, full: json });
+                      setLinkModalError(fullMsg);
+                      if (detail) setLinkModalErrorDetail(detail);
+                      return;
+                    }
+                    setLinkModalOpen(false);
+                    setLinkModalAd(null);
+                    setLinkModalShopeeLink("");
+                    setAdIdToHasLink((prev) => ({ ...prev, [linkModalAdId]: true }));
+                  } catch (e) {
+                    const msg = e instanceof Error ? e.message : "Erro ao publicar";
+                    console.error("[ATI] update-link exceção:", e);
+                    setLinkModalError(msg);
+                  } finally {
+                    setLinkModalPublishing(false);
+                  }
+                }}
+                className="flex items-center gap-2 rounded-md bg-shopee-orange py-2 px-4 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
+              >
+                {linkModalPublishing ? "Publicando…" : "PUBLICAR"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </>
   );
 }

@@ -37,7 +37,7 @@ export async function POST(req: Request) {
     const adset_id = body?.adset_id?.trim();
     const name = body?.name?.trim();
     const page_id = body?.page_id?.trim();
-    const link = body?.link?.trim();
+    const link = (body?.link?.trim() ?? "") || "https://www.facebook.com";
     const message = body?.message?.trim();
     const image_url = body?.image_url?.trim();
     const image_hash = body?.image_hash?.trim();
@@ -45,9 +45,9 @@ export async function POST(req: Request) {
     const call_to_action = (body?.call_to_action?.trim() || "LEARN_MORE").toUpperCase();
     const title = body?.title?.trim() || "";
 
-    if (!ad_account_id || !adset_id || !name || !page_id || !link || !message) {
+    if (!ad_account_id || !adset_id || !name || !page_id || !message) {
       return NextResponse.json(
-        { error: "ad_account_id, adset_id, name, page_id, link e message são obrigatórios." },
+        { error: "ad_account_id, adset_id, name, page_id e message são obrigatórios. O link de destino pode ser preenchido depois em Gerar link de anúncio no ATI." },
         { status: 400 }
       );
     }

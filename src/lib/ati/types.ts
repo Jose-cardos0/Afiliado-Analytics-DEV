@@ -4,7 +4,7 @@
 
 export type MetricLevel = "excellent" | "good" | "bad";
 
-export type CreativeStatus = "excellent" | "good" | "bad";
+export type CreativeStatus = "excellent" | "good" | "bad" | "pending";
 
 export type ScaleStatus = "excellent" | "good" | "bad" | "maturing";
 
