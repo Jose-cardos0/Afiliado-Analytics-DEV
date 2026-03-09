@@ -21,7 +21,8 @@
     // --- AS LINHAS MAIS IMPORTANTES ESTÃO AQUI ---
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["src/*"],
+      "utils/*": ["utils/*"]
     }
     // ------------------------------------------
   },

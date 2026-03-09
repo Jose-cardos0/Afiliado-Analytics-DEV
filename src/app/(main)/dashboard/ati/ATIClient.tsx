@@ -20,10 +20,17 @@ import {
   MousePointerClick,
   Search,
   CheckCircle,
+  Pencil,
+  Trash2,
+  CopyPlus,
+  Plus,
 } from "lucide-react";
 import type { ATICreativeRow } from "@/lib/ati/types";
 import type { MetricLevel } from "@/lib/ati/types";
+import { META_CAMPAIGN_OBJECTIVES } from "@/lib/meta-ads-constants";
 import LoadingOverlay from "@/app/components/ui/LoadingOverlay";
+import MetaAdSetForm from "@/app/components/meta/MetaAdSetForm";
+import MetaAdForm from "@/app/components/meta/MetaAdForm";
 
 function formatBRL(value: number): string {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
@@ -46,27 +53,37 @@ function buildLinkWithUtmContent(baseLink: string, adId: string): string {
   }
 }
 
-type Grouped = { campaignId: string; campaignName: string; adSets: { adSetId: string; adSetName: string; ads: ATICreativeRow[] }[] }[];
+type Grouped = {
+  campaignId: string;
+  campaignName: string;
+  adAccountId?: string;
+  adSets: { adSetId: string; adSetName: string; adAccountId?: string; ads: ATICreativeRow[] }[];
+}[];
 
-function groupByCampaignAndAdSet(creatives: ATICreativeRow[]): Grouped {
-  const byCampaign = new Map<string, { campaignName: string; byAdSet: Map<string, { adSetName: string; ads: ATICreativeRow[] }> }>();
+/** Monta árvore campanha -> conjuntos -> anúncios a partir das listas do Meta (inclui conjuntos sem anúncio). */
+function buildTree(
+  campaignsList: Array<{ id: string; name: string; ad_account_id: string }>,
+  adSetList: Array<{ id: string; name: string; campaign_id: string; ad_account_id: string }>,
+  creatives: ATICreativeRow[]
+): Grouped {
+  const byAdSet = new Map<string, ATICreativeRow[]>();
   for (const row of creatives) {
-    let camp = byCampaign.get(row.campaignId);
-    if (!camp) {
-      camp = { campaignName: row.campaignName, byAdSet: new Map() };
-      byCampaign.set(row.campaignId, camp);
-    }
-    let set = camp.byAdSet.get(row.adSetId);
-    if (!set) {
-      set = { adSetName: row.adSetName, ads: [] };
-      camp.byAdSet.set(row.adSetId, set);
-    }
-    set.ads.push(row);
+    const list = byAdSet.get(row.adSetId) ?? [];
+    list.push(row);
+    byAdSet.set(row.adSetId, list);
   }
-  return Array.from(byCampaign.entries()).map(([campaignId, { campaignName, byAdSet }]) => ({
-    campaignId,
-    campaignName,
-    adSets: Array.from(byAdSet.entries()).map(([adSetId, { adSetName, ads }]) => ({ adSetId, adSetName, ads })),
+  return campaignsList.map((camp) => ({
+    campaignId: camp.id,
+    campaignName: camp.name,
+    adAccountId: camp.ad_account_id,
+    adSets: adSetList
+      .filter((s) => s.campaign_id === camp.id)
+      .map((s) => ({
+        adSetId: s.id,
+        adSetName: s.name,
+        adAccountId: s.ad_account_id,
+        ads: byAdSet.get(s.id) ?? [],
+      })),
   }));
 }
 
@@ -113,6 +130,12 @@ function AdAccordionItem({
   onOpenLinkModal,
   hasExistingLink,
   onExpandedFetchLink,
+  onDeleteAd,
+  onDuplicateAd,
+  adStatus,
+  onAdStatusToggle,
+  adTogglingId,
+  onEditAd,
 }: {
   row: ATICreativeRow;
   dateLabel: string;
@@ -123,6 +146,12 @@ function AdAccordionItem({
   onOpenLinkModal: (r: ATICreativeRow) => void;
   hasExistingLink: boolean | undefined;
   onExpandedFetchLink: (r: ATICreativeRow) => void;
+  onDeleteAd: (r: ATICreativeRow) => void;
+  onDuplicateAd: (r: ATICreativeRow) => void;
+  adStatus?: string;
+  onAdStatusToggle?: (adId: string) => void;
+  adTogglingId?: string | null;
+  onEditAd?: (r: ATICreativeRow) => void;
 }) {
   const isOpen = expandedId === row.adId;
 
@@ -142,6 +171,26 @@ function AdAccordionItem({
       >
         <span className="font-medium text-text-primary truncate">{row.adName}</span>
         <span className="flex items-center gap-2 flex-shrink-0">
+          {adStatus !== undefined && (
+            <span className={`text-xs font-medium ${adStatus === "ACTIVE" ? "text-emerald-400" : "text-text-secondary"}`}>
+              {adStatus === "ACTIVE" ? "Ativo" : "Desativado"}
+            </span>
+          )}
+          {onAdStatusToggle && (
+            <button
+              type="button"
+              role="switch"
+              aria-checked={adStatus === "ACTIVE"}
+              disabled={adTogglingId === row.adId}
+              onClick={(e) => { e.stopPropagation(); onAdStatusToggle(row.adId); }}
+              title={adStatus === "ACTIVE" ? "Pausar anúncio" : "Ativar anúncio"}
+              className={`relative inline-flex h-5 w-9 flex-shrink-0 rounded-full border-2 transition-colors focus:outline-none focus:ring-2 focus:ring-shopee-orange focus:ring-offset-2 focus:ring-offset-dark-card disabled:opacity-50 ${
+                adStatus === "ACTIVE" ? "bg-emerald-500 border-transparent" : "bg-dark-border border-gray-600"
+              }`}
+            >
+              <span className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow ring-0 transition ${adStatus === "ACTIVE" ? "translate-x-4" : "translate-x-0.5"}`} />
+            </button>
+          )}
           <StatusBadge status={row.status} />
           {isOpen ? <ChevronUp className="h-4 w-4 text-text-secondary" /> : <ChevronDown className="h-4 w-4 text-text-secondary" />}
         </span>
@@ -170,6 +219,32 @@ function AdAccordionItem({
                   Gerar link de anúncio
                 </>
               )}
+            </button>
+            {onEditAd && (
+              <button
+                type="button"
+                onClick={() => onEditAd(row)}
+                className="inline-flex items-center gap-1.5 rounded-md border border-dark-border px-3 py-1.5 text-xs font-semibold text-text-primary hover:bg-dark-bg"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+                Editar anúncio
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => onDuplicateAd(row)}
+              className="inline-flex items-center gap-1.5 rounded-md border border-dark-border px-3 py-1.5 text-xs font-semibold text-text-primary hover:bg-shopee-orange/20 hover:border-shopee-orange/50"
+            >
+              <CopyPlus className="h-3.5 w-3.5" />
+              Duplicar
+            </button>
+            <button
+              type="button"
+              onClick={() => onDeleteAd(row)}
+              className="inline-flex items-center gap-1.5 rounded-md border border-red-500/50 px-3 py-1.5 text-xs font-semibold text-red-400 hover:bg-red-500/20"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              Deletar
             </button>
           </div>
           {/* Cards de resumo (estilo print) */}
@@ -336,24 +411,89 @@ export default function ATIClient() {
   const [adIdToHasLink, setAdIdToHasLink] = useState<Record<string, boolean>>({});
   const [campaignStatus, setCampaignStatus] = useState<Record<string, string>>({});
   const [campaignTogglingId, setCampaignTogglingId] = useState<string | null>(null);
+  const [campaignsList, setCampaignsList] = useState<Array<{ id: string; name: string; ad_account_id: string }>>([]);
+  const [adSetList, setAdSetList] = useState<Array<{ id: string; name: string; campaign_id: string; ad_account_id: string }>>([]);
+  const [adSetStatusMap, setAdSetStatusMap] = useState<Record<string, string>>({});
+  const [adStatusMap, setAdStatusMap] = useState<Record<string, string>>({});
+  const [adSetTogglingId, setAdSetTogglingId] = useState<string | null>(null);
+  const [adTogglingId, setAdTogglingId] = useState<string | null>(null);
   const [expandedCampaigns, setExpandedCampaigns] = useState<Record<string, boolean>>({});
   const [expandedAdSets, setExpandedAdSets] = useState<Record<string, boolean>>({});
+
+  // Campanha: editar / deletar
+  const [campaignEditModal, setCampaignEditModal] = useState<{ campaignId: string; campaignName: string; objective: string } | null>(null);
+  const [campaignEditSaving, setCampaignEditSaving] = useState(false);
+  const [campaignDeleteConfirm, setCampaignDeleteConfirm] = useState<{ campaignId: string; campaignName: string } | null>(null);
+  const [campaignDeleteDeleting, setCampaignDeleteDeleting] = useState(false);
+
+  // Conjunto: novo / editar / deletar / duplicar
+  const [adSetNewModal, setAdSetNewModal] = useState<{ campaignId: string; adAccountId: string; campaignName: string } | null>(null);
+  const [adSetNewSaving, setAdSetNewSaving] = useState(false);
+  const [adSetNewError, setAdSetNewError] = useState<string | null>(null);
+  const [adSetEditModal, setAdSetEditModal] = useState<{ adSetId: string; adSetName: string; adAccountId: string; campaignId?: string; campaignName?: string } | null>(null);
+  const [adSetEditSaving, setAdSetEditSaving] = useState(false);
+  const [adSetEditError, setAdSetEditError] = useState<string | null>(null);
+  const [adSetEditInitialData, setAdSetEditInitialData] = useState<{
+    name: string;
+    daily_budget: string;
+    country_code: string;
+    age_min: number;
+    age_max: number;
+    gender: "all" | "male" | "female";
+    optimization_goal: string;
+    pixel_id: string;
+    conversion_event: string;
+  } | null>(null);
+  const [adSetDeleteConfirm, setAdSetDeleteConfirm] = useState<{ adSetId: string; adSetName: string } | null>(null);
+  const [adSetDeleteDeleting, setAdSetDeleteDeleting] = useState(false);
+  const [adSetDuplicateModal, setAdSetDuplicateModal] = useState<{ adSetId: string; adSetName: string } | null>(null);
+  const [adSetDuplicateCount, setAdSetDuplicateCount] = useState("5");
+  const [adSetDuplicateSaving, setAdSetDuplicateSaving] = useState(false);
+
+  // Anúncio: deletar / duplicar / novo / editar
+  const [adNewModal, setAdNewModal] = useState<{ adAccountId: string; adsetId: string; adSetName: string } | null>(null);
+  const [adNewSaving, setAdNewSaving] = useState(false);
+  const [adNewError, setAdNewError] = useState<string | null>(null);
+  const [adEditModal, setAdEditModal] = useState<{ adId: string; adName: string; adAccountId: string; adsetId: string; adSetName: string } | null>(null);
+  const [adEditSaving, setAdEditSaving] = useState(false);
+  const [adEditError, setAdEditError] = useState<string | null>(null);
+  const [adEditInitialData, setAdEditInitialData] = useState<{
+    name: string;
+    link: string;
+    message: string;
+    title: string;
+    call_to_action: string;
+    page_id: string;
+  } | null>(null);
+  const [adDeleteConfirm, setAdDeleteConfirm] = useState<{ adId: string; adName: string } | null>(null);
+  const [adDeleteDeleting, setAdDeleteDeleting] = useState(false);
+  const [adDuplicateModal, setAdDuplicateModal] = useState<{ adId: string; adName: string } | null>(null);
+  const [adDuplicateCount, setAdDuplicateCount] = useState("5");
+  const [adDuplicateSaving, setAdDuplicateSaving] = useState(false);
 
   const load = async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/ati/data?start=${start}&end=${end}`);
+      const res = await fetch(`/api/ati/data?start=${start}&end=${end}`, { cache: "no-store" });
       const json = await res.json();
       if (!res.ok) throw new Error(json?.error ?? "Erro ao carregar");
       setCreatives(json.creatives ?? []);
       setValidated(json.validated ?? []);
       setCampaignStatus((json.campaignStatus as Record<string, string>) ?? {});
+      setCampaignsList(Array.isArray(json.campaignsList) ? json.campaignsList : []);
+      setAdSetList(Array.isArray(json.adSetList) ? json.adSetList : []);
+      setAdSetStatusMap((json.adSetStatusMap as Record<string, string>) ?? {});
+      setAdStatusMap((json.adStatusMap as Record<string, string>) ?? {});
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erro");
       setCreatives([]);
       setValidated([]);
       setCampaignStatus({});
+      setCampaignsList([]);
+      setAdSetList([]);
+      setAdSetStatusMap({});
+      setAdStatusMap({});
     } finally {
       setLoading(false);
     }
@@ -362,6 +502,57 @@ export default function ATIClient() {
   useEffect(() => {
     load();
   }, [start, end]);
+
+  useEffect(() => {
+    if (!adSetEditModal) {
+      setAdSetEditInitialData(null);
+      return;
+    }
+    let cancelled = false;
+    setAdSetEditInitialData(null);
+    fetch(`/api/meta/adsets?adset_id=${encodeURIComponent(adSetEditModal.adSetId)}`)
+      .then((r) => r.json())
+      .then((json) => {
+        if (cancelled || json.error) return;
+        setAdSetEditInitialData({
+          name: json.name ?? "",
+          daily_budget: json.daily_budget ?? "10",
+          country_code: json.country_code ?? "BR",
+          age_min: json.age_min ?? 18,
+          age_max: json.age_max ?? 65,
+          gender: json.gender ?? "all",
+          optimization_goal: json.optimization_goal ?? "LINK_CLICKS",
+          pixel_id: json.pixel_id ?? "",
+          conversion_event: json.conversion_event ?? "PAGE_VIEW",
+        });
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [adSetEditModal?.adSetId]);
+
+  useEffect(() => {
+    if (!adEditModal) {
+      setAdEditInitialData(null);
+      return;
+    }
+    let cancelled = false;
+    setAdEditInitialData(null);
+    fetch(`/api/meta/ads/details?ad_id=${encodeURIComponent(adEditModal.adId)}`)
+      .then((r) => r.json())
+      .then((json) => {
+        if (cancelled || json.error) return;
+        setAdEditInitialData({
+          name: json.name ?? "",
+          link: json.link ?? "https://www.facebook.com",
+          message: json.message ?? "",
+          title: json.title ?? "",
+          call_to_action: json.call_to_action ?? "LEARN_MORE",
+          page_id: json.page_id ?? "",
+        });
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [adEditModal?.adId]);
 
   const handleValidate = async (row: ATICreativeRow) => {
     setValidatingId(row.adId);
@@ -424,6 +615,303 @@ export default function ATIClient() {
     setExpandedAdSets((prev) => ({ ...prev, [adSetId]: !prev[adSetId] }));
   };
 
+  const handleAdSetStatusToggle = async (adSetId: string) => {
+    const current = adSetStatusMap[adSetId];
+    const isActive = current === "ACTIVE";
+    const nextStatus = isActive ? "PAUSED" : "ACTIVE";
+    setAdSetTogglingId(adSetId);
+    try {
+      const res = await fetch("/api/meta/adsets/status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ adset_id: adSetId, status: nextStatus }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error ?? "Erro ao atualizar conjunto");
+      setAdSetStatusMap((prev) => ({ ...prev, [adSetId]: nextStatus }));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erro ao alterar status do conjunto");
+    } finally {
+      setAdSetTogglingId(null);
+    }
+  };
+
+  const handleAdStatusToggle = async (adId: string) => {
+    const current = adStatusMap[adId];
+    const isActive = current === "ACTIVE";
+    const nextStatus = isActive ? "PAUSED" : "ACTIVE";
+    setAdTogglingId(adId);
+    try {
+      const res = await fetch("/api/meta/ads/status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ad_id: adId, status: nextStatus }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error ?? "Erro ao atualizar anúncio");
+      setAdStatusMap((prev) => ({ ...prev, [adId]: nextStatus }));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erro ao alterar status do anúncio");
+    } finally {
+      setAdTogglingId(null);
+    }
+  };
+
+  const handleCampaignEditSave = async () => {
+    if (!campaignEditModal) return;
+    setCampaignEditSaving(true);
+    try {
+      const res = await fetch("/api/meta/campaigns", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          campaign_id: campaignEditModal.campaignId,
+          name: campaignEditModal.campaignName.trim(),
+          objective: campaignEditModal.objective || undefined,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error ?? "Erro ao editar");
+      setCampaignEditModal(null);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erro ao editar campanha");
+    } finally {
+      setCampaignEditSaving(false);
+    }
+  };
+
+  const handleCampaignDeleteConfirm = async () => {
+    if (!campaignDeleteConfirm) return;
+    setCampaignDeleteDeleting(true);
+    try {
+      const res = await fetch(`/api/meta/campaigns?campaign_id=${encodeURIComponent(campaignDeleteConfirm.campaignId)}`, { method: "DELETE" });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error ?? "Erro ao deletar");
+      setCampaignDeleteConfirm(null);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erro ao deletar campanha");
+    } finally {
+      setCampaignDeleteDeleting(false);
+    }
+  };
+
+  const handleAdSetNewSave = async (body: import("@/app/components/meta/MetaAdSetForm").MetaAdSetFormBody) => {
+    if (!adSetNewModal) return;
+    setAdSetNewError(null);
+    setAdSetNewSaving(true);
+    try {
+      const res = await fetch("/api/meta/adsets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ad_account_id: adSetNewModal.adAccountId,
+          campaign_id: adSetNewModal.campaignId,
+          name: body.name,
+          daily_budget: body.daily_budget,
+          country_code: body.country_code,
+          age_min: body.age_min,
+          age_max: body.age_max,
+          gender: body.gender,
+          optimization_goal: body.optimization_goal,
+          pixel_id: body.pixel_id,
+          conversion_event: body.conversion_event,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error ?? "Erro ao criar conjunto");
+      const newAdsetId = json.adset_id;
+      const adAccountId = adSetNewModal.adAccountId;
+      const newAdsetName = body.name;
+      setAdSetNewModal(null);
+      await load();
+      // Abrir imediatamente o modal de Novo anúncio para criar o ad deste conjunto
+      if (newAdsetId && adAccountId) {
+        setAdNewModal({ adAccountId, adsetId: newAdsetId, adSetName: newAdsetName });
+        setAdNewError(null);
+      }
+    } catch (e) {
+      setAdSetNewError(e instanceof Error ? e.message : "Erro ao criar conjunto");
+    } finally {
+      setAdSetNewSaving(false);
+    }
+  };
+
+  const handleAdNewSave = async (body: import("@/app/components/meta/MetaAdForm").MetaAdFormBody) => {
+    if (!adNewModal) return;
+    setAdNewError(null);
+    setAdNewSaving(true);
+    try {
+      const res = await fetch("/api/meta/ads", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ad_account_id: adNewModal.adAccountId,
+          adset_id: adNewModal.adsetId,
+          name: body.name,
+          page_id: body.page_id,
+          link: body.link || "https://www.facebook.com",
+          message: body.message,
+          title: body.title,
+          call_to_action: body.call_to_action,
+          image_hash: body.image_hash,
+          image_url: body.image_url,
+          video_id: body.video_id,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error ?? "Erro ao criar anúncio");
+      setAdNewModal(null);
+      await load();
+    } catch (e) {
+      setAdNewError(e instanceof Error ? e.message : "Erro ao criar anúncio");
+    } finally {
+      setAdNewSaving(false);
+    }
+  };
+
+  const handleAdSetEditSave = async (body: import("@/app/components/meta/MetaAdSetForm").MetaAdSetFormBody) => {
+    if (!adSetEditModal) return;
+    setAdSetEditError(null);
+    setAdSetEditSaving(true);
+    try {
+      const res = await fetch("/api/meta/adsets", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          adset_id: adSetEditModal.adSetId,
+          campaign_id: adSetEditModal.campaignId,
+          name: body.name,
+          daily_budget: body.daily_budget,
+          country_code: body.country_code,
+          age_min: body.age_min,
+          age_max: body.age_max,
+          gender: body.gender,
+          optimization_goal: body.optimization_goal,
+          pixel_id: body.pixel_id,
+          conversion_event: body.conversion_event,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error ?? "Erro ao editar conjunto");
+      setAdSetEditModal(null);
+      setAdSetEditInitialData(null);
+      await load();
+    } catch (e) {
+      setAdSetEditError(e instanceof Error ? e.message : "Erro ao editar conjunto");
+    } finally {
+      setAdSetEditSaving(false);
+    }
+  };
+
+  const handleAdSetDeleteConfirm = async () => {
+    if (!adSetDeleteConfirm) return;
+    setAdSetDeleteDeleting(true);
+    try {
+      const res = await fetch(`/api/meta/adsets?adset_id=${encodeURIComponent(adSetDeleteConfirm.adSetId)}`, { method: "DELETE" });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error ?? "Erro ao deletar");
+      setAdSetDeleteConfirm(null);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erro ao deletar conjunto");
+    } finally {
+      setAdSetDeleteDeleting(false);
+    }
+  };
+
+  const handleAdSetDuplicateSave = async () => {
+    if (!adSetDuplicateModal) return;
+    const count = Math.min(50, Math.max(1, parseInt(adSetDuplicateCount, 10) || 1));
+    setAdSetDuplicateSaving(true);
+    try {
+      const res = await fetch("/api/meta/adsets/duplicate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ adset_id: adSetDuplicateModal.adSetId, count }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error ?? "Erro ao duplicar");
+      setAdSetDuplicateModal(null);
+      setAdSetDuplicateCount("5");
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erro ao duplicar conjunto");
+    } finally {
+      setAdSetDuplicateSaving(false);
+    }
+  };
+
+  const handleAdDeleteConfirm = async () => {
+    if (!adDeleteConfirm) return;
+    setAdDeleteDeleting(true);
+    try {
+      const res = await fetch(`/api/meta/ads?ad_id=${encodeURIComponent(adDeleteConfirm.adId)}`, { method: "DELETE" });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error ?? "Erro ao deletar");
+      setAdDeleteConfirm(null);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erro ao deletar anúncio");
+    } finally {
+      setAdDeleteDeleting(false);
+    }
+  };
+
+  const handleAdDuplicateSave = async () => {
+    if (!adDuplicateModal) return;
+    const count = Math.min(50, Math.max(1, parseInt(adDuplicateCount, 10) || 1));
+    setAdDuplicateSaving(true);
+    try {
+      const res = await fetch("/api/meta/ads/duplicate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ad_id: adDuplicateModal.adId, count }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error ?? "Erro ao duplicar");
+      setAdDuplicateModal(null);
+      setAdDuplicateCount("5");
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erro ao duplicar anúncio");
+    } finally {
+      setAdDuplicateSaving(false);
+    }
+  };
+
+  const handleAdEditSave = async (body: import("@/app/components/meta/MetaAdForm").MetaAdFormBody) => {
+    if (!adEditModal) return;
+    setAdEditError(null);
+    setAdEditSaving(true);
+    try {
+      const resName = await fetch("/api/meta/ads", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ad_id: adEditModal.adId, name: body.name.trim() || adEditModal.adName }),
+      });
+      const jsonName = await resName.json();
+      if (!resName.ok) throw new Error(jsonName?.error ?? "Erro ao editar nome");
+      if (body.link && body.link.trim()) {
+        const resLink = await fetch("/api/meta/ads/update-link", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ad_id: adEditModal.adId, link: body.link.trim() }),
+        });
+        const jsonLink = await resLink.json();
+        if (!resLink.ok) throw new Error(jsonLink?.error ?? "Erro ao atualizar link");
+      }
+      setAdEditModal(null);
+      setAdEditInitialData(null);
+      await load();
+    } catch (e) {
+      setAdEditError(e instanceof Error ? e.message : "Erro ao editar anúncio");
+    } finally {
+      setAdEditSaving(false);
+    }
+  };
+
   const handleExpandedFetchLink = (row: ATICreativeRow) => {
     if (adIdToHasLink[row.adId] !== undefined) return;
     fetch(`/api/meta/ads/current-link?ad_id=${encodeURIComponent(row.adId)}`)
@@ -459,12 +947,24 @@ export default function ATIClient() {
     const lowerCamp = filterCampaign.trim().toLowerCase();
     const lowerSet = filterAdSet.trim().toLowerCase();
     const lowerAd = filterAd.trim().toLowerCase();
-    let list = creatives;
-    if (lowerCamp) list = list.filter((c) => c.campaignName.toLowerCase().includes(lowerCamp));
-    if (lowerSet) list = list.filter((c) => c.adSetName.toLowerCase().includes(lowerSet));
-    if (lowerAd) list = list.filter((c) => c.adName.toLowerCase().includes(lowerAd));
-    return groupByCampaignAndAdSet(list);
-  }, [creatives, filterCampaign, filterAdSet, filterAd]);
+    let tree = buildTree(campaignsList, adSetList, creatives);
+    if (lowerCamp || lowerSet || lowerAd) {
+      tree = tree
+        .filter((c) => !lowerCamp || c.campaignName.toLowerCase().includes(lowerCamp))
+        .map((camp) => ({
+          ...camp,
+          adSets: camp.adSets
+            .filter((s) => !lowerSet || s.adSetName.toLowerCase().includes(lowerSet))
+            .map((s) => ({
+              ...s,
+              ads: lowerAd ? s.ads.filter((a) => a.adName.toLowerCase().includes(lowerAd)) : s.ads,
+            }))
+            .filter((s) => !lowerAd || s.ads.length > 0),
+        }))
+        .filter((c) => c.adSets.length > 0);
+    }
+    return tree;
+  }, [creatives, campaignsList, adSetList, filterCampaign, filterAdSet, filterAd]);
 
   const dateLabel = `${new Date(start).toLocaleDateString("pt-BR")} a ${new Date(end).toLocaleDateString("pt-BR")}`;
 
@@ -620,7 +1120,7 @@ export default function ATIClient() {
           )}
         </div>
 
-        {creatives.length === 0 && !loading ? (
+        {creatives.length === 0 && campaignsList.length === 0 && !loading ? (
           <div className="bg-dark-card border border-dark-border rounded-lg p-8 text-center text-text-secondary">
             <p>Nenhum dado no período ou integrações não configuradas.</p>
             <p className="text-sm mt-2">
@@ -656,6 +1156,24 @@ export default function ATIClient() {
                         <p className="text-xs text-text-secondary mt-0.5">Campanha</p>
                       </div>
                     </button>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); setCampaignEditModal({ campaignId: camp.campaignId, campaignName: camp.campaignName, objective: "OUTCOME_TRAFFIC" }); }}
+                        className="p-1.5 rounded-md text-text-secondary hover:bg-dark-bg hover:text-text-primary"
+                        title="Editar campanha"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); setCampaignDeleteConfirm({ campaignId: camp.campaignId, campaignName: camp.campaignName }); }}
+                        className="p-1.5 rounded-md text-text-secondary hover:bg-red-500/20 hover:text-red-400"
+                        title="Deletar campanha"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
                     <button
                       type="button"
                       role="switch"
@@ -663,8 +1181,10 @@ export default function ATIClient() {
                       disabled={campaignTogglingId === camp.campaignId}
                       onClick={(e) => { e.stopPropagation(); handleCampaignStatusToggle(camp.campaignId); }}
                       title={campaignStatus[camp.campaignId] === "ACTIVE" ? "Pausar campanha no Facebook" : "Ativar campanha no Facebook"}
-                      className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-shopee-orange focus:ring-offset-2 focus:ring-offset-dark-card disabled:opacity-50 ${
-                        campaignStatus[camp.campaignId] === "ACTIVE" ? "bg-emerald-500" : "bg-dark-border"
+                      className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 transition-colors focus:outline-none focus:ring-2 focus:ring-shopee-orange focus:ring-offset-2 focus:ring-offset-dark-card disabled:opacity-50 ${
+                        campaignStatus[camp.campaignId] === "ACTIVE"
+                          ? "bg-emerald-500 border-transparent"
+                          : "bg-dark-border border-gray-600"
                       }`}
                     >
                       <span
@@ -673,28 +1193,101 @@ export default function ATIClient() {
                         }`}
                       />
                     </button>
+                    <span className={`text-xs font-medium flex-shrink-0 ${campaignStatus[camp.campaignId] === "ACTIVE" ? "text-emerald-400" : "text-text-secondary"}`}>
+                      {campaignStatus[camp.campaignId] === "ACTIVE" ? "Ativo" : "Desativado"}
+                    </span>
                   </div>
                   {campaignOpen && (
                     <div className="border-t border-dark-border">
+                      {camp.adAccountId && (
+                        <div className="px-4 py-2 pl-6 border-b border-dark-border/50 flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => { setAdSetNewModal({ campaignId: camp.campaignId, adAccountId: camp.adAccountId!, campaignName: camp.campaignName }); setAdSetNewError(null); }}
+                            className="inline-flex items-center gap-1.5 rounded-md bg-dark-bg border border-dark-border px-2.5 py-1.5 text-xs font-medium text-text-primary hover:bg-dark-card"
+                          >
+                            <Plus className="h-3.5 w-3.5" />
+                            Novo conjunto
+                          </button>
+                        </div>
+                      )}
                       {camp.adSets.map((set) => {
                         const adSetOpen = expandedAdSets[set.adSetId];
                         return (
                           <div key={set.adSetId} className="border-b border-dark-border/50 last:border-b-0">
-                            <button
-                              type="button"
-                              onClick={() => toggleAdSet(set.adSetId)}
-                              className="w-full flex items-center gap-2 px-4 py-2.5 pl-6 text-left hover:bg-dark-bg/40 transition-colors border-l-2 border-shopee-orange cursor-pointer"
-                            >
-                              {adSetOpen ? (
-                                <ChevronUp className="h-4 w-4 flex-shrink-0 text-text-secondary" />
-                              ) : (
-                                <ChevronDown className="h-4 w-4 flex-shrink-0 text-text-secondary" />
-                              )}
-                              <div className="min-w-0">
-                                <span className="text-sm font-semibold text-text-primary block truncate">{set.adSetName}</span>
-                                <span className="text-xs text-text-secondary">Conjunto de anúncios</span>
+                            <div className="flex items-center w-full">
+                              <button
+                                type="button"
+                                onClick={() => toggleAdSet(set.adSetId)}
+                                className="flex items-center gap-2 flex-1 min-w-0 px-4 py-2.5 pl-6 text-left hover:bg-dark-bg/40 transition-colors border-l-2 border-shopee-orange cursor-pointer"
+                              >
+                                {adSetOpen ? (
+                                  <ChevronUp className="h-4 w-4 flex-shrink-0 text-text-secondary" />
+                                ) : (
+                                  <ChevronDown className="h-4 w-4 flex-shrink-0 text-text-secondary" />
+                                )}
+                                <div className="min-w-0">
+                                  <span className="text-sm font-semibold text-text-primary block truncate">{set.adSetName}</span>
+                                  <span className="text-xs text-text-secondary">Conjunto de anúncios</span>
+                                </div>
+                              </button>
+                              <div className="flex items-center gap-2 pr-2 flex-shrink-0">
+                                <button
+                                  type="button"
+                                  role="switch"
+                                  aria-checked={adSetStatusMap[set.adSetId] === "ACTIVE"}
+                                  disabled={adSetTogglingId === set.adSetId}
+                                  onClick={(e) => { e.stopPropagation(); handleAdSetStatusToggle(set.adSetId); }}
+                                  title={adSetStatusMap[set.adSetId] === "ACTIVE" ? "Pausar conjunto" : "Ativar conjunto"}
+                                  className={`relative inline-flex h-5 w-9 flex-shrink-0 rounded-full border-2 transition-colors focus:outline-none focus:ring-2 focus:ring-shopee-orange focus:ring-offset-2 focus:ring-offset-dark-card disabled:opacity-50 ${
+                                    adSetStatusMap[set.adSetId] === "ACTIVE"
+                                      ? "bg-emerald-500 border-transparent"
+                                      : "bg-dark-border border-gray-600"
+                                  }`}
+                                >
+                                  <span className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow ring-0 transition ${adSetStatusMap[set.adSetId] === "ACTIVE" ? "translate-x-4" : "translate-x-0.5"}`} />
+                                </button>
+                                <span className={`text-xs font-medium ${adSetStatusMap[set.adSetId] === "ACTIVE" ? "text-emerald-400" : "text-text-secondary"}`}>
+                                  {adSetStatusMap[set.adSetId] === "ACTIVE" ? "Ativo" : "Desativado"}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={(e) => { e.stopPropagation(); setAdSetEditModal({ adSetId: set.adSetId, adSetName: set.adSetName, adAccountId: set.adAccountId ?? "", campaignId: camp.campaignId, campaignName: camp.campaignName }); setAdSetEditError(null); }}
+                                  className="p-1.5 rounded-md text-text-secondary hover:bg-dark-bg hover:text-text-primary"
+                                  title="Editar conjunto"
+                                >
+                                  <Pencil className="h-3.5 w-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => { e.stopPropagation(); setAdSetDeleteConfirm({ adSetId: set.adSetId, adSetName: set.adSetName }); }}
+                                  className="p-1.5 rounded text-text-secondary hover:bg-red-500/20 hover:text-red-400"
+                                  title="Deletar conjunto"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => { e.stopPropagation(); setAdSetDuplicateModal({ adSetId: set.adSetId, adSetName: set.adSetName }); setAdSetDuplicateCount("5"); }}
+                                  className="p-1.5 rounded text-text-secondary hover:bg-shopee-orange/20 hover:text-shopee-orange"
+                                  title="Duplicar conjunto"
+                                >
+                                  <CopyPlus className="h-3.5 w-3.5" />
+                                </button>
                               </div>
-                            </button>
+                            </div>
+                            {adSetOpen && set.adAccountId && (
+                              <div className="px-4 py-2 pl-6 border-b border-dark-border/50 flex items-center gap-2 bg-dark-bg/30">
+                                <button
+                                  type="button"
+                                  onClick={() => { setAdNewModal({ adAccountId: set.adAccountId!, adsetId: set.adSetId, adSetName: set.adSetName }); setAdNewError(null); }}
+                                  className="inline-flex items-center gap-1.5 rounded-md bg-dark-bg border border-dark-border px-2.5 py-1.5 text-xs font-medium text-text-primary hover:bg-dark-card"
+                                >
+                                  <Plus className="h-3.5 w-3.5" />
+                                  Novo anúncio
+                                </button>
+                              </div>
+                            )}
                             {adSetOpen && (
                               <div className="bg-dark-bg/20 pl-6 pr-4 py-3 space-y-2">
                                 {set.ads.map((row) => (
@@ -709,6 +1302,17 @@ export default function ATIClient() {
                                     onOpenLinkModal={handleOpenLinkModal}
                                     hasExistingLink={adIdToHasLink[row.adId]}
                                     onExpandedFetchLink={handleExpandedFetchLink}
+                                    onDeleteAd={(r) => setAdDeleteConfirm({ adId: r.adId, adName: r.adName })}
+                                    onDuplicateAd={(r) => { setAdDuplicateModal({ adId: r.adId, adName: r.adName }); setAdDuplicateCount("5"); }}
+                                    adStatus={adStatusMap[row.adId]}
+                                    onAdStatusToggle={handleAdStatusToggle}
+                                    adTogglingId={adTogglingId}
+                                    onEditAd={(r) => {
+                                      if (r.adAccountId) {
+                                        setAdEditModal({ adId: r.adId, adName: r.adName, adAccountId: r.adAccountId, adsetId: r.adSetId, adSetName: r.adSetName });
+                                        setAdEditError(null);
+                                      } else setError("Conta de anúncios não disponível.");
+                                    }}
                                   />
                                 ))}
                               </div>
@@ -721,7 +1325,7 @@ export default function ATIClient() {
                 </div>
               );
             })}
-            {filteredAndGrouped.length === 0 && creatives.length > 0 && (
+            {filteredAndGrouped.length === 0 && (creatives.length > 0 || campaignsList.length > 0) && (
               <p className="text-center text-text-secondary py-6">Nenhum resultado para os filtros informados.</p>
             )}
           </div>
@@ -798,6 +1402,202 @@ export default function ATIClient() {
               >
                 {linkModalPublishing ? "Publicando…" : "PUBLICAR"}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Editar campanha */}
+      {campaignEditModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60" onClick={() => setCampaignEditModal(null)}>
+          <div className="bg-dark-card border border-dark-border rounded-xl shadow-xl max-w-lg w-full p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-text-primary">Editar campanha</h3>
+            <div>
+              <label className="block text-sm font-medium text-text-primary mb-1">Nome</label>
+              <input
+                type="text"
+                value={campaignEditModal.campaignName}
+                onChange={(e) => setCampaignEditModal((p) => p ? { ...p, campaignName: e.target.value } : null)}
+                className="w-full rounded-md border border-dark-border bg-dark-bg py-2 px-3 text-text-primary text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-text-primary mb-1">Objetivo</label>
+              <select
+                value={campaignEditModal.objective}
+                onChange={(e) => setCampaignEditModal((p) => p ? { ...p, objective: e.target.value } : null)}
+                className="w-full rounded-md border border-dark-border bg-dark-bg py-2 px-3 text-text-primary text-sm"
+              >
+                {META_CAMPAIGN_OBJECTIVES.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex gap-2 justify-end">
+              <button type="button" onClick={() => setCampaignEditModal(null)} className="rounded-md border border-dark-border py-2 px-4 text-sm font-medium text-text-secondary hover:bg-dark-bg">Cancelar</button>
+              <button type="button" disabled={campaignEditSaving || !campaignEditModal.campaignName.trim()} onClick={handleCampaignEditSave} className="rounded-md bg-shopee-orange py-2 px-4 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">{campaignEditSaving ? "Salvando…" : "Salvar"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Deletar campanha */}
+      {campaignDeleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60" onClick={() => setCampaignDeleteConfirm(null)}>
+          <div className="bg-dark-card border border-dark-border rounded-xl shadow-xl max-w-md w-full p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-text-primary">Deletar campanha</h3>
+            <p className="text-sm text-text-secondary">Tem certeza que deseja deletar a campanha <strong className="text-text-primary">{campaignDeleteConfirm.campaignName}</strong>? Esta ação não pode ser desfeita.</p>
+            <div className="flex gap-2 justify-end">
+              <button type="button" onClick={() => setCampaignDeleteConfirm(null)} className="rounded-md border border-dark-border py-2 px-4 text-sm font-medium text-text-secondary hover:bg-dark-bg">Cancelar</button>
+              <button type="button" disabled={campaignDeleteDeleting} onClick={handleCampaignDeleteConfirm} className="rounded-md bg-red-600 py-2 px-4 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">{campaignDeleteDeleting ? "Deletando…" : "Deletar"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Novo conjunto - formulário completo como em Criar Campanha Meta */}
+      {adSetNewModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 overflow-y-auto" onClick={() => setAdSetNewModal(null)}>
+          <div className="bg-dark-card border border-dark-border rounded-xl shadow-xl max-w-xl w-full p-6 my-8" onClick={(e) => e.stopPropagation()}>
+            <MetaAdSetForm
+              campaignId={adSetNewModal.campaignId}
+              adAccountId={adSetNewModal.adAccountId}
+              campaignName={adSetNewModal.campaignName}
+              onSubmit={handleAdSetNewSave}
+              onCancel={() => setAdSetNewModal(null)}
+              saving={adSetNewSaving}
+              error={adSetNewError}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Editar conjunto - mesmo formulário, dados pré-preenchidos */}
+      {adSetEditModal && adSetEditInitialData && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 overflow-y-auto" onClick={() => { setAdSetEditModal(null); setAdSetEditInitialData(null); }}>
+          <div className="bg-dark-card border border-dark-border rounded-xl shadow-xl max-w-xl w-full p-6 my-8" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-text-primary mb-4">Editar conjunto</h3>
+            <MetaAdSetForm
+              key={`edit-${adSetEditModal.adSetId}`}
+              campaignId={adSetEditModal.campaignId ?? ""}
+              adAccountId={adSetEditModal.adAccountId}
+              campaignName={adSetEditModal.campaignName}
+              defaultName={adSetEditInitialData.name}
+              defaultBudget={adSetEditInitialData.daily_budget}
+              defaultCountry={adSetEditInitialData.country_code}
+              defaultAgeMin={String(adSetEditInitialData.age_min)}
+              defaultAgeMax={String(adSetEditInitialData.age_max)}
+              defaultGender={adSetEditInitialData.gender}
+              defaultOptimizationGoal={adSetEditInitialData.optimization_goal}
+              defaultPixelId={adSetEditInitialData.pixel_id}
+              defaultConversionEvent={adSetEditInitialData.conversion_event}
+              submitLabel="Salvar edição"
+              onSubmit={handleAdSetEditSave}
+              onCancel={() => { setAdSetEditModal(null); setAdSetEditInitialData(null); }}
+              saving={adSetEditSaving}
+              error={adSetEditError}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Novo anúncio - formulário completo como em Criar Campanha Meta */}
+      {adNewModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 overflow-y-auto" onClick={() => setAdNewModal(null)}>
+          <div className="bg-dark-card border border-dark-border rounded-xl shadow-xl max-w-xl w-full p-6 my-8 max-h-[90vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <MetaAdForm
+              adAccountId={adNewModal.adAccountId}
+              adsetId={adNewModal.adsetId}
+              adsetName={adNewModal.adSetName}
+              onSubmit={handleAdNewSave}
+              onCancel={() => setAdNewModal(null)}
+              saving={adNewSaving}
+              error={adNewError}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Editar anúncio - mesmo formulário, dados pré-preenchidos (nome e link editáveis) */}
+      {adEditModal && adEditInitialData && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 overflow-y-auto" onClick={() => { setAdEditModal(null); setAdEditInitialData(null); }}>
+          <div className="bg-dark-card border border-dark-border rounded-xl shadow-xl max-w-xl w-full p-6 my-8 max-h-[90vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-text-primary mb-4">Editar anúncio</h3>
+            <MetaAdForm
+              key={`edit-ad-${adEditModal.adId}`}
+              adAccountId={adEditModal.adAccountId}
+              adsetId={adEditModal.adsetId}
+              adsetName={adEditModal.adSetName}
+              defaultName={adEditInitialData.name}
+              defaultLink={adEditInitialData.link}
+              defaultMessage={adEditInitialData.message}
+              defaultTitle={adEditInitialData.title}
+              defaultCallToAction={adEditInitialData.call_to_action}
+              defaultPageId={adEditInitialData.page_id}
+              isEditMode
+              submitLabel="Salvar edição"
+              onSubmit={handleAdEditSave}
+              onCancel={() => { setAdEditModal(null); setAdEditInitialData(null); }}
+              saving={adEditSaving}
+              error={adEditError}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Deletar conjunto */}
+      {adSetDeleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60" onClick={() => setAdSetDeleteConfirm(null)}>
+          <div className="bg-dark-card border border-dark-border rounded-xl shadow-xl max-w-md w-full p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-text-primary">Deletar conjunto</h3>
+            <p className="text-sm text-text-secondary">Deletar <strong className="text-text-primary">{adSetDeleteConfirm.adSetName}</strong>? Não é possível desfazer.</p>
+            <div className="flex gap-2 justify-end">
+              <button type="button" onClick={() => setAdSetDeleteConfirm(null)} className="rounded-md border border-dark-border py-2 px-4 text-sm font-medium text-text-secondary hover:bg-dark-bg">Cancelar</button>
+              <button type="button" disabled={adSetDeleteDeleting} onClick={handleAdSetDeleteConfirm} className="rounded-md bg-red-600 py-2 px-4 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">{adSetDeleteDeleting ? "Deletando…" : "Deletar"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Duplicar conjunto */}
+      {adSetDuplicateModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60" onClick={() => setAdSetDuplicateModal(null)}>
+          <div className="bg-dark-card border border-dark-border rounded-xl shadow-xl max-w-md w-full p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-text-primary">Duplicar conjunto</h3>
+            <p className="text-sm text-text-secondary">Quantas cópias? (1 a 50). Nomes: -COPIA 1, -COPIA 2...</p>
+            <input type="number" min={1} max={50} value={adSetDuplicateCount} onChange={(e) => setAdSetDuplicateCount(e.target.value)} className="w-full rounded-md border border-dark-border bg-dark-bg py-2 px-3 text-text-primary text-sm" />
+            <div className="flex gap-2 justify-end">
+              <button type="button" onClick={() => setAdSetDuplicateModal(null)} className="rounded-md border border-dark-border py-2 px-4 text-sm font-medium text-text-secondary hover:bg-dark-bg">Cancelar</button>
+              <button type="button" disabled={adSetDuplicateSaving} onClick={handleAdSetDuplicateSave} className="rounded-md bg-shopee-orange py-2 px-4 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">{adSetDuplicateSaving ? "Duplicando…" : "Duplicar"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Deletar anúncio */}
+      {adDeleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60" onClick={() => setAdDeleteConfirm(null)}>
+          <div className="bg-dark-card border border-dark-border rounded-xl shadow-xl max-w-md w-full p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-text-primary">Deletar anúncio</h3>
+            <p className="text-sm text-text-secondary">Deletar <strong className="text-text-primary">{adDeleteConfirm.adName}</strong>? Não é possível desfazer.</p>
+            <div className="flex gap-2 justify-end">
+              <button type="button" onClick={() => setAdDeleteConfirm(null)} className="rounded-md border border-dark-border py-2 px-4 text-sm font-medium text-text-secondary hover:bg-dark-bg">Cancelar</button>
+              <button type="button" disabled={adDeleteDeleting} onClick={handleAdDeleteConfirm} className="rounded-md bg-red-600 py-2 px-4 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">{adDeleteDeleting ? "Deletando…" : "Deletar"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Duplicar anúncio */}
+      {adDuplicateModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60" onClick={() => setAdDuplicateModal(null)}>
+          <div className="bg-dark-card border border-dark-border rounded-xl shadow-xl max-w-md w-full p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-text-primary">Duplicar anúncio</h3>
+            <p className="text-sm text-text-secondary">Quantas cópias? (1 a 50). Nomes: -COPIA 1, -COPIA 2...</p>
+            <input type="number" min={1} max={50} value={adDuplicateCount} onChange={(e) => setAdDuplicateCount(e.target.value)} className="w-full rounded-md border border-dark-border bg-dark-bg py-2 px-3 text-text-primary text-sm" />
+            <div className="flex gap-2 justify-end">
+              <button type="button" onClick={() => setAdDuplicateModal(null)} className="rounded-md border border-dark-border py-2 px-4 text-sm font-medium text-text-secondary hover:bg-dark-bg">Cancelar</button>
+              <button type="button" disabled={adDuplicateSaving} onClick={handleAdDuplicateSave} className="rounded-md bg-shopee-orange py-2 px-4 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">{adDuplicateSaving ? "Duplicando…" : "Duplicar"}</button>
             </div>
           </div>
         </div>

@@ -1,13 +1,197 @@
 /**
- * Cria conjunto de anúncios (ad set) no Meta Ads.
- * POST /api/meta/adsets
- * Body: { ad_account_id, campaign_id, name, daily_budget, country_code?, age_min?, age_max?, gender?, optimization_goal?, pixel_id?, custom_conversion_id?, conversion_event? }
+ * Conjuntos de anúncios (ad set) no Meta: GET um conjunto | PATCH: editar | DELETE: deletar | POST: criar
  */
 
 import { NextResponse } from "next/server";
 import { createClient } from "../../../../../utils/supabase/server";
 
 const GRAPH_BASE = "https://graph.facebook.com/v21.0";
+
+/** Garante que o ID da conta tenha o prefixo act_ (exigido pela API ao criar recursos). */
+function normalizeAdAccountId(id: string): string {
+  const raw = String(id).trim();
+  if (!raw) return raw;
+  return raw.startsWith("act_") ? raw : `act_${raw}`;
+}
+
+/** Metas de desempenho permitidas por objetivo de campanha (evita erro 2490408). Inclui objetivos legados. */
+const OBJECTIVE_GOALS: Record<string, string[]> = {
+  OUTCOME_TRAFFIC: ["LINK_CLICKS", "LANDING_PAGE_VIEWS", "REACH", "IMPRESSIONS"],
+  OUTCOME_SALES: ["REACH", "IMPRESSIONS", "OFFSITE_CONVERSIONS", "VALUE", "CONVERSIONS"],
+  OUTCOME_LEADS: ["LINK_CLICKS", "REACH", "IMPRESSIONS", "OFFSITE_CONVERSIONS", "LEAD_GENERATION"],
+  OUTCOME_ENGAGEMENT: ["LINK_CLICKS", "REACH", "IMPRESSIONS", "ENGAGED_USERS"],
+  OUTCOME_AWARENESS: ["REACH", "IMPRESSIONS", "AD_RECALL_LIFT"],
+  OUTCOME_APP_PROMOTION: ["APP_INSTALLS", "LINK_CLICKS", "REACH", "IMPRESSIONS"],
+  // Objetivos legados (campanhas antigas)
+  CONVERSIONS: ["REACH", "IMPRESSIONS", "OFFSITE_CONVERSIONS", "VALUE", "CONVERSIONS"],
+  LINK_CLICKS: ["LINK_CLICKS", "LANDING_PAGE_VIEWS", "REACH", "IMPRESSIONS"],
+  BRAND_AWARENESS: ["REACH", "IMPRESSIONS", "AD_RECALL_LIFT"],
+  REACH: ["REACH", "IMPRESSIONS"],
+  MESSAGES: ["REACH", "IMPRESSIONS", "LINK_CLICKS"],
+  LEAD_GENERATION: ["LINK_CLICKS", "REACH", "IMPRESSIONS", "LEAD_GENERATION"],
+  PRODUCT_CATALOG_SALES: ["REACH", "IMPRESSIONS", "OFFSITE_CONVERSIONS", "VALUE"],
+};
+
+function isValidGoalForObjective(goal: string, objective: string): boolean {
+  const key = objective.toUpperCase().replace(/-/g, "_").replace(/\s/g, "");
+  const allowed = OBJECTIVE_GOALS[key] ?? OBJECTIVE_GOALS.REACH ?? ["REACH", "IMPRESSIONS"];
+  return allowed.includes(goal.toUpperCase());
+}
+
+function defaultGoalForObjective(objective: string): string {
+  const key = objective.toUpperCase().replace(/-/g, "_").replace(/\s/g, "");
+  const allowed = OBJECTIVE_GOALS[key] ?? OBJECTIVE_GOALS.REACH ?? ["REACH", "IMPRESSIONS"];
+  return allowed[0] ?? "REACH";
+}
+
+async function getToken(supabase: Awaited<ReturnType<typeof createClient>>) {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { user: null, token: null };
+  const { data: profile } = await supabase.from("profiles").select("meta_access_token").eq("id", user.id).single();
+  return { user, token: profile?.meta_access_token?.trim() || null };
+}
+
+/** GET ?adset_id=xxx — retorna dados do conjunto para preencher formulário de edição. */
+export async function GET(req: Request) {
+  try {
+    const supabase = await createClient();
+    const { user, token } = await getToken(supabase);
+    if (!user || !token) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+
+    const url = new URL(req.url);
+    const adset_id = url.searchParams.get("adset_id")?.trim();
+    if (!adset_id) return NextResponse.json({ error: "adset_id é obrigatório." }, { status: 400 });
+
+    const fields = "name,daily_budget,targeting,optimization_goal,campaign_id,promoted_object";
+    const res = await fetch(`${GRAPH_BASE}/${adset_id}?fields=${fields}&access_token=${encodeURIComponent(token)}`);
+    const json = (await res.json()) as {
+      name?: string;
+      daily_budget?: string;
+      targeting?: { geo_locations?: { countries?: string[] }; age_min?: number; age_max?: number; genders?: number[] };
+      optimization_goal?: string;
+      campaign_id?: string;
+      promoted_object?: { pixel_id?: string; custom_event_type?: string };
+      error?: { message: string };
+    };
+    if (json.error) {
+      return NextResponse.json({ error: json.error.message ?? "Erro ao buscar conjunto", meta_error: json.error }, { status: 500 });
+    }
+    const targeting = json.targeting;
+    const countries = targeting?.geo_locations?.countries;
+    const country_code = countries?.[0] ?? "BR";
+    const genderNum = targeting?.genders?.[0];
+    const gender = genderNum === 2 ? "female" : genderNum === 1 ? "male" : "all";
+    const promoted = json.promoted_object;
+    return NextResponse.json({
+      name: json.name ?? "",
+      daily_budget: json.daily_budget != null ? String(Number(json.daily_budget) / 100) : "10",
+      country_code,
+      age_min: targeting?.age_min ?? 18,
+      age_max: targeting?.age_max ?? 65,
+      gender,
+      optimization_goal: json.optimization_goal ?? "LINK_CLICKS",
+      campaign_id: json.campaign_id ?? "",
+      pixel_id: promoted?.pixel_id ?? "",
+      conversion_event: promoted?.custom_event_type ?? "PAGE_VIEW",
+    });
+  } catch (e) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : "Erro ao buscar conjunto" }, { status: 500 });
+  }
+}
+
+export async function PATCH(req: Request) {
+  try {
+    const supabase = await createClient();
+    const { user, token } = await getToken(supabase);
+    if (!user || !token) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+
+    const body = await req.json();
+    const adset_id = body?.adset_id?.trim();
+    const name = body?.name?.trim();
+    const daily_budget_raw = body?.daily_budget;
+    // Front envia em centavos (ex: 700 = R$ 7). Usar como está; não multiplicar por 100.
+    const daily_budget = daily_budget_raw != null ? (typeof daily_budget_raw === "number" ? Math.round(daily_budget_raw) : Math.round(Number(daily_budget_raw))) : undefined;
+    const country_code = (body?.country_code?.trim() || "BR").toUpperCase().slice(0, 2);
+    const age_min = body?.age_min != null ? Number(body.age_min) : 18;
+    const age_max = body?.age_max != null ? Number(body.age_max) : 65;
+    const gender = body?.gender || "all";
+    const optimization_goal = body?.optimization_goal?.trim();
+    const pixel_id = body?.pixel_id?.trim();
+    let conversion_event = (body?.conversion_event?.trim() || "PAGE_VIEW").toUpperCase();
+    if (conversion_event === "VIEW_CONTENT") conversion_event = "CONTENT_VIEW";
+
+    if (!adset_id) return NextResponse.json({ error: "adset_id é obrigatório." }, { status: 400 });
+    if (!name && daily_budget === undefined && !optimization_goal && country_code === "BR" && age_min === 18 && age_max === 65 && gender === "all" && !pixel_id) {
+      return NextResponse.json({ error: "Informe ao menos um campo para editar (name, daily_budget, optimization_goal, targeting, pixel)." }, { status: 400 });
+    }
+    if (daily_budget !== undefined && (!Number.isFinite(daily_budget) || daily_budget < 100)) {
+      return NextResponse.json({ error: "daily_budget mínimo 100 centavos (R$ 1)." }, { status: 400 });
+    }
+
+    const params = new URLSearchParams({ access_token: token });
+    if (name) params.set("name", name);
+    if (daily_budget !== undefined) params.set("daily_budget", String(Math.round(daily_budget)));
+    if (optimization_goal) {
+      let campaignId = body?.campaign_id?.trim();
+      if (!campaignId) {
+        const adsetRes = await fetch(`${GRAPH_BASE}/${adset_id}?fields=campaign_id&access_token=${encodeURIComponent(token)}`);
+        const adsetJson = (await adsetRes.json()) as { campaign_id?: string };
+        campaignId = adsetJson.campaign_id ?? "";
+      }
+      if (campaignId) {
+        const campaignRes = await fetch(`${GRAPH_BASE}/${campaignId}?fields=objective&access_token=${encodeURIComponent(token)}`);
+        const campJson = (await campaignRes.json()) as { objective?: string };
+        const objective = (campJson.objective ?? "OUTCOME_TRAFFIC").toUpperCase().replace(/-/g, "_");
+        if (isValidGoalForObjective(optimization_goal, objective)) params.set("optimization_goal", optimization_goal);
+      }
+    }
+    const targeting: Record<string, unknown> = {
+      geo_locations: { countries: [country_code] },
+      age_min,
+      age_max,
+      publisher_platforms: ["facebook"],
+    };
+    if (gender !== "all") targeting.genders = gender === "female" ? [2] : [1];
+    params.set("targeting", JSON.stringify(targeting));
+    if (pixel_id && conversion_event) {
+      const promotedObject = { pixel_id, custom_event_type: conversion_event };
+      params.set("promoted_object", JSON.stringify(promotedObject));
+    }
+    const res = await fetch(`${GRAPH_BASE}/${adset_id}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: params.toString(),
+    });
+    const json = (await res.json()) as { success?: boolean; error?: { message: string } };
+    if (json.error) {
+      return NextResponse.json({ error: json.error.message ?? "Erro ao editar conjunto", meta_error: json.error }, { status: 500 });
+    }
+    return NextResponse.json({ success: true });
+  } catch (e) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : "Erro ao editar conjunto" }, { status: 500 });
+  }
+}
+
+export async function DELETE(req: Request) {
+  try {
+    const supabase = await createClient();
+    const { user, token } = await getToken(supabase);
+    if (!user || !token) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+
+    const url = new URL(req.url);
+    const adset_id = url.searchParams.get("adset_id")?.trim() || (await req.json().catch(() => ({})))?.adset_id?.trim();
+    if (!adset_id) return NextResponse.json({ error: "adset_id é obrigatório." }, { status: 400 });
+
+    const res = await fetch(`${GRAPH_BASE}/${adset_id}?access_token=${encodeURIComponent(token)}`, { method: "DELETE" });
+    const json = (await res.json()) as { success?: boolean; error?: { message: string } };
+    if (json.error) {
+      return NextResponse.json({ error: json.error.message ?? "Erro ao deletar conjunto", meta_error: json.error }, { status: 500 });
+    }
+    return NextResponse.json({ success: true });
+  } catch (e) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : "Erro ao deletar conjunto" }, { status: 500 });
+  }
+}
 
 export async function POST(req: Request) {
   try {
@@ -40,7 +224,6 @@ export async function POST(req: Request) {
     const age_min = body?.age_min != null ? Number(body.age_min) : 18;
     const age_max = body?.age_max != null ? Number(body.age_max) : 65;
     const gender = body?.gender || "all"; // all | male | female
-    const optimization_goal = (body?.optimization_goal?.trim() || "LINK_CLICKS").toUpperCase();
     const pixel_id = body?.pixel_id?.trim();
     const custom_conversion_id = body?.custom_conversion_id?.trim();
     let conversion_event = (body?.conversion_event?.trim() || "PAGE_VIEW").toUpperCase();
@@ -59,6 +242,27 @@ export async function POST(req: Request) {
       );
     }
 
+    // Buscar objetivo da campanha para usar optimization_goal compatível (evita erro 2490408)
+    const campaignRes = await fetch(
+      `${GRAPH_BASE}/${campaign_id}?fields=objective&access_token=${encodeURIComponent(token)}`
+    );
+    const campaignJson = (await campaignRes.json()) as { objective?: string; error?: { message: string } };
+    if (campaignJson.error) {
+      return NextResponse.json(
+        { error: campaignJson.error.message ?? "Erro ao buscar campanha", meta_error: campaignJson.error },
+        { status: 500 }
+      );
+    }
+    const campaignObjective = (campaignJson.objective ?? "OUTCOME_TRAFFIC").toUpperCase().replace(/-/g, "_").replace(/\s/g, "");
+
+    // Sempre usar meta compatível com o objetivo (ignorar meta do body se incompatível)
+    let effectiveOptimizationGoal = (body?.optimization_goal?.trim() || "").toUpperCase();
+    if (!effectiveOptimizationGoal || !isValidGoalForObjective(effectiveOptimizationGoal, campaignObjective)) {
+      effectiveOptimizationGoal = defaultGoalForObjective(campaignObjective);
+    }
+
+    const accountIdForCreate = normalizeAdAccountId(ad_account_id);
+
     const targeting: Record<string, unknown> = {
       geo_locations: { countries: [country_code] },
       age_min,
@@ -75,20 +279,20 @@ export async function POST(req: Request) {
     params.set("name", name);
     params.set("daily_budget", String(Math.round(daily_budget)));
     params.set("billing_event", "IMPRESSIONS");
-    params.set("optimization_goal", optimization_goal);
+    params.set("optimization_goal", effectiveOptimizationGoal);
     params.set("targeting", JSON.stringify(targeting));
     params.set("status", "PAUSED");
     params.set("start_time", new Date().toISOString());
     params.set("destination_type", "WEBSITE");
     params.set("bid_strategy", "LOWEST_COST_WITHOUT_CAP");
     const conversionGoals = ["OFFSITE_CONVERSIONS", "VALUE", "CONVERSIONS"];
-    if (pixel_id && conversionGoals.includes(optimization_goal)) {
+    if (pixel_id && conversionGoals.includes(effectiveOptimizationGoal)) {
       const promotedObject: { pixel_id: string; custom_event_type?: string } = { pixel_id };
       promotedObject.custom_event_type = conversion_event;
       params.set("promoted_object", JSON.stringify(promotedObject));
       if (custom_conversion_id && /^\d+$/.test(custom_conversion_id)) params.set("custom_conversion_id", custom_conversion_id);
     }
-    const url = `${GRAPH_BASE}/${ad_account_id}/adsets`;
+    const url = `${GRAPH_BASE}/${accountIdForCreate}/adsets`;
     const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },

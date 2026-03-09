@@ -72,9 +72,11 @@ export async function GET(req: Request) {
     const [metaRes, shopeeRes] = await Promise.all([
       fetch(`${baseUrl}/api/meta/insights?start=${start}&end=${end}`, {
         headers: { cookie: req.headers.get("cookie") ?? "" },
+        cache: "no-store",
       }),
       fetch(`${baseUrl}/api/shopee/conversion-report?start=${start}&end=${end}`, {
         headers: { cookie: req.headers.get("cookie") ?? "" },
+        cache: "no-store",
       }),
     ]);
 
@@ -101,6 +103,7 @@ export async function GET(req: Request) {
         adset_name: string;
         campaign_id: string;
         campaign_name: string;
+        ad_account_id?: string;
         spend: number;
         clicks: number;
         impressions: number;
@@ -108,11 +111,19 @@ export async function GET(req: Request) {
         cpc: number;
       }>;
       campaignStatusMap?: Record<string, string>;
+      campaignsList?: Array<{ id: string; name: string; ad_account_id: string }>;
+      adSetList?: Array<{ id: string; name: string; campaign_id: string; ad_account_id: string }>;
+      adSetStatusMap?: Record<string, string>;
+      adStatusMap?: Record<string, string>;
     };
     const shopeeJson = (await shopeeRes.json()) as { data?: ShopeeRow[] };
 
     const insights = metaJson.insights ?? [];
     const campaignStatus = metaJson.campaignStatusMap ?? {};
+    const campaignsList = metaJson.campaignsList ?? [];
+    const adSetList = metaJson.adSetList ?? [];
+    const adSetStatusMap = metaJson.adSetStatusMap ?? {};
+    const adStatusMap = metaJson.adStatusMap ?? {};
     const shopeeRows = shopeeJson.data ?? [];
     const shopeeBySubId = aggregateShopeeBySubId(shopeeRows);
 
@@ -160,6 +171,7 @@ export async function GET(req: Request) {
         adSetName: m.adset_name,
         campaignId: m.campaign_id,
         campaignName: m.campaign_name,
+        adAccountId: m.ad_account_id,
         subId,
         cost,
         clicksMeta,
@@ -206,6 +218,10 @@ export async function GET(req: Request) {
       creatives,
       validated,
       campaignStatus,
+      campaignsList,
+      adSetList,
+      adSetStatusMap,
+      adStatusMap,
       dateStart: start,
       dateEnd: end,
     });

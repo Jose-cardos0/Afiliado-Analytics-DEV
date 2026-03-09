@@ -23,6 +23,8 @@ import {
   META_OPTIMIZATION_GOALS,
   META_COUNTRIES,
   META_CALL_TO_ACTIONS,
+  getOptimizationGoalsForObjective,
+  getDefaultGoalForObjective,
 } from "@/lib/meta-ads-constants";
 
 type AdAccount = { id: string; name: string; business_id?: string };
@@ -171,6 +173,16 @@ export default function MetaAdsClient() {
 
   const canStep2 = adAccountId && pageId;
   const canStep3 = campaignId && campaignName;
+  const allowedGoalsForObjective = getOptimizationGoalsForObjective(campaignObjective);
+  const isCurrentGoalAllowed = allowedGoalsForObjective.some((o) => o.value === optimizationGoal);
+
+  useEffect(() => {
+    if (canStep3 && !isCurrentGoalAllowed) {
+      setOptimizationGoal(getDefaultGoalForObjective(campaignObjective));
+      setPixelId("");
+      setConversionEvent("");
+    }
+  }, [campaignObjective, canStep3, isCurrentGoalAllowed]);
   const canStep4 = adsetId && adsetName;
 
   const createCampaign = async () => {
@@ -547,7 +559,7 @@ export default function MetaAdsClient() {
           <div>
             <label className="block text-sm font-medium text-text-primary mb-1">Meta de desempenho</label>
             <select
-              value={optimizationGoal}
+              value={isCurrentGoalAllowed ? optimizationGoal : getDefaultGoalForObjective(campaignObjective)}
               onChange={(e) => {
                 const v = e.target.value;
                 setOptimizationGoal(v);
@@ -558,10 +570,11 @@ export default function MetaAdsClient() {
               }}
               className="w-full rounded-md border border-dark-border bg-dark-bg py-2 px-3 text-text-primary text-sm"
             >
-              {META_OPTIMIZATION_GOALS.map((o) => (
+              {allowedGoalsForObjective.map((o) => (
                 <option key={o.value} value={o.value}>{o.label}</option>
               ))}
             </select>
+            <p className="text-xs text-text-secondary mt-1">Opções compatíveis com o objetivo da campanha (&quot;{META_CAMPAIGN_OBJECTIVES.find((c) => c.value === campaignObjective)?.label ?? campaignObjective}&quot;).</p>
           </div>
           {["OFFSITE_CONVERSIONS", "VALUE", "CONVERSIONS"].includes(optimizationGoal) && (
             <>

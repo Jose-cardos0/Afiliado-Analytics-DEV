@@ -1,7 +1,6 @@
 /**
- * Cria campanha no Meta Ads via Marketing API.
- * POST /api/meta/campaigns
- * Body: { ad_account_id: string, name: string, objective?: string }
+ * Campanhas no Meta Ads: criar, editar e deletar.
+ * POST: criar | PATCH: editar nome/objetivo | DELETE: deletar
  */
 
 const ALLOWED_OBJECTIVES = [
@@ -17,6 +16,69 @@ import { NextResponse } from "next/server";
 import { createClient } from "../../../../../utils/supabase/server";
 
 const GRAPH_BASE = "https://graph.facebook.com/v21.0";
+
+async function getToken(supabase: Awaited<ReturnType<typeof createClient>>) {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { user: null, token: null };
+  const { data: profile } = await supabase.from("profiles").select("meta_access_token").eq("id", user.id).single();
+  return { user, token: profile?.meta_access_token?.trim() || null };
+}
+
+export async function PATCH(req: Request) {
+  try {
+    const supabase = await createClient();
+    const { user, token } = await getToken(supabase);
+    if (!user || !token) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+
+    const body = await req.json();
+    const campaign_id = body?.campaign_id?.trim();
+    const name = body?.name?.trim();
+    const objective = body?.objective?.trim()?.toUpperCase();
+    if (!campaign_id) return NextResponse.json({ error: "campaign_id é obrigatório." }, { status: 400 });
+    if (!name && !objective) return NextResponse.json({ error: "Informe name e/ou objective para editar." }, { status: 400 });
+    if (objective && !ALLOWED_OBJECTIVES.includes(objective)) {
+      return NextResponse.json({ error: `objective inválido. Use: ${ALLOWED_OBJECTIVES.join(", ")}` }, { status: 400 });
+    }
+
+    const params = new URLSearchParams({ access_token: token });
+    if (name) params.set("name", name);
+    if (objective) params.set("objective", objective);
+    const res = await fetch(`${GRAPH_BASE}/${campaign_id}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: params.toString(),
+    });
+    const json = (await res.json()) as { success?: boolean; error?: { message: string } };
+    if (json.error) {
+      return NextResponse.json({ error: json.error.message ?? "Erro ao editar campanha", meta_error: json.error }, { status: 500 });
+    }
+    return NextResponse.json({ success: true });
+  } catch (e) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : "Erro ao editar campanha" }, { status: 500 });
+  }
+}
+
+export async function DELETE(req: Request) {
+  try {
+    const supabase = await createClient();
+    const { user, token } = await getToken(supabase);
+    if (!user || !token) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+
+    const campaign_id = req.url.includes("?") ? new URL(req.url).searchParams.get("campaign_id")?.trim() : null;
+    const body = await req.json().catch(() => ({}));
+    const id = campaign_id || body?.campaign_id?.trim();
+    if (!id) return NextResponse.json({ error: "campaign_id é obrigatório." }, { status: 400 });
+
+    const res = await fetch(`${GRAPH_BASE}/${id}?access_token=${encodeURIComponent(token)}`, { method: "DELETE" });
+    const json = (await res.json()) as { success?: boolean; error?: { message: string } };
+    if (json.error) {
+      return NextResponse.json({ error: json.error.message ?? "Erro ao deletar campanha", meta_error: json.error }, { status: 500 });
+    }
+    return NextResponse.json({ success: true });
+  } catch (e) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : "Erro ao deletar campanha" }, { status: 500 });
+  }
+}
 
 export async function POST(req: Request) {
   try {

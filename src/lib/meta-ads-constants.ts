@@ -21,7 +21,38 @@ export const META_OPTIMIZATION_GOALS = [
   { value: "IMPRESSIONS", label: "Impressões" },
   { value: "LANDING_PAGE_VIEWS", label: "Visualizações da página de destino" },
   { value: "VALUE", label: "Valor (ROAS)" },
+  { value: "CONVERSIONS", label: "Conversões (evento)" },
 ] as const;
+
+/** Metas permitidas por objetivo (evita erro 2490408). Deve estar em sync com a API. */
+export const OBJECTIVE_GOALS: Record<string, string[]> = {
+  OUTCOME_TRAFFIC: ["LINK_CLICKS", "LANDING_PAGE_VIEWS", "REACH", "IMPRESSIONS"],
+  OUTCOME_SALES: ["REACH", "IMPRESSIONS", "OFFSITE_CONVERSIONS", "VALUE", "CONVERSIONS"],
+  OUTCOME_LEADS: ["LINK_CLICKS", "REACH", "IMPRESSIONS", "OFFSITE_CONVERSIONS", "LEAD_GENERATION"],
+  OUTCOME_ENGAGEMENT: ["LINK_CLICKS", "REACH", "IMPRESSIONS", "ENGAGED_USERS"],
+  OUTCOME_AWARENESS: ["REACH", "IMPRESSIONS", "AD_RECALL_LIFT"],
+  OUTCOME_APP_PROMOTION: ["APP_INSTALLS", "LINK_CLICKS", "REACH", "IMPRESSIONS"],
+  CONVERSIONS: ["REACH", "IMPRESSIONS", "OFFSITE_CONVERSIONS", "VALUE", "CONVERSIONS"],
+  LINK_CLICKS: ["LINK_CLICKS", "LANDING_PAGE_VIEWS", "REACH", "IMPRESSIONS"],
+  BRAND_AWARENESS: ["REACH", "IMPRESSIONS", "AD_RECALL_LIFT"],
+  REACH: ["REACH", "IMPRESSIONS"],
+  MESSAGES: ["REACH", "IMPRESSIONS", "LINK_CLICKS"],
+  LEAD_GENERATION: ["LINK_CLICKS", "REACH", "IMPRESSIONS", "LEAD_GENERATION"],
+  PRODUCT_CATALOG_SALES: ["REACH", "IMPRESSIONS", "OFFSITE_CONVERSIONS", "VALUE"],
+};
+
+export function getOptimizationGoalsForObjective(objective: string): Array<{ value: string; label: string }> {
+  const key = objective.toUpperCase().replace(/-/g, "_");
+  const allowed = OBJECTIVE_GOALS[key] ?? OBJECTIVE_GOALS.OUTCOME_TRAFFIC ?? ["REACH", "IMPRESSIONS"];
+  return META_OPTIMIZATION_GOALS.filter((o) => allowed.includes(o.value));
+}
+
+export function getDefaultGoalForObjective(objective: string): string {
+  const key = objective.toUpperCase().replace(/-/g, "_");
+  const allowed = OBJECTIVE_GOALS[key] ?? OBJECTIVE_GOALS.OUTCOME_TRAFFIC ?? ["REACH", "IMPRESSIONS"];
+  const firstAllowedInDropdown = allowed.find((v) => META_OPTIMIZATION_GOALS.some((o) => o.value === v));
+  return firstAllowedInDropdown ?? "REACH";
+}
 
 /** Chamadas para ação (CTA) para anúncios com link */
 export const META_CALL_TO_ACTIONS = [

@@ -1,14 +1,71 @@
 /**
- * Cria anúncio no Meta Ads: primeiro cria o criativo (link + imagem + texto), depois o ad.
- * POST /api/meta/ads
- * Body: { ad_account_id, adset_id, name, page_id, link, message, image_url?, image_hash?, video_id?, call_to_action?, title? }
- * Para criativo com vídeo: video_id é obrigatório e image_hash ou image_url (thumbnail do vídeo) também.
+ * Anúncios no Meta: criar, editar (nome) e deletar.
+ * POST: criar | PATCH: editar nome | DELETE: deletar (body ou query ad_id)
  */
 
 import { NextResponse } from "next/server";
 import { createClient } from "../../../../../utils/supabase/server";
 
 const GRAPH_BASE = "https://graph.facebook.com/v21.0";
+
+async function getToken(supabase: Awaited<ReturnType<typeof createClient>>) {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { user: null, token: null };
+  const { data: profile } = await supabase.from("profiles").select("meta_access_token").eq("id", user.id).single();
+  return { user, token: profile?.meta_access_token?.trim() || null };
+}
+
+export async function PATCH(req: Request) {
+  try {
+    const supabase = await createClient();
+    const { user, token } = await getToken(supabase);
+    if (!user || !token) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+
+    const body = await req.json();
+    const ad_id = body?.ad_id?.trim();
+    const name = body?.name?.trim();
+    if (!ad_id || !name) {
+      return NextResponse.json({ error: "ad_id e name são obrigatórios." }, { status: 400 });
+    }
+
+    const params = new URLSearchParams({ access_token: token, name: name.slice(0, 100) });
+    const res = await fetch(`${GRAPH_BASE}/${ad_id}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: params.toString(),
+    });
+    const json = (await res.json()) as { success?: boolean; error?: { message: string } };
+    if (json.error && !json.success) {
+      return NextResponse.json({ error: json.error.message ?? "Erro ao editar anúncio", meta_error: json.error }, { status: 500 });
+    }
+    return NextResponse.json({ success: true });
+  } catch (e) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : "Erro ao editar anúncio" }, { status: 500 });
+  }
+}
+
+export async function DELETE(req: Request) {
+  try {
+    const supabase = await createClient();
+    const { user, token } = await getToken(supabase);
+    if (!user || !token) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+
+    const url = new URL(req.url);
+    const ad_id = url.searchParams.get("ad_id")?.trim();
+    const body = await req.json().catch(() => ({}));
+    const id = ad_id || body?.ad_id?.trim();
+    if (!id) return NextResponse.json({ error: "ad_id é obrigatório." }, { status: 400 });
+
+    const res = await fetch(`${GRAPH_BASE}/${id}?access_token=${encodeURIComponent(token)}`, { method: "DELETE" });
+    const json = (await res.json()) as { success?: boolean; error?: { message: string } };
+    if (json.error) {
+      return NextResponse.json({ error: json.error.message ?? "Erro ao deletar anúncio", meta_error: json.error }, { status: 500 });
+    }
+    return NextResponse.json({ success: true });
+  } catch (e) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : "Erro ao deletar anúncio" }, { status: 500 });
+  }
+}
 
 export async function POST(req: Request) {
   try {
