@@ -18,6 +18,7 @@ import {
   ShoppingBag,
   Target,
   MousePointerClick,
+  MessageCircle,
   Search,
   CheckCircle,
   Pencil,
@@ -417,6 +418,8 @@ export default function ATIClient() {
   const [adStatusMap, setAdStatusMap] = useState<Record<string, string>>({});
   const [adSetTogglingId, setAdSetTogglingId] = useState<string | null>(null);
   const [adTogglingId, setAdTogglingId] = useState<string | null>(null);
+  const [campaignIdsTraficoGrupos, setCampaignIdsTraficoGrupos] = useState<string[]>([]);
+  const [traficoGruposTogglingId, setTraficoGruposTogglingId] = useState<string | null>(null);
   const [expandedCampaigns, setExpandedCampaigns] = useState<Record<string, boolean>>({});
   const [expandedAdSets, setExpandedAdSets] = useState<Record<string, boolean>>({});
 
@@ -485,6 +488,13 @@ export default function ATIClient() {
       setAdSetList(Array.isArray(json.adSetList) ? json.adSetList : []);
       setAdSetStatusMap((json.adSetStatusMap as Record<string, string>) ?? {});
       setAdStatusMap((json.adStatusMap as Record<string, string>) ?? {});
+      const tagsRes = await fetch("/api/ati/campaign-tags?tag=Tráfego%20para%20Grupos", { cache: "no-store" });
+      if (tagsRes.ok) {
+        const tagsJson = (await tagsRes.json()) as { campaignIds?: string[] };
+        setCampaignIdsTraficoGrupos(Array.isArray(tagsJson.campaignIds) ? tagsJson.campaignIds : []);
+      } else {
+        setCampaignIdsTraficoGrupos([]);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erro");
       setCreatives([]);
@@ -494,6 +504,7 @@ export default function ATIClient() {
       setAdSetList([]);
       setAdSetStatusMap({});
       setAdStatusMap({});
+      setCampaignIdsTraficoGrupos([]);
     } finally {
       setLoading(false);
     }
@@ -613,6 +624,31 @@ export default function ATIClient() {
   };
   const toggleAdSet = (adSetId: string) => {
     setExpandedAdSets((prev) => ({ ...prev, [adSetId]: !prev[adSetId] }));
+  };
+
+  const handleToggleTraficoGrupos = async (campaignId: string) => {
+    const hasTag = campaignIdsTraficoGrupos.includes(campaignId);
+    setTraficoGruposTogglingId(campaignId);
+    try {
+      const res = await fetch("/api/ati/campaign-tags", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          campaign_id: campaignId,
+          tag: "Tráfego para Grupos",
+          add: !hasTag,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error ?? "Erro ao atualizar tag");
+      setCampaignIdsTraficoGrupos((prev) =>
+        hasTag ? prev.filter((id) => id !== campaignId) : [...prev, campaignId]
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erro ao atualizar tag");
+    } finally {
+      setTraficoGruposTogglingId(null);
+    }
   };
 
   const handleAdSetStatusToggle = async (adSetId: string) => {
@@ -1172,6 +1208,24 @@ export default function ATIClient() {
                         title="Deletar campanha"
                       >
                         <Trash2 className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        disabled={traficoGruposTogglingId === camp.campaignId}
+                        onClick={(e) => { e.stopPropagation(); handleToggleTraficoGrupos(camp.campaignId); }}
+                        title={campaignIdsTraficoGrupos.includes(camp.campaignId) ? "Remover tag Tráfego para Grupos" : "Marcar como Tráfego para Grupos (aparece na Calculadora GPL)"}
+                        className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium transition-colors ${
+                          campaignIdsTraficoGrupos.includes(camp.campaignId)
+                            ? "bg-shopee-orange/20 text-shopee-orange border border-shopee-orange/50"
+                            : "text-text-secondary border border-dark-border hover:bg-dark-bg hover:text-text-primary"
+                        } disabled:opacity-50`}
+                      >
+                        {traficoGruposTogglingId === camp.campaignId ? (
+                          <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                        ) : (
+                          <MessageCircle className="h-3.5 w-3.5" />
+                        )}
+                        Tráfego para Grupos
                       </button>
                     </div>
                     <button

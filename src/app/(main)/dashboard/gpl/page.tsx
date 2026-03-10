@@ -9,13 +9,18 @@ import {
   Calendar,
   DollarSign,
   TrendingUp,
+  TrendingDown,
   AlertCircle,
+  AlertTriangle,
   Info,
   ArrowRight,
   MessageCircle,
   Search,
   Loader2,
   RefreshCw,
+  ChevronDown,
+  ChevronUp,
+  MousePointerClick,
 } from "lucide-react";
 import Link from "next/link";
 import LoadingOverlay from "@/app/components/ui/LoadingOverlay";
@@ -98,6 +103,13 @@ function get3MonthsAgo(): string {
   return localYMD(d);
 }
 
+/** Formata YYYY-MM-DD para DD/MM/YYYY para exibição */
+function formatDateBR(ymd: string): string {
+  if (!ymd || ymd.length < 10) return "—";
+  const [y, m, d] = ymd.slice(0, 10).split("-");
+  return [d, m, y].join("/");
+}
+
 function extractChannel(row: CommissionDataRow): string {
   const candidates = [
     "Canal",
@@ -174,6 +186,34 @@ type GplApiRangeCache = {
 
 type EvolutionInstanceItem = { id: string; nome_instancia: string; numero_whatsapp: string | null };
 type WhatsAppGroup = { id: string; nome: string; qtdMembros: number };
+
+type TraficoGruposAd = {
+  id: string;
+  name: string;
+  status: string;
+  spend: number;
+  clicks: number;
+  impressions: number;
+  ctr: number;
+  cpc: number;
+};
+
+type TraficoGruposAdSet = {
+  id: string;
+  name: string;
+  status: string;
+  spend: number;
+  ads: TraficoGruposAd[];
+};
+
+type TraficoGruposCampaignDetail = {
+  id: string;
+  name: string;
+  ad_account_id: string;
+  status: string;
+  spend: number;
+  adSets: TraficoGruposAdSet[];
+};
 
 // ✅ chave para persistir o resultado da checagem (evita voltar pra "checking")
 const LS_API_CHECK_KEY = "gpl_api_check_state_v1";
@@ -254,6 +294,20 @@ export default function GplCalculatorPage() {
   const [groupsError, setGroupsError] = useState<string | null>(null);
   const [groupNameFilter, setGroupNameFilter] = useState("");
   const [selectedGroupIds, setSelectedGroupIds] = useState<Set<string>>(new Set());
+  const [groupsLastFetchedAt, setGroupsLastFetchedAt] = useState<string | null>(null);
+  const [groupSnapshots, setGroupSnapshots] = useState<Array<{ date: string; groups: WhatsAppGroup[] }>>([]);
+  const [previousGroupsForComparison, setPreviousGroupsForComparison] = useState<WhatsAppGroup[] | null>(null);
+  const [baseGroups, setBaseGroups] = useState<WhatsAppGroup[] | null>(null);
+  const [groupCumulative, setGroupCumulative] = useState<Record<string, { total_novos: number; total_saidas: number }>>({});
+
+  // Campanhas com tag "Tráfego para Grupos" — dados vêm do cache (IDB); só busca na API ao clicar em Atualizar
+  const [traficoGruposCampaigns, setTraficoGruposCampaigns] = useState<TraficoGruposCampaignDetail[]>([]);
+  const [traficoGruposLoading, setTraficoGruposLoading] = useState(false);
+  const [traficoGruposError, setTraficoGruposError] = useState<string | null>(null);
+  const [expandedTraficoCampaigns, setExpandedTraficoCampaigns] = useState<Record<string, boolean>>({});
+  const [expandedTraficoAdSets, setExpandedTraficoAdSets] = useState<Record<string, boolean>>({});
+  const [selectedTraficoCampaignIds, setSelectedTraficoCampaignIds] = useState<Set<string>>(new Set());
+  const [traficoGruposCache, setTraficoGruposCache, isTraficoCacheLoading] = useIdbKeyState<Record<string, { campaigns: TraficoGruposCampaignDetail[]; fetchedAt: string }>>("gpl_trafico_grupos_cache", {});
 
   // 1) Checar chaves — reaproveita cache; e não volta a "checking" em toda entrada
   useEffect(() => {
@@ -566,10 +620,68 @@ export default function GplCalculatorPage() {
   const selectedInstance = evolutionInstances.find((i) => i.id === selectedInstanceId);
   const selectedInstanceName = selectedInstance?.nome_instancia ?? "";
 
-  // Grupos: cache por instância; buscar ao selecionar só se ainda não tiver cache
+  // Carrega grupos salvos (snapshots) + BASE do backend — sem chamar n8n
+  const loadGroupSnapshots = async (instanceId: string, start?: string, end?: string) => {
+    setGroupsLoading(true);
+    setGroupsError(null);
+    try {
+      const params = new URLSearchParams({ instance_id: instanceId });
+      if (start && end) {
+        params.set("start", start);
+        params.set("end", end);
+      }
+      const res = await fetch(`/api/gpl/group-snapshots?${params.toString()}`, { cache: "no-store" });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error ?? "Falha ao carregar snapshots");
+      const snapshots = Array.isArray(json.snapshots) ? json.snapshots : [];
+      const normalized = snapshots.map((s: { date: string; groups: unknown[]; created_at?: string }) => ({
+        date: s.date,
+        groups: ((s.groups ?? []) as Array<{ id?: string; nome?: string; qtdMembros?: number }>).map((g) => ({
+          id: String(g?.id ?? ""),
+          nome: String(g?.nome ?? ""),
+          qtdMembros: Number(g?.qtdMembros ?? 0),
+        })),
+      })) as Array<{ date: string; groups: WhatsAppGroup[] }>;
+      setGroupSnapshots(normalized);
+      const latest = normalized[0];
+      const groupsFromSnapshot = latest?.groups ?? [];
+      setGroups(groupsFromSnapshot);
+      setGroupsCache((prev) => ({ ...prev, [instanceId]: groupsFromSnapshot }));
+      setGroupsLastFetchedAt(snapshots[0]?.created_at ?? null);
+      setPreviousGroupsForComparison(null);
+      const baseRaw = json.base?.groups;
+      const baseNormalized = Array.isArray(baseRaw)
+        ? (baseRaw as Array<{ id?: string; nome?: string; qtdMembros?: number }>).map((g) => ({
+            id: String(g?.id ?? ""),
+            nome: String(g?.nome ?? ""),
+            qtdMembros: Number(g?.qtdMembros ?? 0),
+          }))
+        : [];
+      setBaseGroups(baseNormalized.length > 0 ? baseNormalized : null);
+      const cum = json.cumulative ?? [];
+      const cumMap: Record<string, { total_novos: number; total_saidas: number }> = {};
+      for (const c of cum) {
+        if (c?.group_id) cumMap[c.group_id] = { total_novos: Number(c.total_novos ?? 0), total_saidas: Number(c.total_saidas ?? 0) };
+      }
+      setGroupCumulative(cumMap);
+    } catch (e) {
+      setGroups([]);
+      setBaseGroups(null);
+      setGroupCumulative({});
+      setGroupsError(e instanceof Error ? e.message : "Erro ao carregar grupos salvos");
+      setGroupsCache((prev) => ({ ...prev, [instanceId]: [] }));
+      setGroupSnapshots([]);
+      setGroupsLastFetchedAt(null);
+    } finally {
+      setGroupsLoading(false);
+    }
+  };
+
+  // Busca grupos na API (n8n) e salva snapshot — só ao clicar em "Atualizar"
   const fetchGroupsForInstance = async (instanceId: string, nomeInstancia: string) => {
     setGroupsLoading(true);
     setGroupsError(null);
+    setPreviousGroupsForComparison(groups.length > 0 ? [...groups] : null);
     try {
       const res = await fetch("/api/evolution/n8n-action", {
         method: "POST",
@@ -584,8 +696,49 @@ export default function GplCalculatorPage() {
         nome: String(g.nome ?? g.subject ?? g.name ?? "Sem nome"),
         qtdMembros: Number(g.qtdMembros ?? g.size ?? (Array.isArray(g.participants) ? g.participants.length : 0)),
       }));
-      setGroupsCache((prev) => ({ ...prev, [instanceId]: normalized }));
       setGroups(normalized);
+      setGroupsCache((prev) => ({ ...prev, [instanceId]: normalized }));
+
+      const saveRes = await fetch("/api/gpl/group-snapshots", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ instance_id: instanceId, groups: normalized }),
+      });
+      if (saveRes.ok) {
+        setGroupsLastFetchedAt(new Date().toISOString());
+        setGroupSnapshots((prev) => [{ date: new Date().toISOString().slice(0, 10), groups: normalized }, ...prev]);
+        // Atualiza a base no estado (primeira vez fica salva no backend; aqui só refletimos)
+        const start = startDateApplied || getYesterday();
+        const end = endDateApplied || getYesterday();
+        const params = new URLSearchParams({ instance_id: instanceId });
+        if (start && end) {
+          params.set("start", start);
+          params.set("end", end);
+        }
+        fetch(`/api/gpl/group-snapshots?${params.toString()}`, { cache: "no-store" })
+          .then((r) => r.json())
+          .then((data) => {
+            const baseRaw = data.base?.groups;
+            const baseNorm = Array.isArray(baseRaw)
+              ? (baseRaw as Array<{ id?: string; nome?: string; qtdMembros?: number }>).map((g) => ({
+                  id: String(g?.id ?? ""),
+                  nome: String(g?.nome ?? ""),
+                  qtdMembros: Number(g?.qtdMembros ?? 0),
+                }))
+              : [];
+            setBaseGroups(baseNorm.length > 0 ? baseNorm : null);
+            const cum = data.cumulative ?? [];
+            const cumMap: Record<string, { total_novos: number; total_saidas: number }> = {};
+            for (const c of cum) {
+              if (c?.group_id) cumMap[c.group_id] = { total_novos: Number(c.total_novos ?? 0), total_saidas: Number(c.total_saidas ?? 0) };
+            }
+            setGroupCumulative(cumMap);
+          })
+          .catch(() => {});
+      } else {
+        setGroupsLastFetchedAt(new Date().toISOString());
+        setGroupSnapshots([{ date: new Date().toISOString().slice(0, 10), groups: normalized }]);
+      }
     } catch (e) {
       setGroups([]);
       setGroupsError(e instanceof Error ? e.message : "Erro ao buscar grupos");
@@ -595,27 +748,54 @@ export default function GplCalculatorPage() {
     }
   };
 
+  // Ao selecionar instância ou mudar período: carregar do backend (não chama n8n)
   useEffect(() => {
     if (!selectedInstanceId || !selectedInstanceName) {
       setGroups([]);
+      setBaseGroups(null);
+      setGroupCumulative({});
       setGroupsError(null);
+      setGroupSnapshots([]);
+      setGroupsLastFetchedAt(null);
       return;
     }
-    const cached = groupsCache[selectedInstanceId];
-    if (cached !== undefined) {
-      setGroups(cached);
-      setGroupsError(null);
-      return;
-    }
-    fetchGroupsForInstance(selectedInstanceId, selectedInstanceName);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchGroupsForInstance está definido no componente
-  }, [selectedInstanceId, selectedInstanceName]);
+    const start = startDateApplied || getYesterday();
+    const end = endDateApplied || getYesterday();
+    loadGroupSnapshots(selectedInstanceId, start, end);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- loadGroupSnapshots e fetch dependem do período
+  }, [selectedInstanceId, selectedInstanceName, startDateApplied, endDateApplied]);
 
   const filteredGroups = useMemo(() => {
     if (!groupNameFilter.trim()) return groups;
     const q = normalizeStr(groupNameFilter);
     return groups.filter((g) => normalizeStr(g.nome).includes(q));
   }, [groups, groupNameFilter]);
+
+  // Delta de membros: prioridade 1 = BASE (primeira atualização salva), 2 = anterior na tela, 3 = dois snapshots
+  const groupMemberDelta = useMemo(() => {
+    const map = new Map<string, { anterior: number; delta: number }>();
+    let anteriorList: WhatsAppGroup[];
+    let atualList: WhatsAppGroup[];
+    if (baseGroups !== null) {
+      anteriorList = baseGroups;
+      atualList = groups;
+    } else if (previousGroupsForComparison !== null) {
+      anteriorList = previousGroupsForComparison;
+      atualList = groups;
+    } else if (groupSnapshots.length >= 2) {
+      anteriorList = groupSnapshots[groupSnapshots.length - 1].groups;
+      atualList = groupSnapshots[0].groups;
+    } else {
+      return map;
+    }
+    const porIdAnterior = new Map<string, number>();
+    for (const g of anteriorList) porIdAnterior.set(g.id, g.qtdMembros);
+    for (const g of atualList) {
+      const anterior = porIdAnterior.get(g.id) ?? g.qtdMembros;
+      map.set(g.id, { anterior, delta: g.qtdMembros - anterior });
+    }
+    return map;
+  }, [baseGroups, previousGroupsForComparison, groupSnapshots, groups]);
 
   const totalMembersSelected = useMemo(() => {
     return groups
@@ -635,6 +815,83 @@ export default function GplCalculatorPage() {
       return next;
     });
   };
+
+  const toggleTraficoCampaign = (campaignId: string) => {
+    setExpandedTraficoCampaigns((prev) => ({ ...prev, [campaignId]: !prev[campaignId] }));
+  };
+  const toggleTraficoAdSet = (adSetId: string) => {
+    setExpandedTraficoAdSets((prev) => ({ ...prev, [adSetId]: !prev[adSetId] }));
+  };
+  const toggleTraficoCampaignSelection = (campaignId: string) => {
+    setSelectedTraficoCampaignIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(campaignId)) next.delete(campaignId);
+      else next.add(campaignId);
+      return next;
+    });
+  };
+
+  const custoTráfegoGrupos = useMemo(() => {
+    return traficoGruposCampaigns
+      .filter((c) => selectedTraficoCampaignIds.has(c.id))
+      .reduce((acc, c) => acc + c.spend, 0);
+  }, [traficoGruposCampaigns, selectedTraficoCampaignIds]);
+
+  const pessoasNoGrupo = useMemo(() => {
+    const n = parseInt(String(groupSize).replace(/\D/g, ""), 10);
+    return Number.isFinite(n) && n > 0 ? n : totalMembersSelected;
+  }, [groupSize, totalMembersSelected]);
+
+  // Total de saídas (acumulado): soma dos total_saidas dos grupos selecionados — leads perdidos
+  const totalSaidas = useMemo(() => {
+    return groups
+      .filter((g) => selectedGroupIds.has(g.id))
+      .reduce((acc, g) => acc + (groupCumulative[g.id]?.total_saidas ?? 0), 0);
+  }, [groups, selectedGroupIds, groupCumulative]);
+
+  const custoPorPessoa = useMemo(() => {
+    if (custoTráfegoGrupos <= 0) return 0;
+    const totalPessoas = pessoasNoGrupo + totalSaidas;
+    if (totalPessoas <= 0) return 0;
+    return custoTráfegoGrupos / totalPessoas;
+  }, [custoTráfegoGrupos, pessoasNoGrupo, totalSaidas]);
+
+  // Prejuízo com saídas: quantas saíram × custo por pessoa (tráfego já gasto por lead que saiu)
+  const prejuizoSaidas = useMemo(() => {
+    if (totalSaidas <= 0 || custoPorPessoa <= 0) return 0;
+    return totalSaidas * custoPorPessoa;
+  }, [totalSaidas, custoPorPessoa]);
+
+  // Buscar campanhas com tag "Tráfego para Grupos" — só ao clicar em Atualizar; resultado salvo no cache (IDB)
+  const fetchTraficoGrupos = async () => {
+    const start = startDateApplied || getYesterday();
+    const end = endDateApplied || getYesterday();
+    setTraficoGruposLoading(true);
+    setTraficoGruposError(null);
+    try {
+      const res = await fetch(`/api/ati/trafico-grupos?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`, { cache: "no-store" });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error ?? "Erro ao carregar campanhas");
+      const campaigns = Array.isArray(json.campaigns) ? json.campaigns : [];
+      setTraficoGruposCampaigns(campaigns);
+      const periodKey = `${start}_${end}`;
+      setTraficoGruposCache((prev) => ({ ...prev, [periodKey]: { campaigns, fetchedAt: new Date().toISOString() } }));
+    } catch (e) {
+      setTraficoGruposError(e instanceof Error ? e.message : "Erro ao carregar campanhas");
+    } finally {
+      setTraficoGruposLoading(false);
+    }
+  };
+
+  // Preencher campanhas do cache quando o período ou o cache mudar
+  useEffect(() => {
+    if (isTraficoCacheLoading) return;
+    const start = startDateApplied || getYesterday();
+    const end = endDateApplied || getYesterday();
+    const periodKey = `${start}_${end}`;
+    const cached = traficoGruposCache[periodKey];
+    setTraficoGruposCampaigns(cached?.campaigns ?? []);
+  }, [startDateApplied, endDateApplied, traficoGruposCache, isTraficoCacheLoading]);
 
   const getPerformanceBadge = () => {
     if (gplMonthly >= 1.5) {
@@ -1017,6 +1274,30 @@ export default function GplCalculatorPage() {
                   className="w-full px-4 py-3 bg-dark-bg/50 border border-dark-border rounded-lg text-text-primary font-semibold cursor-not-allowed opacity-75"
                 />
               </div>
+
+              {/* Custo de Tráfego Para Grupos — aparece ao selecionar campanhas na seção abaixo */}
+              {selectedTraficoCampaignIds.size > 0 && (
+                <div>
+                  <label className="flex items-center gap-2 text-sm font-medium text-text-primary mb-2">
+                    <TrendingUp className="h-4 w-4 text-shopee-orange" />
+                    Custo de Tráfego Para Grupos
+                    <button type="button" className="group relative" aria-label="Informação">
+                      <Info className="h-4 w-4 text-text-secondary hover:text-text-primary transition-colors" />
+                      <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-64 p-3 bg-dark-tooltip rounded-lg shadow-lg border border-dark-border opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity z-10 text-xs text-left">
+                        <p className="text-text-primary">
+                          Soma do gasto (spend) das campanhas marcadas como &quot;Tráfego para Grupos&quot; selecionadas abaixo, no período.
+                        </p>
+                      </div>
+                    </button>
+                  </label>
+                  <input
+                    type="text"
+                    value={formatCurrency(custoTráfegoGrupos)}
+                    disabled
+                    className="w-full px-4 py-3 bg-dark-bg/50 border border-shopee-orange/30 rounded-lg text-shopee-orange font-semibold cursor-not-allowed opacity-90"
+                  />
+                </div>
+              )}
             </div>
           </div>
 
@@ -1076,15 +1357,73 @@ export default function GplCalculatorPage() {
           </div>
         </div>
 
-        {selectedInstanceId && (
-          <div className="mt-8 bg-dark-card p-5 rounded-lg border border-dark-border">
+        {/* Mini dashboard: Custo Tráfego vs Pessoas no grupo — entre o bloco da calculadora e o grid Grupos | Campanhas */}
+        {traficoGruposCampaigns.length > 0 && (selectedTraficoCampaignIds.size > 0 || pessoasNoGrupo > 0) && (
+          <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+            <div className="bg-dark-card p-4 rounded-lg border border-dark-border">
+              <p className="text-xs text-text-secondary mb-1">Custo Tráfego (Grupos)</p>
+              <p className="text-xl font-bold text-shopee-orange">{formatCurrency(custoTráfegoGrupos)}</p>
+              <p className="text-xs text-text-secondary mt-0.5">campanhas selecionadas</p>
+            </div>
+            <div className="bg-dark-card p-4 rounded-lg border border-dark-border">
+              <p className="text-xs text-text-secondary mb-1">Total de membros</p>
+              <p className="text-xl font-bold text-indigo-400">{pessoasNoGrupo.toLocaleString("pt-BR")}</p>
+              <p className="text-xs text-text-secondary mt-0.5">no grupo / campo acima</p>
+            </div>
+            <div className="bg-dark-card p-4 rounded-lg border border-dark-border">
+              <p className="text-xs text-text-secondary mb-1">Total de saídas</p>
+              <p className="text-xl font-bold text-red-400">{totalSaidas.toLocaleString("pt-BR")}</p>
+              <p className="text-xs text-text-secondary mt-0.5">sairam no período (comparação de snapshots)</p>
+            </div>
+            <div className="bg-dark-card p-4 rounded-lg border border-dark-border">
+              <p className="text-xs text-text-secondary mb-1">Custo por pessoa</p>
+              <p className="text-xl font-bold text-emerald-400">
+                {custoTráfegoGrupos > 0 && (pessoasNoGrupo + totalSaidas) > 0 ? formatCurrency(custoPorPessoa) : "—"}
+              </p>
+              <p className="text-xs text-text-secondary mt-0.5">tráfego ÷ (membros + saídas)</p>
+            </div>
+            <div className="bg-dark-card p-4 rounded-lg border border-red-500/30">
+              <p className="text-xs text-text-secondary mb-1">Prejuízo (saídas)</p>
+              <p className="text-xl font-bold text-red-400">
+                {totalSaidas > 0 && custoPorPessoa > 0 ? formatCurrency(prejuizoSaidas) : "—"}
+              </p>
+              <p className="text-xs text-text-secondary mt-0.5">
+                {totalSaidas > 0 && custoPorPessoa > 0
+                  ? `${totalSaidas} saídas × ${formatCurrency(custoPorPessoa)}`
+                  : "saídas × custo/pessoa"}
+              </p>
+            </div>
+            <div className="bg-dark-card p-4 rounded-lg border border-dark-border flex flex-col justify-center">
+              <p className="text-xs text-text-secondary mb-1">Análise</p>
+              <p className="text-sm font-medium text-text-primary">
+                {custoTráfegoGrupos > 0 && (pessoasNoGrupo + totalSaidas) > 0
+                  ? `R$ ${custoPorPessoa.toFixed(2)} de tráfego por lead no grupo.${totalSaidas > 0 ? ` ${totalSaidas} saíram = prejuízo de ${formatCurrency(prejuizoSaidas)}.` : ""}`
+                  : "Selecione campanhas e preencha pessoas para ver o custo por lead."}
+              </p>
+            </div>
+          </div>
+        )}
+
+        <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {selectedInstanceId ? (
+          <div className="bg-dark-card p-5 rounded-lg border border-dark-border">
             <h3 className="text-sm font-semibold text-text-primary mb-3 flex items-center gap-2">
               <Users className="h-4 w-4 text-emerald-500/80" />
               Grupos desta instância
             </h3>
-            <p className="text-xs text-text-secondary mb-3">
-              Selecione um ou mais grupos para preencher automaticamente &quot;Pessoas no grupo&quot; com a soma dos membros.
+            <p className="text-xs text-text-secondary mb-1">
+              Selecione um ou mais grupos para preencher automaticamente &quot;Pessoas no grupo&quot; com a soma dos membros. Dados vêm do último snapshot salvo; clique em Atualizar para buscar da API.
             </p>
+            {groupsLastFetchedAt && (
+              <p className="text-xs text-emerald-400/90 mb-2">
+                Última atualização: {new Date(groupsLastFetchedAt).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+              </p>
+            )}
+            {(startDateApplied && endDateApplied) && groupSnapshots.length >= 2 && (
+              <p className="text-xs text-text-secondary mb-2">
+                Comparação no período: {formatDateBR(groupSnapshots[groupSnapshots.length - 1]?.date ?? "")} → {formatDateBR(groupSnapshots[0]?.date ?? "")}
+              </p>
+            )}
             <div className="flex flex-col sm:flex-row gap-3 mb-3">
               <div className="relative flex-1">
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-text-secondary" />
@@ -1126,17 +1465,26 @@ export default function GplCalculatorPage() {
               </div>
             ) : filteredGroups.length === 0 ? (
               <p className="text-sm text-text-secondary py-4">
-                Nenhum grupo encontrado.
+                {groups.length === 0 ? "Nenhum dado salvo. Clique em Atualizar para buscar grupos da API." : "Nenhum grupo encontrado no filtro."}
               </p>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-                {filteredGroups.map((g) => (
+                {filteredGroups.map((g) => {
+                  const cum = groupCumulative[g.id];
+                  const delta = groupMemberDelta.get(g.id);
+                  const novosValor = cum ? cum.total_novos : (delta !== undefined && delta.delta > 0 ? delta.delta : 0);
+                  const sairamValor = cum ? cum.total_saidas : (delta !== undefined && delta.delta < 0 ? Math.abs(delta.delta) : 0);
+                  const temComparacao = cum !== undefined || delta !== undefined;
+                  const evasao = sairamValor > 0;
+                  return (
                   <label
                     key={g.id}
                     className={`flex flex-col p-4 rounded-lg border cursor-pointer transition-colors ${
-                      selectedGroupIds.has(g.id)
-                        ? "bg-shopee-orange/10 border-shopee-orange/50"
-                        : "bg-dark-bg/50 border-dark-border hover:bg-dark-bg"
+                      evasao
+                        ? "bg-red-500/10 border-red-500/50 hover:bg-red-500/15"
+                        : selectedGroupIds.has(g.id)
+                          ? "bg-shopee-orange/10 border-shopee-orange/50"
+                          : "bg-dark-bg/50 border-dark-border hover:bg-dark-bg"
                     }`}
                   >
                     <div className="flex items-start gap-2 mb-2">
@@ -1153,12 +1501,153 @@ export default function GplCalculatorPage() {
                     <p className="text-xs text-text-secondary pl-6">
                       {g.qtdMembros.toLocaleString("pt-BR")} membros
                     </p>
+                    <p className={`text-xs pl-6 mt-1 flex items-center gap-1.5 font-medium ${novosValor > 0 ? "text-emerald-400" : "text-text-secondary"}`}>
+                      <TrendingUp className="h-3.5 w-3.5 flex-shrink-0" />
+                      {temComparacao ? `Novos: ${novosValor > 0 ? `+${novosValor}` : "0"}` : "Novos: —"}
+                    </p>
+                    <p className={`text-xs pl-6 mt-0.5 flex items-center gap-1.5 font-medium ${sairamValor > 0 ? "text-red-400" : "text-text-secondary"}`}>
+                      <TrendingDown className="h-3.5 w-3.5 flex-shrink-0" />
+                      {temComparacao ? `Saíram: ${sairamValor}` : "Saíram: —"}
+                    </p>
+                    {evasao && (
+                      <p className="text-xs pl-6 mt-2 flex items-start gap-1.5 text-red-400 bg-red-500/10 rounded px-2 py-1.5 border border-red-500/30">
+                        <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" />
+                        <span>Cuidado, está tendo muita evasão deste grupo.</span>
+                      </p>
+                    )}
                   </label>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
-        )}
+          ) : (
+            <div className="bg-dark-card p-5 rounded-lg border border-dark-border flex flex-col justify-center">
+              <h3 className="text-sm font-semibold text-text-primary mb-2 flex items-center gap-2">
+                <Users className="h-4 w-4 text-emerald-500/80" />
+                Grupos desta instância
+              </h3>
+              <p className="text-sm text-text-secondary">
+                Selecione uma instância acima para listar os grupos do WhatsApp.
+              </p>
+            </div>
+          )}
+          <div className="bg-dark-card p-5 rounded-lg border border-dark-border">
+            <h3 className="text-sm font-semibold text-text-primary mb-3 flex items-center gap-2">
+              <TrendingUp className="h-4 w-4 text-shopee-orange/80" />
+              Campanhas de Tráfego para Grupos
+            </h3>
+            <p className="text-xs text-text-secondary mb-1">
+              Selecione as campanhas para somar o custo de tráfego (acima). Marque a tag no ATI para aparecer aqui.
+            </p>
+            {(startDateApplied && endDateApplied) && (
+              <p className="text-xs text-shopee-orange/90 mb-2 font-medium">
+                Período: {formatDateBR(startDateApplied)} a {formatDateBR(endDateApplied)}. Só busca na API ao clicar em Atualizar.
+              </p>
+            )}
+            <div className="flex flex-wrap items-center gap-2 mb-3">
+              <button
+                type="button"
+                onClick={fetchTraficoGrupos}
+                disabled={traficoGruposLoading || !startDateApplied || !endDateApplied}
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-shopee-orange text-white text-xs font-semibold hover:bg-shopee-orange/90 disabled:opacity-50"
+              >
+                {traficoGruposLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                Atualizar campanhas
+              </button>
+            </div>
+            {traficoGruposError && (
+              <p className="text-sm text-red-400 mb-3">{traficoGruposError}</p>
+            )}
+            {traficoGruposLoading ? (
+              <div className="flex items-center gap-2 py-6 text-text-secondary">
+                <Loader2 className="h-5 w-5 animate-spin" />
+                Carregando campanhas...
+              </div>
+            ) : traficoGruposCampaigns.length === 0 ? (
+              <p className="text-sm text-text-secondary py-4">
+                Nenhum dado no cache para este período. Clique em &quot;Atualizar campanhas&quot; para buscar da API. Se já marcou campanhas com a tag no ATI, elas aparecerão aqui.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {traficoGruposCampaigns.map((camp) => {
+                  const isOpen = expandedTraficoCampaigns[camp.id];
+                  const isSelected = selectedTraficoCampaignIds.has(camp.id);
+                  return (
+                    <div key={camp.id} className="rounded-lg border border-dark-border bg-dark-bg/30 overflow-hidden">
+                      <div className="flex items-center gap-2 p-3">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleTraficoCampaignSelection(camp.id)}
+                          className="rounded border-dark-border text-shopee-orange focus:ring-shopee-orange"
+                          title="Incluir custo desta campanha no Custo de Tráfego Para Grupos"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => toggleTraficoCampaign(camp.id)}
+                          className="flex items-center gap-2 flex-1 min-w-0 text-left hover:opacity-90"
+                        >
+                          {isOpen ? (
+                            <ChevronUp className="h-4 w-4 flex-shrink-0 text-text-secondary" />
+                          ) : (
+                            <ChevronDown className="h-4 w-4 flex-shrink-0 text-text-secondary" />
+                          )}
+                          <span className="text-sm font-semibold text-text-primary truncate" title={camp.name}>{camp.name}</span>
+                          <span className={`text-xs font-medium flex-shrink-0 ${camp.status === "ACTIVE" ? "text-emerald-400" : "text-text-secondary"}`}>
+                            {camp.status === "ACTIVE" ? "Ativo" : "Pausado"}
+                          </span>
+                          <span className="text-xs text-shopee-orange font-medium flex-shrink-0">{formatCurrency(camp.spend)}</span>
+                        </button>
+                        <Link href="/dashboard/ati" className="text-xs text-shopee-orange hover:underline flex-shrink-0">Ver no ATI</Link>
+                      </div>
+                      {isOpen && (
+                        <div className="border-t border-dark-border bg-dark-bg/50">
+                          {camp.adSets.map((aset) => {
+                            const adSetOpen = expandedTraficoAdSets[aset.id];
+                            return (
+                              <div key={aset.id} className="border-b border-dark-border/50 last:border-b-0">
+                                <button
+                                  type="button"
+                                  onClick={() => toggleTraficoAdSet(aset.id)}
+                                  className="w-full flex items-center gap-2 px-4 py-2 text-left hover:bg-dark-bg/50 border-l-2 border-shopee-orange/50"
+                                >
+                                  {adSetOpen ? (
+                                    <ChevronUp className="h-3.5 w-3.5 text-text-secondary" />
+                                  ) : (
+                                    <ChevronDown className="h-3.5 w-3.5 text-text-secondary" />
+                                  )}
+                                  <span className="text-sm font-medium text-text-primary truncate">{aset.name}</span>
+                                  <span className={`text-xs ${aset.status === "ACTIVE" ? "text-emerald-400" : "text-text-secondary"}`}>{aset.status === "ACTIVE" ? "Ativo" : "Pausado"}</span>
+                                  <span className="text-xs text-shopee-orange">{formatCurrency(aset.spend)}</span>
+                                </button>
+                                {adSetOpen && (
+                                  <div className="pl-6 pr-4 py-2 space-y-2 bg-dark-bg/30">
+                                    {aset.ads.map((ad) => (
+                                      <div key={ad.id} className="flex flex-wrap items-center justify-between gap-2 p-2 rounded border border-dark-border/50 bg-dark-card/50">
+                                        <span className="text-sm text-text-primary font-medium truncate flex-1 min-w-0" title={ad.name}>{ad.name}</span>
+                                        <div className="flex items-center gap-3 text-xs text-text-secondary flex-shrink-0">
+                                          <span title="Gasto">{formatCurrency(ad.spend)}</span>
+                                          <span className="flex items-center gap-0.5" title="Cliques"><MousePointerClick className="h-3 w-3" /> {ad.clicks}</span>
+                                          <span title="CPC">{formatCurrency(ad.cpc)}</span>
+                                          <span className={ad.status === "ACTIVE" ? "text-emerald-400" : "text-text-secondary"}>{ad.status === "ACTIVE" ? "Ativo" : "Pausado"}</span>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
         </>
       )}
     </div>

@@ -283,21 +283,26 @@ export default function CommissionsPage() {
           return;
         }
 
-        // Sem dados salvos => comportamento atual (buscar ontem)
-        const yesterday = getYesterday();
+        // Sem dados salvos => busca período recente (últimos 7 dias) para maior chance de ter vendas
+        const end = getYesterday();
+        const start = (() => {
+          const d = new Date(end + "T12:00:00");
+          d.setDate(d.getDate() - 6);
+          return localYMD(d);
+        })();
 
         setSource("api");
-        setDateFromDraft(yesterday);
-        setDateToDraft(yesterday);
-        setDateFromApplied(yesterday);
-        setDateToApplied(yesterday);
+        setDateFromDraft(start);
+        setDateToDraft(end);
+        setDateFromApplied(start);
+        setDateToApplied(end);
 
         setFileName(null);
         setAdInvestment("");
         setActiveTab(0);
         setDrilledDownWeek(null);
 
-        await fetchShopee(yesterday, yesterday);
+        await fetchShopee(start, end);
       } catch {
         // silencioso
       }
@@ -889,13 +894,17 @@ export default function CommissionsPage() {
       ) : hasShopeeKeys ? (
         <div className="mt-8 bg-dark-card p-6 rounded-lg border border-dark-border">
           <h2 className="text-lg font-semibold text-text-primary font-heading">
-            Não foi possível carregar seus dados da Shopee
+            {shopeeError
+              ? "Não foi possível carregar seus dados da Shopee"
+              : "Nenhum dado no período selecionado"}
           </h2>
           <p className="mt-2 text-sm text-text-secondary">
-            Verifique suas chaves em Configurações ou tente atualizar o período.
+            {shopeeError
+              ? "Verifique suas chaves em Configurações ou tente atualizar o período. Se o erro persistir, confira se o App ID e a API Key estão corretos na Shopee."
+              : "A API está conectada, mas não há vendas/comissões no intervalo escolhido. Tente um período maior (ex.: últimos 7 ou 30 dias) ou clique em Atualizar para buscar de novo."}
           </p>
 
-          {shopeeError && <p className="mt-3 text-sm text-red-400">{shopeeError}</p>}
+          {shopeeError && <p className="mt-3 text-sm text-red-400 font-medium">{shopeeError}</p>}
 
           <div className="mt-4 flex flex-wrap gap-3">
             <button
