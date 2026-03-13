@@ -19,6 +19,7 @@ import {
   Copy,
   MessageCircle,
   Download,
+  TrendingUp,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -96,6 +97,10 @@ export default function GeradorLinksShopeePage() {
   const [products, setProducts] = useState<ProductOffer[]>([]);
   const [selectedProduct, setSelectedProduct] = useState<ProductOffer | null>(null);
   const [goldenProducts, setGoldenProducts] = useState<ProductOffer[]>([]);
+  const [bestSellers, setBestSellers] = useState<ProductOffer[]>([]);
+  const [loadingBestSellers, setLoadingBestSellers] = useState(false);
+  const [bestSellerKeyword, setBestSellerKeyword] = useState("");
+  const [lastBestSellerKeyword, setLastBestSellerKeyword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [historySearch, setHistorySearch] = useState("");
@@ -256,6 +261,11 @@ export default function GeradorLinksShopeePage() {
     }
   }, []);
 
+  const handleSelectProductFromList = useCallback((product: ProductOffer) => {
+    setBestSellers([]);
+    handleSelectProduct(product);
+  }, [handleSelectProduct]);
+
   const handleConvertLink = useCallback(async () => {
     const originUrl = selectedProduct?.productLink || selectedProduct?.offerLink || inputValue.trim();
     if (!originUrl) {
@@ -312,6 +322,32 @@ export default function GeradorLinksShopeePage() {
     }
     handleSearch();
   }, [handleSearch]);
+
+  const loadBestSellers = useCallback(async () => {
+    const keyword = bestSellerKeyword.trim();
+    if (!keyword || !hasApiKeys) return;
+    setError(null);
+    setLoadingBestSellers(true);
+    setBestSellers([]);
+    try {
+      const params = new URLSearchParams({
+        keyword,
+        sortType: "2",
+        limit: "20",
+        listType: "2",
+      });
+      const res = await fetch(`/api/shopee/product-search?${params.toString()}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error ?? "Erro ao buscar mais vendidos");
+      const list = (data?.products ?? []) as ProductOffer[];
+      setBestSellers(list);
+      setLastBestSellerKeyword(keyword);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erro ao listar mais vendidos");
+    } finally {
+      setLoadingBestSellers(false);
+    }
+  }, [hasApiKeys, bestSellerKeyword]);
 
   const handleGenerateStoryImage = useCallback(async () => {
     if (!selectedProduct?.imageUrl) return;
@@ -635,6 +671,36 @@ export default function GeradorLinksShopeePage() {
                 Converter Link
               </button>
             </div>
+            <div className="mt-4 pt-4 border-t border-dark-border">
+              <label htmlFor="best-seller-keyword" className="block text-xs text-text-secondary mb-2">
+                Palavra-chave para listar os mais vendidos
+              </label>
+              <div className="flex flex-wrap items-center gap-2 mb-3">
+                <input
+                  id="best-seller-keyword"
+                  type="text"
+                  value={bestSellerKeyword}
+                  onChange={(e) => setBestSellerKeyword(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      loadBestSellers();
+                    }
+                  }}
+                  placeholder="Ex: Camisas, eletrônicos, moda..."
+                  className="flex-1 min-w-[180px] px-3 py-2 rounded-lg border border-dark-border bg-dark-bg text-text-primary text-sm placeholder-text-secondary/60 focus:outline-none focus:border-shopee-orange"
+                />
+                <button
+                  type="button"
+                  onClick={loadBestSellers}
+                  disabled={loadingBestSellers || !bestSellerKeyword.trim() || !hasApiKeys}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-dark-bg border border-dark-border text-text-primary font-medium hover:border-emerald-500 hover:text-emerald-400 disabled:opacity-50 transition-colors"
+                >
+                  {loadingBestSellers ? <Loader2 className="h-4 w-4 animate-spin" /> : <TrendingUp className="h-4 w-4" />}
+                  Listar os Mais Vendidos
+                </button>
+              </div>
+            </div>
             {error && (
               <p className="mt-3 text-sm text-red-400 flex items-center gap-1">
                 <AlertCircle className="h-4 w-4 flex-shrink-0" />
@@ -646,7 +712,42 @@ export default function GeradorLinksShopeePage() {
           {/* Visualização da Oferta */}
           <div className="bg-dark-card rounded-xl border border-dark-border p-5 overflow-hidden flex flex-col">
             <h2 className="text-lg font-semibold text-text-primary mb-4 flex-shrink-0">Visualização da Oferta</h2>
-            {selectedProduct ? (
+            {bestSellers.length > 0 ? (
+              <div className="min-h-0 flex flex-col">
+                <h3 className="text-sm font-semibold text-text-primary mb-2 flex items-center gap-1 flex-shrink-0">
+                  <TrendingUp className="h-4 w-4 text-emerald-400" />
+                  Os 20 mais vendidos para &quot;{lastBestSellerKeyword}&quot;
+                </h3>
+                <p className="text-xs text-text-secondary mb-3">Clique em um produto para selecionar e converter o link.</p>
+                <ul className="space-y-2 max-h-[420px] overflow-y-auto overflow-x-hidden scrollbar-shopee rounded-lg border border-dark-border bg-dark-bg/30 pr-1">
+                  {bestSellers.map((p) => (
+                    <li key={p.itemId}>
+                      <button
+                        type="button"
+                        onClick={() => handleSelectProductFromList(p)}
+                        className="w-full flex items-center gap-3 p-2 rounded-lg border border-dark-border hover:border-shopee-orange/50 bg-dark-bg text-left transition-colors"
+                      >
+                        {p.imageUrl ? (
+                          <img src={p.imageUrl} alt="" className="w-12 h-12 object-contain rounded bg-white/5 flex-shrink-0" />
+                        ) : (
+                          <div className="w-12 h-12 rounded bg-dark-card flex-shrink-0" />
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm text-text-primary truncate">{p.productName}</p>
+                          <p className="text-xs text-text-secondary">
+                            {formatCurrency(p.priceMin)} · {((p.commissionRate ?? 0) * 100).toFixed(1)}% comissão · <strong>{p.sales} vendidos</strong>
+                          </p>
+                        </div>
+                        <span className="text-xs font-semibold text-emerald-400 flex-shrink-0">
+                          R$ {p.commission.toFixed(2)}
+                        </span>
+                        <ExternalLink className="h-4 w-4 text-shopee-orange flex-shrink-0" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : selectedProduct ? (
               <div className="space-y-4">
                 <div className="flex gap-4 p-3 rounded-lg border border-dark-border bg-dark-bg">
                   {selectedProduct.imageUrl ? (
@@ -711,7 +812,7 @@ export default function GeradorLinksShopeePage() {
                 <Hand className="h-14 w-14 text-shopee-orange/70 mb-3" />
                 <p className="font-semibold text-text-primary">Toca aqui!</p>
                 <p className="text-sm text-text-secondary mt-1 max-w-xs">
-                  Digite o nome do produto ou cole o link da Shopee ao lado e clique em Buscar. Depois selecione um produto e use &quot;Converter Link&quot;.
+                  Digite uma palavra-chave (ex: Camisas, eletrônicos) no campo acima e clique em <strong>Listar os Mais Vendidos</strong> para ver os 20 produtos com mais vendas nessa busca. Ou use o campo principal e <strong>Buscar</strong> para buscar por link/nome. Depois selecione um produto e use &quot;Converter Link&quot;.
                 </p>
               </div>
             )}

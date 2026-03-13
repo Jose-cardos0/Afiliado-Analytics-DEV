@@ -30,8 +30,8 @@ export async function POST(req: Request) {
 
     const prompt =
       productName.trim().length > 0
-        ? `Transform this product image into an attractive vertical Instagram story format (promotional style). Product: "${productName}". Keep the product visible and appealing, suitable for social media advertising. Professional, clean layout.`
-        : `Transform this product image into an attractive vertical Instagram story format (9:16), promotional style. Keep the product visible and appealing for social media.`;
+        ? `Transform this product image into an attractive vertical Instagram story format (promotional style). Product: "${productName}". Keep the product visible and appealing, suitable for social media advertising. Professional, clean layout. NEVER add prices or monetary values to the image: no R$, no $, no numbers that look like prices (e.g. 89,00 or 89.00). No price tags, no "R$", no "reais", no currency symbols or amounts.`
+        : `Transform this product image into an attractive vertical Instagram story format (9:16), promotional style. Keep the product visible and appealing for social media. NEVER add prices or monetary values: no R$, $, price numbers, price tags, currency symbols or amounts.`;
 
     const res = await fetch(XAI_IMAGES_EDIT, {
       method: "POST",

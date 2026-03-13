@@ -37,19 +37,27 @@ export async function GET(req: Request) {
     }
 
     const url = new URL(req.url);
-    const keyword = url.searchParams.get("keyword")?.trim() || "";
+    let keyword = url.searchParams.get("keyword")?.trim() || "";
     const itemIdParam = url.searchParams.get("itemId");
     const itemId = itemIdParam ? parseInt(itemIdParam, 10) : undefined;
     const page = Math.max(1, parseInt(url.searchParams.get("page") || "1", 10));
     const limit = Math.min(50, Math.max(1, parseInt(url.searchParams.get("limit") || "20", 10)));
+    const sortTypeParam = url.searchParams.get("sortType");
+    const sortType = sortTypeParam ? Math.max(1, Math.min(5, parseInt(sortTypeParam, 10))) : 5;
+    const listTypeParam = url.searchParams.get("listType");
+    const listType = listTypeParam != null ? Math.max(0, Math.min(2, parseInt(listTypeParam, 10))) : 1;
+    const categoryIdParam = url.searchParams.get("categoryId")?.trim();
+    const categoryId = categoryIdParam ? parseInt(categoryIdParam, 10) : undefined;
+    if (!keyword && Number.isFinite(categoryId)) keyword = "produtos";
 
-    if (!keyword && !Number.isFinite(itemId)) {
-      return NextResponse.json({ error: "Informe keyword ou itemId" }, { status: 400 });
+    if (!keyword && !Number.isFinite(itemId) && !Number.isFinite(categoryId)) {
+      return NextResponse.json({ error: "Informe keyword, itemId ou categoryId" }, { status: 400 });
     }
 
     const itemIdArg = Number.isFinite(itemId) ? `itemId: ${itemId}` : "";
     const keywordArg = keyword ? `keyword: "${keyword.replace(/"/g, '\\"')}"` : "";
-    const args = [keywordArg, itemIdArg, `listType: 1`, `sortType: 5`, `page: ${page}`, `limit: ${limit}`].filter(Boolean).join(", ");
+    const categoryArg = Number.isFinite(categoryId) ? `categoryId: ${categoryId}` : "";
+    const args = [keywordArg, itemIdArg, categoryArg, `listType: ${listType}`, `sortType: ${sortType}`, `page: ${page}`, `limit: ${limit}`].filter(Boolean).join(", ");
 
     const query = `
       query {
