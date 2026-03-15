@@ -570,10 +570,10 @@ export default function VideoEditorPage() {
         </div>
       </div>
 
-      {/* Main content: Media panel | Preview */}
+      {/* Main content: 40% ferramentas | 60% preview */}
       <div className="flex flex-1 min-h-0 overflow-hidden">
-        {/* Left panel: media library + tools */}
-        <div className="w-80 flex-shrink-0 bg-dark-card border-r border-dark-border flex flex-col overflow-hidden">
+        {/* Left panel: mídia, IA, Voz IA, Legendas */}
+        <div className="w-[40%] min-w-0 flex-shrink-0 bg-dark-card border-r border-dark-border flex flex-col overflow-hidden">
           {/* Panel tabs */}
           <div className="flex border-b border-dark-border">
             {[
@@ -632,20 +632,20 @@ export default function VideoEditorPage() {
                         <span className="bg-blue-600/30 text-blue-300 px-1.5 py-0.5 rounded">{shopeeMedia.filter((m) => m.type === "video").length} vídeos</span>
                         <span className="bg-purple-600/30 text-purple-300 px-1.5 py-0.5 rounded">{shopeeMedia.filter((m) => m.type === "image").length} imagens</span>
                       </div>
-                      <div className="grid grid-cols-3 gap-1.5 max-h-48 overflow-y-auto pr-1">
+                      <div className="grid grid-cols-6 gap-1.5 max-h-36 overflow-y-auto pr-1">
                         {shopeeMedia.map((m, i) => (
                           <button
                             key={i}
                             onClick={() => handleImportShopeeMedia(m.url, m.type)}
                             disabled={importingMedia === m.url}
-                            className={`relative group rounded-lg border overflow-hidden hover:border-shopee-orange transition-colors aspect-square bg-dark-bg ${
+                            className={`relative group rounded border overflow-hidden hover:border-shopee-orange transition-colors aspect-square bg-dark-bg ${
                               m.type === "video" ? "border-blue-500/50" : "border-dark-border"
                             }`}
                           >
                             {m.type === "video" ? (
                               <div className="w-full h-full flex flex-col items-center justify-center bg-blue-900/30">
-                                <Play className="h-6 w-6 text-blue-300 mb-1" />
-                                <span className="text-[9px] text-blue-300">MP4</span>
+                                <Play className="h-4 w-4 text-blue-300 mb-0.5" />
+                                <span className="text-[8px] text-blue-300">MP4</span>
                               </div>
                             ) : (
                               <img
@@ -664,7 +664,7 @@ export default function VideoEditorPage() {
                                 <Download className="h-4 w-4 text-white" />
                               </div>
                             )}
-                            <span className="absolute bottom-0 left-0 right-0 text-[8px] text-white bg-black/70 px-1 py-0.5 truncate">
+                            <span className="absolute bottom-0 left-0 right-0 text-[7px] text-white bg-black/70 px-0.5 py-0.5 truncate leading-tight">
                               {m.label}
                             </span>
                           </button>
@@ -906,8 +906,8 @@ export default function VideoEditorPage() {
           </div>
         </div>
 
-        {/* Preview panel */}
-        <div className="flex-1 bg-dark-bg flex flex-col items-center justify-center p-4 min-w-0">
+        {/* Preview panel — 60% */}
+        <div className="w-[60%] min-w-0 flex-shrink-0 bg-dark-bg flex flex-col items-center justify-center p-4 overflow-hidden">
           {/* Aspect ratio selector */}
           <div className="flex items-center gap-2 mb-2">
             <span className="text-[10px] text-text-secondary">Proporção:</span>
