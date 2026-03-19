@@ -100,7 +100,7 @@ export async function POST(req: Request) {
       if (delta < 0) saidasDelta.set(g.id, (saidasDelta.get(g.id) ?? 0) + -delta);
     }
     for (const g of previousGroups) {
-      if (!payload.some((p) => p.id === g.id)) {
+      if (!payload.some((p: { id: string }) => p.id === g.id)) {
         saidasDelta.set(g.id, (saidasDelta.get(g.id) ?? 0) + g.qtdMembros);
       }
     }
