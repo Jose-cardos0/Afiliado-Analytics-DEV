@@ -117,7 +117,7 @@ export async function POST(req: Request) {
       (existingCumulative ?? []).map((r) => [r.group_id, { novos: r.total_novos ?? 0, saidas: r.total_saidas ?? 0 }])
     );
     const now = new Date().toISOString();
-    const allGroupIds = new Set([...payload.map((g) => g.id), ...novosDelta.keys(), ...saidasDelta.keys()]);
+    const allGroupIds = new Set([...payload.map((g: GroupRow) => g.id), ...novosDelta.keys(), ...saidasDelta.keys()]);
     for (const g of payload) {
       if (!allGroupIds.has(g.id)) allGroupIds.add(g.id);
     }
