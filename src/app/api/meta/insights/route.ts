@@ -320,6 +320,26 @@ function toInsightFromAd(ad: AdFromApi, adAccountId: string): MetaAdInsight {
   };
 }
 
+const EMPTY_ADS = { ads: [] as AdFromApi[], adStatusMap: {} as Record<string, string> };
+const EMPTY_CAMPAIGNS = {
+  campaignStatusMap: new Map<string, string>(),
+  campaignsList: [] as Array<{ id: string; name: string; ad_account_id: string }>,
+};
+const EMPTY_ADSETS = {
+  adSetList: [] as Array<{ id: string; name: string; campaign_id: string; ad_account_id: string }>,
+  adSetStatusMap: {} as Record<string, string>,
+};
+
+/** Duas tentativas com pausa (rate limit / falha transitória da Meta). */
+async function withMetaRetry<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch {
+    await new Promise((r) => setTimeout(r, 1500));
+    return await fn();
+  }
+}
+
 /** Mapeamento: id do anúncio que está rodando (cópia) -> id exibido no ATI (original). Mescla linhas por display_ad_id. */
 function applyMappingAndMerge(rows: MetaAdInsight[], mapping: Map<string, string>): MetaAdInsight[] {
   const byDisplayId = new Map<string, MetaAdInsight>();
@@ -389,43 +409,66 @@ export async function GET(req: Request) {
     const adStatusMap: Record<string, string> = {};
     for (const account of accounts) {
       const accountId = account.id;
+      // Cada chamada isolada: uma falha (ex.: /ads) não zera campanha/conjuntos/insights.
+      let adsResult = EMPTY_ADS;
       try {
-        const [adsResult, campaignsResult, adSetsResult] = await Promise.all([
-          getAllAds(token, accountId),
-          getCampaigns(token, accountId),
-          getAllAdSets(token, accountId),
-        ]);
-        let insights: MetaAdInsight[] = [];
-        if (atiMode) {
+        adsResult = await withMetaRetry(() => getAllAds(token, accountId));
+      } catch {
+        adsResult = EMPTY_ADS;
+      }
+      let campaignsResult = EMPTY_CAMPAIGNS;
+      try {
+        campaignsResult = await withMetaRetry(() => getCampaigns(token, accountId));
+      } catch {
+        campaignsResult = { ...EMPTY_CAMPAIGNS, campaignStatusMap: new Map() };
+      }
+      let adSetsResult = EMPTY_ADSETS;
+      try {
+        adSetsResult = await withMetaRetry(() => getAllAdSets(token, accountId));
+      } catch {
+        adSetsResult = EMPTY_ADSETS;
+      }
+
+      let insights: MetaAdInsight[] = [];
+      if (atiMode) {
+        try {
+          insights = await withMetaRetry(() => getInsightsByPreset(token, accountId, "lifetime"));
+        } catch {
           insights = await getInsightsAtiMode(token, accountId);
-        } else {
-          try {
-            insights = await getInsights(token, accountId, start!, end!);
-          } catch {
-            insights = [];
-          }
         }
-        const ads = adsResult.ads;
-        for (const [id, status] of Object.entries(adsResult.adStatusMap)) {
-          adStatusMap[id] = status;
+      } else {
+        try {
+          insights = await getInsights(token, accountId, start!, end!);
+        } catch {
+          insights = [];
         }
-        campaignsResult.campaignStatusMap.forEach((status, id) => {
-          campaignStatusMap[id] = status;
-        });
-        campaignsList.push(...campaignsResult.campaignsList);
-        adSetList.push(...adSetsResult.adSetList);
-        for (const [id, status] of Object.entries(adSetsResult.adSetStatusMap)) {
-          adSetStatusMap[id] = status;
-        }
-        for (const i of insights) i.ad_account_id = accountId;
-        const insightByAdId = new Map<string, MetaAdInsight>();
-        for (const i of insights) insightByAdId.set(i.ad_id, i);
+      }
+
+      const ads = adsResult.ads;
+      for (const [id, status] of Object.entries(adsResult.adStatusMap)) {
+        adStatusMap[id] = status;
+      }
+      campaignsResult.campaignStatusMap.forEach((status, id) => {
+        campaignStatusMap[id] = status;
+      });
+      campaignsList.push(...campaignsResult.campaignsList);
+      adSetList.push(...adSetsResult.adSetList);
+      for (const [id, status] of Object.entries(adSetsResult.adSetStatusMap)) {
+        adSetStatusMap[id] = status;
+      }
+      for (const i of insights) i.ad_account_id = accountId;
+      const insightByAdId = new Map<string, MetaAdInsight>();
+      for (const i of insights) insightByAdId.set(i.ad_id, i);
+
+      const seenFromAds = new Set<string>();
+      if (ads.length > 0) {
         const sortedAds = [...ads].sort((a, b) => {
           const ta = a.created_time ? new Date(a.created_time).getTime() : 0;
           const tb = b.created_time ? new Date(b.created_time).getTime() : 0;
           return tb - ta;
         });
         for (const ad of sortedAds) {
+          seenFromAds.add(ad.id);
           const existing = insightByAdId.get(ad.id);
           if (existing) {
             existing.ad_account_id = accountId;
@@ -434,8 +477,12 @@ export async function GET(req: Request) {
             allInsights.push(toInsightFromAd(ad, accountId));
           }
         }
-      } catch (err) {
-        continue;
+      }
+      // Fallback: se /ads falhou ou veio vazio, ainda exibe linhas pelos insights (mesmos ad_id → Sub ID intacto).
+      for (const i of insights) {
+        if (!seenFromAds.has(i.ad_id)) {
+          allInsights.push({ ...i, ad_account_id: accountId });
+        }
       }
     }
 

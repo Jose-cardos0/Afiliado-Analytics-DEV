@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useMemo, type ComponentType } from "react";
+import React, { useState, useEffect, useMemo, useRef, useCallback, type ComponentType } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import {
   CalendarDays,
@@ -28,13 +29,13 @@ import {
   BadgePercent,
   ChevronLeft,
   ChevronRight,
+  Loader2,
 } from "lucide-react";
 
 const ATI_CAMPAIGNS_PER_PAGE = 6;
 import type { ATICreativeRow } from "@/lib/ati/types";
 import type { MetricLevel } from "@/lib/ati/types";
-import { META_CAMPAIGN_OBJECTIVES } from "@/lib/meta-ads-constants";
-import LoadingOverlay from "@/app/components/ui/LoadingOverlay";
+import { META_CREATE_CAMPAIGN_OBJECTIVES, META_CAMPAIGN_OBJECTIVES } from "@/lib/meta-ads-constants";
 import MetaAdSetForm from "@/app/components/meta/MetaAdSetForm";
 import MetaAdForm from "@/app/components/meta/MetaAdForm";
 
@@ -66,6 +67,38 @@ const ATI_HINT = {
     "Chamamos de Cliques Shopee: são os cliques no seu anúncio que abrem o link da Shopee. O número vem do Meta (lifetime), pois é quem conta o clique no anúncio — na prática é o tráfego que foi para a Shopee.",
 } as const;
 
+// ─── Portal Tooltip ───────────────────────────────────────────────────────────
+function Tooltip({ text }: { text: string }) {
+  const [visible, setVisible] = useState(false);
+  const [coords, setCoords] = useState({ top: 0, left: 0 });
+  const anchorRef = useRef<HTMLSpanElement>(null);
+
+  const show = useCallback(() => {
+    const el = anchorRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    setCoords({ top: rect.top + window.scrollY - 8, left: rect.left + rect.width / 2 + window.scrollX });
+    setVisible(true);
+  }, []);
+  const hide = useCallback(() => setVisible(false), []);
+
+  const tip = visible ? createPortal(
+    <span
+      style={{ position: "absolute", top: coords.top, left: coords.left, transform: "translate(-50%, -100%)", zIndex: 99999 }}
+      className="pointer-events-none w-72 p-2.5 bg-[#111] border border-[#333] rounded-lg shadow-2xl text-xs text-[#bbb] leading-relaxed whitespace-normal block">
+      {text}
+      <span className="absolute left-1/2 -translate-x-1/2 top-full -mt-px border-4 border-transparent border-t-[#111]" />
+    </span>, document.body
+  ) : null;
+
+  return (
+    <span ref={anchorRef} className="inline-flex items-center" onMouseEnter={show} onMouseLeave={hide}>
+      <HelpCircle className="h-3 w-3 shrink-0 text-text-secondary/40 hover:text-shopee-orange/70 transition-colors cursor-help" />
+      {tip}
+    </span>
+  );
+}
+
 function MetricHint({
   icon: Icon,
   label,
@@ -76,10 +109,10 @@ function MetricHint({
   hint: string;
 }) {
   return (
-    <div className="flex items-start gap-1.5 text-text-secondary text-xs mb-0.5 cursor-help group" title={hint}>
+    <div className="flex items-start gap-1.5 text-text-secondary text-xs mb-0.5">
       <Icon className="h-3.5 w-3.5 shrink-0 mt-0.5" />
       <span className="leading-snug flex-1 min-w-0">{label}</span>
-      <HelpCircle className="h-3 w-3 shrink-0 text-text-secondary/40 group-hover:text-shopee-orange/70 mt-0.5" />
+      <Tooltip text={hint} />
     </div>
   );
 }
@@ -528,7 +561,14 @@ export default function ATIClient() {
   const [campaignListPage, setCampaignListPage] = useState(1);
 
   // Campanha: editar / deletar
-  const [campaignEditModal, setCampaignEditModal] = useState<{ campaignId: string; campaignName: string; objective: string } | null>(null);
+  const [campaignEditModal, setCampaignEditModal] = useState<{
+    campaignId: string;
+    campaignName: string;
+    /** Tráfego ou Vendas; vazio = não alterar objetivo no Meta ao salvar */
+    objective: string;
+    metaObjective: string | null;
+    loadingObjective: boolean;
+  } | null>(null);
   const [campaignEditSaving, setCampaignEditSaving] = useState(false);
   const [campaignDeleteConfirm, setCampaignDeleteConfirm] = useState<{ campaignId: string; campaignName: string } | null>(null);
   const [campaignDeleteDeleting, setCampaignDeleteDeleting] = useState(false);
@@ -550,6 +590,7 @@ export default function ATIClient() {
     optimization_goal: string;
     pixel_id: string;
     conversion_event: string;
+    publisher_platforms: string[];
   } | null>(null);
   const [adSetDeleteConfirm, setAdSetDeleteConfirm] = useState<{ adSetId: string; adSetName: string } | null>(null);
   const [adSetDeleteDeleting, setAdSetDeleteDeleting] = useState(false);
@@ -642,6 +683,7 @@ export default function ATIClient() {
           optimization_goal: json.optimization_goal ?? "LINK_CLICKS",
           pixel_id: json.pixel_id ?? "",
           conversion_event: json.conversion_event ?? "PAGE_VIEW",
+          publisher_platforms: Array.isArray(json.publisher_platforms) ? json.publisher_platforms : ["facebook", "instagram"],
         });
       })
       .catch(() => {});
@@ -810,7 +852,9 @@ export default function ATIClient() {
         body: JSON.stringify({
           campaign_id: campaignEditModal.campaignId,
           name: campaignEditModal.campaignName.trim(),
-          objective: campaignEditModal.objective || undefined,
+          ...(campaignEditModal.objective
+            ? { objective: campaignEditModal.objective }
+            : {}),
         }),
       });
       const json = await res.json();
@@ -860,6 +904,7 @@ export default function ATIClient() {
           optimization_goal: body.optimization_goal,
           pixel_id: body.pixel_id,
           conversion_event: body.conversion_event,
+          publisher_platforms: body.publisher_platforms,
         }),
       });
       const json = await res.json();
@@ -934,6 +979,7 @@ export default function ATIClient() {
           optimization_goal: body.optimization_goal,
           pixel_id: body.pixel_id,
           conversion_event: body.conversion_event,
+          publisher_platforms: body.publisher_platforms,
         }),
       });
       const json = await res.json();
@@ -1129,8 +1175,6 @@ export default function ATIClient() {
 
   return (
     <>
-      {loading && <LoadingOverlay message="Carregando campanhas Meta e vendas Shopee…" />}
-
       {/* ── Header ── */}
       <div className="mb-5">
         {/* Título + controles de período — numa única linha no desktop */}
@@ -1189,6 +1233,22 @@ export default function ATIClient() {
         </div>
       </div>
 
+      {loading ? (
+        <div className="min-h-[min(360px,calc(100vh-12rem))] flex flex-col items-center justify-center px-6 py-16 -mx-1 rounded-none" style={{ backgroundColor: "#18181b" }}>
+          <div className="relative flex items-center justify-center">
+            <span className="absolute inline-flex h-20 w-20 rounded-full bg-shopee-orange/10 animate-ping" />
+            <span className="absolute inline-flex h-14 w-14 rounded-full bg-shopee-orange/15 animate-pulse" />
+            <Loader2 className="h-10 w-10 animate-spin text-shopee-orange relative z-10" />
+          </div>
+          <div className="flex flex-col items-center gap-2 text-center mt-8 max-w-sm">
+            <span className="text-sm font-semibold text-white/95">Sincronizando ATI</span>
+            <span className="text-xs text-white/45 leading-relaxed">
+              Buscando campanhas Meta, anúncios e vendas Shopee no período selecionado…
+            </span>
+          </div>
+        </div>
+      ) : (
+        <>
       {error && (
         <div className="mb-5 p-3 rounded-xl border border-red-500/40 bg-red-500/10 flex items-start gap-2">
           <AlertCircle className="h-4 w-4 text-red-400 shrink-0 mt-0.5" />
@@ -1401,7 +1461,39 @@ export default function ATIClient() {
                       </button>
                       <button
                         type="button"
-                        onClick={(e) => { e.stopPropagation(); setCampaignEditModal({ campaignId: camp.campaignId, campaignName: camp.campaignName, objective: "OUTCOME_TRAFFIC" }); }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setCampaignEditModal({
+                            campaignId: camp.campaignId,
+                            campaignName: camp.campaignName,
+                            objective: "",
+                            metaObjective: null,
+                            loadingObjective: true,
+                          });
+                          fetch(`/api/meta/campaigns?campaign_id=${encodeURIComponent(camp.campaignId)}`)
+                            .then((r) => r.json())
+                            .then((json) => {
+                              const meta = String(json.objective ?? "OUTCOME_TRAFFIC").toUpperCase();
+                              const isTrafficOrSales = meta === "OUTCOME_TRAFFIC" || meta === "OUTCOME_SALES";
+                              setCampaignEditModal((p) =>
+                                p && p.campaignId === camp.campaignId
+                                  ? {
+                                      ...p,
+                                      metaObjective: meta,
+                                      objective: isTrafficOrSales ? meta : "",
+                                      loadingObjective: false,
+                                    }
+                                  : p
+                              );
+                            })
+                            .catch(() => {
+                              setCampaignEditModal((p) =>
+                                p && p.campaignId === camp.campaignId
+                                  ? { ...p, metaObjective: "OUTCOME_TRAFFIC", objective: "OUTCOME_TRAFFIC", loadingObjective: false }
+                                  : p
+                              );
+                            });
+                        }}
                         className="p-1.5 rounded-lg text-text-secondary hover:bg-dark-bg hover:text-text-primary transition-all"
                         title="Editar campanha"
                       >
@@ -1602,6 +1694,8 @@ export default function ATIClient() {
           </div>
         )}
       </section>
+        </>
+      )}
 
       {linkModalOpen && linkModalAd && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70" onClick={() => setLinkModalOpen(false)}>
@@ -1705,19 +1799,56 @@ export default function ATIClient() {
             </div>
             <div>
               <label className="block text-sm font-medium text-text-primary mb-1">Objetivo</label>
-              <select
-                value={campaignEditModal.objective}
-                onChange={(e) => setCampaignEditModal((p) => p ? { ...p, objective: e.target.value } : null)}
-                className="w-full rounded-md border border-dark-border bg-dark-bg py-2 px-3 text-text-primary text-sm"
-              >
-                {META_CAMPAIGN_OBJECTIVES.map((o) => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
-                ))}
-              </select>
+              {campaignEditModal.loadingObjective ? (
+                <p className="text-sm text-text-secondary py-2">Carregando…</p>
+              ) : (
+                <>
+                  {campaignEditModal.metaObjective &&
+                    campaignEditModal.metaObjective !== "OUTCOME_TRAFFIC" &&
+                    campaignEditModal.metaObjective !== "OUTCOME_SALES" && (
+                      <p className="text-xs text-amber-400/90 mb-2">
+                        No Meta esta campanha está como{" "}
+                        <strong>
+                          {META_CAMPAIGN_OBJECTIVES.find((o) => o.value === campaignEditModal.metaObjective)?.label ??
+                            campaignEditModal.metaObjective}
+                        </strong>
+                        . Escolha <strong>Tráfego</strong> ou <strong>Vendas</strong> abaixo para alterar, ou salve só o nome.
+                      </p>
+                    )}
+                  <select
+                    value={campaignEditModal.objective}
+                    onChange={(e) =>
+                      setCampaignEditModal((p) => (p ? { ...p, objective: e.target.value } : null))
+                    }
+                    className="w-full rounded-md border border-dark-border bg-dark-bg py-2 px-3 text-text-primary text-sm"
+                  >
+                    {(campaignEditModal.metaObjective !== "OUTCOME_TRAFFIC" &&
+                      campaignEditModal.metaObjective !== "OUTCOME_SALES") && (
+                      <option value="">Manter objetivo atual (só alterar nome)</option>
+                    )}
+                    {META_CREATE_CAMPAIGN_OBJECTIVES.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                </>
+              )}
             </div>
             <div className="flex gap-2 justify-end">
               <button type="button" onClick={() => setCampaignEditModal(null)} className="rounded-md border border-dark-border py-2 px-4 text-sm font-medium text-text-secondary hover:bg-dark-bg">Cancelar</button>
-              <button type="button" disabled={campaignEditSaving || !campaignEditModal.campaignName.trim()} onClick={handleCampaignEditSave} className="rounded-md bg-shopee-orange py-2 px-4 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">{campaignEditSaving ? "Salvando…" : "Salvar"}</button>
+              <button
+                type="button"
+                disabled={
+                  campaignEditSaving ||
+                  !campaignEditModal.campaignName.trim() ||
+                  campaignEditModal.loadingObjective
+                }
+                onClick={handleCampaignEditSave}
+                className="rounded-md bg-shopee-orange py-2 px-4 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
+              >
+                {campaignEditSaving ? "Salvando…" : "Salvar"}
+              </button>
             </div>
           </div>
         </div>
@@ -1773,6 +1904,7 @@ export default function ATIClient() {
               defaultOptimizationGoal={adSetEditInitialData.optimization_goal}
               defaultPixelId={adSetEditInitialData.pixel_id}
               defaultConversionEvent={adSetEditInitialData.conversion_event}
+              defaultPublisherPlatforms={adSetEditInitialData.publisher_platforms}
               submitLabel="Salvar edição"
               onSubmit={handleAdSetEditSave}
               onCancel={() => { setAdSetEditModal(null); setAdSetEditInitialData(null); }}

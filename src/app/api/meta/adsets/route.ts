@@ -44,6 +44,17 @@ function defaultGoalForObjective(objective: string): string {
   return allowed[0] ?? "REACH";
 }
 
+const VALID_PUBLISHER_PLATFORMS = new Set(["facebook", "instagram", "audience_network", "messenger"]);
+
+function parsePublisherPlatforms(raw: unknown): string[] {
+  if (!Array.isArray(raw) || raw.length === 0) return ["facebook", "instagram"];
+  const list = raw
+    .map((x) => String(x).toLowerCase().trim())
+    .filter((x) => VALID_PUBLISHER_PLATFORMS.has(x));
+  const uniq = [...new Set(list)];
+  return uniq.length > 0 ? uniq : ["facebook", "instagram"];
+}
+
 async function getToken(supabase: Awaited<ReturnType<typeof createClient>>) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { user: null, token: null };
@@ -67,7 +78,13 @@ export async function GET(req: Request) {
     const json = (await res.json()) as {
       name?: string;
       daily_budget?: string;
-      targeting?: { geo_locations?: { countries?: string[] }; age_min?: number; age_max?: number; genders?: number[] };
+      targeting?: {
+        geo_locations?: { countries?: string[] };
+        age_min?: number;
+        age_max?: number;
+        genders?: number[];
+        publisher_platforms?: string[];
+      };
       optimization_goal?: string;
       campaign_id?: string;
       promoted_object?: { pixel_id?: string; custom_event_type?: string };
@@ -82,6 +99,8 @@ export async function GET(req: Request) {
     const genderNum = targeting?.genders?.[0];
     const gender = genderNum === 2 ? "female" : genderNum === 1 ? "male" : "all";
     const promoted = json.promoted_object;
+    const pp = targeting?.publisher_platforms;
+    const publisher_platforms = Array.isArray(pp) && pp.length > 0 ? pp : ["facebook", "instagram"];
     return NextResponse.json({
       name: json.name ?? "",
       daily_budget: json.daily_budget != null ? String(Number(json.daily_budget) / 100) : "10",
@@ -93,6 +112,7 @@ export async function GET(req: Request) {
       campaign_id: json.campaign_id ?? "",
       pixel_id: promoted?.pixel_id ?? "",
       conversion_event: promoted?.custom_event_type ?? "PAGE_VIEW",
+      publisher_platforms,
     });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Erro ao buscar conjunto" }, { status: 500 });
@@ -131,25 +151,41 @@ export async function PATCH(req: Request) {
     const params = new URLSearchParams({ access_token: token });
     if (name) params.set("name", name);
     if (daily_budget !== undefined) params.set("daily_budget", String(Math.round(daily_budget)));
+    let patchCampaignObjective = "";
+    let patchCampaignId = body?.campaign_id?.trim();
+    if (!patchCampaignId) {
+      const adsetRes = await fetch(`${GRAPH_BASE}/${adset_id}?fields=campaign_id&access_token=${encodeURIComponent(token)}`);
+      const adsetJson = (await adsetRes.json()) as { campaign_id?: string };
+      patchCampaignId = adsetJson.campaign_id ?? "";
+    }
+    if (patchCampaignId) {
+      const campaignRes = await fetch(`${GRAPH_BASE}/${patchCampaignId}?fields=objective&access_token=${encodeURIComponent(token)}`);
+      const campJson = (await campaignRes.json()) as { objective?: string };
+      patchCampaignObjective = (campJson.objective ?? "OUTCOME_TRAFFIC").toUpperCase().replace(/-/g, "_").replace(/\s/g, "");
+    }
     if (optimization_goal) {
-      let campaignId = body?.campaign_id?.trim();
-      if (!campaignId) {
-        const adsetRes = await fetch(`${GRAPH_BASE}/${adset_id}?fields=campaign_id&access_token=${encodeURIComponent(token)}`);
-        const adsetJson = (await adsetRes.json()) as { campaign_id?: string };
-        campaignId = adsetJson.campaign_id ?? "";
+      if (patchCampaignObjective === "OUTCOME_SALES") {
+        params.set("optimization_goal", "OFFSITE_CONVERSIONS");
+      } else if (patchCampaignId && isValidGoalForObjective(optimization_goal, patchCampaignObjective)) {
+        params.set("optimization_goal", optimization_goal);
       }
-      if (campaignId) {
-        const campaignRes = await fetch(`${GRAPH_BASE}/${campaignId}?fields=objective&access_token=${encodeURIComponent(token)}`);
-        const campJson = (await campaignRes.json()) as { objective?: string };
-        const objective = (campJson.objective ?? "OUTCOME_TRAFFIC").toUpperCase().replace(/-/g, "_");
-        if (isValidGoalForObjective(optimization_goal, objective)) params.set("optimization_goal", optimization_goal);
+    } else if (patchCampaignObjective === "OUTCOME_SALES" && pixel_id) {
+      params.set("optimization_goal", "OFFSITE_CONVERSIONS");
+    }
+    if (patchCampaignObjective === "OUTCOME_SALES" && pixel_id) {
+      if (!["PURCHASE", "ADD_TO_CART"].includes(conversion_event)) {
+        return NextResponse.json(
+          { error: "Para campanhas de vendas use o evento Comprar ou Adicionar ao carrinho." },
+          { status: 400 }
+        );
       }
     }
+    const publisher_platforms = parsePublisherPlatforms(body?.publisher_platforms);
     const targeting: Record<string, unknown> = {
       geo_locations: { countries: [country_code] },
       age_min,
       age_max,
-      publisher_platforms: ["facebook"],
+      publisher_platforms,
     };
     if (gender !== "all") targeting.genders = gender === "female" ? [2] : [1];
     params.set("targeting", JSON.stringify(targeting));
@@ -255,19 +291,33 @@ export async function POST(req: Request) {
     }
     const campaignObjective = (campaignJson.objective ?? "OUTCOME_TRAFFIC").toUpperCase().replace(/-/g, "_").replace(/\s/g, "");
 
-    // Sempre usar meta compatível com o objetivo (ignorar meta do body se incompatível)
     let effectiveOptimizationGoal = (body?.optimization_goal?.trim() || "").toUpperCase();
-    if (!effectiveOptimizationGoal || !isValidGoalForObjective(effectiveOptimizationGoal, campaignObjective)) {
+    if (campaignObjective === "OUTCOME_SALES") {
+      effectiveOptimizationGoal = "OFFSITE_CONVERSIONS";
+      if (!pixel_id) {
+        return NextResponse.json(
+          { error: "Campanhas de vendas exigem o Pixel e o evento Comprar ou Adicionar ao carrinho." },
+          { status: 400 }
+        );
+      }
+      if (!["PURCHASE", "ADD_TO_CART"].includes(conversion_event)) {
+        return NextResponse.json(
+          { error: "Para vendas, use apenas o evento Comprar (PURCHASE) ou Adicionar ao carrinho (ADD_TO_CART)." },
+          { status: 400 }
+        );
+      }
+    } else if (!effectiveOptimizationGoal || !isValidGoalForObjective(effectiveOptimizationGoal, campaignObjective)) {
       effectiveOptimizationGoal = defaultGoalForObjective(campaignObjective);
     }
 
     const accountIdForCreate = normalizeAdAccountId(ad_account_id);
+    const publisher_platforms = parsePublisherPlatforms(body?.publisher_platforms);
 
     const targeting: Record<string, unknown> = {
       geo_locations: { countries: [country_code] },
       age_min,
       age_max,
-      publisher_platforms: ["facebook"],
+      publisher_platforms,
     };
     if (gender !== "all") {
       targeting.genders = gender === "female" ? [2] : [1];
@@ -290,7 +340,9 @@ export async function POST(req: Request) {
       const promotedObject: { pixel_id: string; custom_event_type?: string } = { pixel_id };
       promotedObject.custom_event_type = conversion_event;
       params.set("promoted_object", JSON.stringify(promotedObject));
-      if (custom_conversion_id && /^\d+$/.test(custom_conversion_id)) params.set("custom_conversion_id", custom_conversion_id);
+      if (custom_conversion_id && /^\d+$/.test(custom_conversion_id)) {
+        params.set("custom_conversion_id", custom_conversion_id);
+      }
     }
     const url = `${GRAPH_BASE}/${accountIdForCreate}/adsets`;
     const res = await fetch(url, {

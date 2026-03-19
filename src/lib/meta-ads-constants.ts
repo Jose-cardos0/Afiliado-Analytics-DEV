@@ -11,6 +11,26 @@ export const META_CAMPAIGN_OBJECTIVES = [
   { value: "OUTCOME_APP_PROMOTION", label: "Promoção de app" },
 ] as const;
 
+/** Objetivos exibidos no assistente "Criar campanha Meta" (só Tráfego e Vendas). */
+export const META_CREATE_CAMPAIGN_OBJECTIVES = [
+  { value: "OUTCOME_TRAFFIC", label: "Tráfego" },
+  { value: "OUTCOME_SALES", label: "Vendas" },
+] as const;
+
+/** Placements aceitos em targeting.publisher_platforms (Graph API). */
+export const META_PUBLISHER_PLATFORMS = [
+  { value: "facebook", label: "Facebook" },
+  { value: "instagram", label: "Instagram" },
+  { value: "audience_network", label: "Audience Network" },
+  { value: "messenger", label: "Messenger" },
+] as const;
+
+/** Eventos de pixel para campanhas de vendas (otimização por conversão no site). */
+export const META_SALES_CONVERSION_EVENTS = [
+  { value: "PURCHASE", label: "Comprar" },
+  { value: "ADD_TO_CART", label: "Adicionar ao carrinho" },
+] as const;
+
 export type MetaCampaignObjective = (typeof META_CAMPAIGN_OBJECTIVES)[number]["value"];
 
 /** Meta de desempenho (optimization_goal) – valores aceitos pela API do Meta */

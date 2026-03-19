@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
   Megaphone,
@@ -19,12 +19,19 @@ import {
   ChevronLeft,
   Zap,
   Instagram,
+  Play,
+  Check,
+  X,
+  Info,
 } from "lucide-react";
+import { createPortal } from "react-dom";
 import LoadingOverlay from "@/app/components/ui/LoadingOverlay";
 import {
-  META_CAMPAIGN_OBJECTIVES,
+  META_CREATE_CAMPAIGN_OBJECTIVES,
   META_COUNTRIES,
   META_CALL_TO_ACTIONS,
+  META_PUBLISHER_PLATFORMS,
+  META_SALES_CONVERSION_EVENTS,
   getOptimizationGoalsForObjective,
   getDefaultGoalForObjective,
 } from "@/lib/meta-ads-constants";
@@ -47,11 +54,44 @@ const STEPS = [
 const inputCls = "w-full rounded-xl border border-dark-border bg-dark-bg py-2 px-3 text-text-primary text-sm placeholder-text-secondary/50 focus:outline-none focus:border-shopee-orange transition-colors";
 const selectCls = inputCls;
 
+function Tooltip({ text, wide }: { text: string; wide?: boolean }) {
+  const [visible, setVisible] = React.useState(false);
+  const [coords, setCoords] = React.useState({ top: 0, left: 0 });
+  const anchorRef = React.useRef<HTMLSpanElement>(null);
+
+  const show = React.useCallback(() => {
+    const el = anchorRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    setCoords({ top: rect.top + window.scrollY - 8, left: rect.left + rect.width / 2 + window.scrollX });
+    setVisible(true);
+  }, []);
+  const hide = React.useCallback(() => setVisible(false), []);
+
+  const tip = visible ? createPortal(
+    <span
+      style={{ position: "absolute", top: coords.top, left: coords.left, transform: "translate(-50%, -100%)", zIndex: 99999 }}
+      className={`pointer-events-none ${wide ? "w-72" : "w-56"} p-2.5 bg-[#111] border border-[#333] rounded-lg shadow-2xl text-xs text-[#bbb] leading-relaxed whitespace-normal block`}>
+      {text}
+      <span className="absolute left-1/2 -translate-x-1/2 top-full -mt-px border-4 border-transparent border-t-[#111]" />
+    </span>, document.body
+  ) : null;
+
+  return (
+    <span ref={anchorRef} className="inline-flex items-center" onMouseEnter={show} onMouseLeave={hide} onFocus={show} onBlur={hide}>
+      <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-[#333]/80 text-[#888] hover:bg-shopee-orange/20 hover:text-shopee-orange transition-colors cursor-help">
+        <Info className="h-2.5 w-2.5" />
+      </span>
+      {tip}
+    </span>
+  );
+}
+
 function FieldLabel({ children, hint }: { children: React.ReactNode; hint?: string }) {
   return (
-    <div className="mb-1.5">
+    <div className="mb-1.5 flex items-center gap-1.5">
       <label className="block text-xs font-semibold text-text-secondary uppercase tracking-wide">{children}</label>
-      {hint && <p className="text-[11px] text-text-secondary/60 mt-0.5">{hint}</p>}
+      {hint && <Tooltip text={hint} wide />}
     </div>
   );
 }
@@ -88,7 +128,11 @@ export default function MetaAdsClient() {
   const [gender, setGender] = useState<"all" | "male" | "female">("all");
   const [optimizationGoal, setOptimizationGoal] = useState("LINK_CLICKS");
   const [pixelId, setPixelId] = useState("");
-  const [conversionEvent, setConversionEvent] = useState("");
+  const [conversionEvent, setConversionEvent] = useState("PURCHASE");
+  /** Plataformas de veiculação (enviadas em targeting.publisher_platforms). */
+  const [publisherPlatforms, setPublisherPlatforms] = useState<Record<string, boolean>>(() =>
+    Object.fromEntries(META_PUBLISHER_PLATFORMS.map((p) => [p.value, true]))
+  );
   const [pixels, setPixels] = useState<Pixel[]>([]);
   const [adsetId, setAdsetId] = useState("");
   const [adName, setAdName] = useState("");
@@ -106,6 +150,7 @@ export default function MetaAdsClient() {
   const [libraryVideos, setLibraryVideos] = useState<LibraryVideo[]>([]);
   const [uploadingVideo, setUploadingVideo] = useState(false);
   const [callToAction, setCallToAction] = useState("LEARN_MORE");
+  const [loadingAccounts, setLoadingAccounts] = useState(true);
   const [tokenDebug, setTokenDebug] = useState<{ scopes: string[]; has_pages_manage_ads: boolean; is_valid: boolean } | null>(null);
   const [loadingTokenDebug, setLoadingTokenDebug] = useState(false);
   const [promotePages, setPromotePages] = useState<Page[]>([]);
@@ -114,9 +159,15 @@ export default function MetaAdsClient() {
   const [loadingIgAccounts, setLoadingIgAccounts] = useState(false);
   const [igDebug, setIgDebug] = useState<string | null>(null);
   const [igManualMode, setIgManualMode] = useState(false);
+  const [imgPage, setImgPage] = useState(0);
+  const [vidPage, setVidPage] = useState(0);
+
+  const IMG_PER_PAGE = 12; // 4 colunas × 3 linhas
+  const VID_PER_PAGE = 6;  // 2 colunas × 3 linhas
 
   useEffect(() => {
     let cancelled = false;
+    setLoadingAccounts(true);
     (async () => {
       try {
         const [accRes, pagRes] = await Promise.all([fetch("/api/meta/accounts"), fetch("/api/meta/pages")]);
@@ -128,6 +179,7 @@ export default function MetaAdsClient() {
         if (!accRes.ok && accJson.error) setError(accJson.error);
         else if (!pagRes.ok && pagJson.error) setError(pagJson.error);
       } catch { if (!cancelled) setError("Erro ao carregar contas e páginas."); }
+      finally { if (!cancelled) setLoadingAccounts(false); }
     })();
     return () => { cancelled = true; };
   }, []);
@@ -203,15 +255,23 @@ export default function MetaAdsClient() {
 
   const canStep2 = adAccountId && pageId;
   const canStep3 = campaignId && campaignName;
+  const isSalesCampaign = campaignObjective === "OUTCOME_SALES";
   const allowedGoalsForObjective = getOptimizationGoalsForObjective(campaignObjective);
   const isCurrentGoalAllowed = allowedGoalsForObjective.some((o) => o.value === optimizationGoal);
 
   useEffect(() => {
-    if (canStep3 && !isCurrentGoalAllowed) {
-      setOptimizationGoal(getDefaultGoalForObjective(campaignObjective));
-      setPixelId(""); setConversionEvent("");
+    if (!canStep3) return;
+    if (isSalesCampaign) {
+      setOptimizationGoal("OFFSITE_CONVERSIONS");
+      setConversionEvent((ev) => (ev === "ADD_TO_CART" ? "ADD_TO_CART" : "PURCHASE"));
+      return;
     }
-  }, [campaignObjective, canStep3, isCurrentGoalAllowed]);
+    if (!isCurrentGoalAllowed) {
+      setOptimizationGoal(getDefaultGoalForObjective(campaignObjective));
+      setPixelId("");
+      setConversionEvent("PURCHASE");
+    }
+  }, [campaignObjective, canStep3, isSalesCampaign, isCurrentGoalAllowed]);
 
   const canStep4 = adsetId && adsetName;
 
@@ -232,6 +292,12 @@ export default function MetaAdsClient() {
   const createAdSet = async () => {
     const budgetCents = Math.round(parseFloat(dailyBudget || "0") * 100);
     if (budgetCents < 100) { setError("Orçamento diário mínimo: R$ 6,00 (100 centavos)."); return; }
+    const pubList = META_PUBLISHER_PLATFORMS.map((p) => p.value).filter((p) => publisherPlatforms[p]);
+    if (pubList.length === 0) { setError("Selecione ao menos uma plataforma (Facebook, Instagram, etc.)."); return; }
+    if (isSalesCampaign && (!pixelId.trim() || !["PURCHASE", "ADD_TO_CART"].includes(conversionEvent))) {
+      setError("Campanha de vendas: escolha o Pixel e o evento Comprar ou Adicionar ao carrinho.");
+      return;
+    }
     setLoading(true); setError(null);
     try {
       const res = await fetch("/api/meta/adsets", {
@@ -240,8 +306,11 @@ export default function MetaAdsClient() {
           ad_account_id: adAccountId, campaign_id: campaignId, name: adsetName,
           daily_budget: budgetCents, country_code: countryCode,
           age_min: parseInt(ageMin, 10) || 18, age_max: parseInt(ageMax, 10) || 65,
-          gender, optimization_goal: optimizationGoal,
-          pixel_id: pixelId || undefined, custom_conversion_id: conversionEvent || undefined, conversion_event: conversionEvent || undefined,
+          gender,
+          optimization_goal: isSalesCampaign ? "OFFSITE_CONVERSIONS" : optimizationGoal,
+          pixel_id: pixelId.trim() || undefined,
+          conversion_event: isSalesCampaign ? conversionEvent : (pixelId.trim() ? conversionEvent || undefined : undefined),
+          publisher_platforms: pubList,
         }),
       });
       const json = await res.json();
@@ -422,13 +491,26 @@ export default function MetaAdsClient() {
 
       {/* ── Step 1: Conta e Página ── */}
       {step === 1 && (
-        <div className="bg-dark-card rounded-2xl border border-dark-border p-5 max-w-xl space-y-5">
+        <div className="flex justify-center">
+        <div className="bg-dark-card rounded-2xl border border-dark-border p-6 w-full max-w-xl space-y-5">
           <div className="flex items-center gap-2">
             <Building2 className="h-4 w-4 text-shopee-orange" />
             <h2 className="text-sm font-bold text-text-primary">Conta de anúncios & Página</h2>
           </div>
 
-          {adAccounts.length === 0 ? (
+          {loadingAccounts ? (
+            <div className="flex flex-col items-center justify-center gap-4 py-12">
+              <div className="relative flex items-center justify-center">
+                <span className="absolute inline-flex h-16 w-16 rounded-full bg-shopee-orange/10 animate-ping" />
+                <span className="absolute inline-flex h-12 w-12 rounded-full bg-shopee-orange/15 animate-pulse" />
+                <Loader2 className="h-10 w-10 animate-spin text-shopee-orange relative z-10" />
+              </div>
+              <div className="flex flex-col items-center gap-1">
+                <span className="text-sm font-semibold text-text-primary">Conectando ao Meta Ads</span>
+                <span className="text-xs text-text-secondary/50">Buscando contas e páginas…</span>
+              </div>
+            </div>
+          ) : adAccounts.length === 0 ? (
             <div className="py-6 flex flex-col items-center gap-3 text-center border border-dashed border-dark-border rounded-xl">
               <Settings className="h-8 w-8 text-text-secondary/30" />
               <p className="text-xs text-text-secondary/60">Configure o token do Meta em Configurações para listar contas.</p>
@@ -466,49 +548,6 @@ export default function MetaAdsClient() {
                 )}
               </div>
 
-              {/* Instagram (opcional) */}
-              <div>
-                <FieldLabel hint="Opcional. Se selecionada, o anúncio também aparecerá nesta conta do Instagram.">
-                  <span className="flex items-center gap-1.5"><Instagram className="h-3 w-3" /> Conta do Instagram</span>
-                </FieldLabel>
-                {loadingIgAccounts && adAccountId ? (
-                  <div className="flex items-center gap-2 text-xs text-text-secondary py-2">
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" /> Carregando contas Instagram…
-                  </div>
-                ) : igAccounts.length > 0 ? (
-                  <>
-                    <select value={instagramAccountId} onChange={(e) => setInstagramAccountId(e.target.value)} className={selectCls}>
-                      <option value="">Não usar Instagram</option>
-                      {igAccounts.map((ig) => (
-                        <option key={ig.id} value={ig.id}>@{ig.username}</option>
-                      ))}
-                    </select>
-                    {!igManualMode && (
-                      <button type="button" onClick={() => setIgManualMode(true)} className="text-[10px] text-text-secondary/50 hover:text-shopee-orange mt-1 transition-colors">
-                        Não encontrou? Digitar ID manualmente
-                      </button>
-                    )}
-                    {igManualMode && (
-                      <input type="text" value={instagramAccountId} onChange={(e) => setInstagramAccountId(e.target.value.trim())}
-                        placeholder="Cole o ID numérico da conta IG"
-                        className={`${inputCls} mt-1.5`} />
-                    )}
-                  </>
-                ) : adAccountId ? (
-                  <div>
-                    <p className="text-[11px] text-amber-400/80 mb-1.5">Nenhuma conta encontrada via API. O token pode precisar da permissão <strong>instagram_basic</strong>.</p>
-                    <input type="text" value={instagramAccountId} onChange={(e) => setInstagramAccountId(e.target.value.trim())}
-                      placeholder="Cole o ID numérico da conta IG (ex: 17841400123456)"
-                      className={inputCls} />
-                    <p className="text-[10px] text-text-secondary/40 mt-1.5">
-                      Para encontrar o ID: abra o Gerenciador de Anúncios do Meta → crie um anúncio → em &quot;Identidade&quot; selecione a conta IG → inspecione a rede (DevTools) e procure o campo <code className="text-text-secondary/60">instagram_actor_id</code>.
-                    </p>
-                    {igDebug && <p className="text-[10px] text-text-secondary/30 mt-1 break-all">Debug: {igDebug}</p>}
-                  </div>
-                ) : (
-                  <p className="text-xs text-text-secondary/60 py-1.5">Selecione uma conta de anúncios primeiro.</p>
-                )}
-              </div>
             </>
           )}
 
@@ -517,11 +556,13 @@ export default function MetaAdsClient() {
             Próximo <ChevronRight className="h-4 w-4" />
           </button>
         </div>
+        </div>
       )}
 
       {/* ── Step 2: Campanha ── */}
       {step === 2 && (
-        <div className="bg-dark-card rounded-2xl border border-dark-border p-5 max-w-xl space-y-5">
+        <div className="flex justify-center">
+        <div className="bg-dark-card rounded-2xl border border-dark-border p-6 w-full max-w-xl space-y-5">
           <div className="flex items-center gap-2">
             <Megaphone className="h-4 w-4 text-shopee-orange" />
             <h2 className="text-sm font-bold text-text-primary">Nova campanha</h2>
@@ -529,7 +570,7 @@ export default function MetaAdsClient() {
           <div>
             <FieldLabel hint="Determina como o Meta otimiza a entrega dos seus anúncios.">Objetivo da campanha</FieldLabel>
             <select value={campaignObjective} onChange={(e) => setCampaignObjective(e.target.value)} className={selectCls}>
-              {META_CAMPAIGN_OBJECTIVES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              {META_CREATE_CAMPAIGN_OBJECTIVES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
           </div>
           <div>
@@ -549,75 +590,176 @@ export default function MetaAdsClient() {
             </button>
           </div>
         </div>
+        </div>
       )}
 
       {/* ── Step 3: Conjunto ── */}
       {step === 3 && (
-        <div className="bg-dark-card rounded-2xl border border-dark-border p-5 max-w-xl space-y-5">
-          <div className="flex items-center gap-2">
-            <Target className="h-4 w-4 text-shopee-orange" />
-            <h2 className="text-sm font-bold text-text-primary">Conjunto de anúncios</h2>
-          </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 max-w-5xl mx-auto" style={{ alignItems: "stretch" }}>
 
-          <div>
-            <FieldLabel>Nome do conjunto</FieldLabel>
-            <input type="text" value={adsetName} onChange={(e) => setAdsetName(e.target.value)}
-              placeholder="Ex: Conjunto BR 18-45" className={inputCls} />
-          </div>
+          {/* ── Coluna esquerda: nome, orçamento, otimização ── */}
+          <div className="bg-dark-card rounded-2xl border border-dark-border p-6 flex flex-col gap-5">
+            <div className="flex items-center gap-2 pb-1 border-b border-dark-border/50 shrink-0">
+              <Target className="h-4 w-4 text-shopee-orange" />
+              <h2 className="text-sm font-bold text-text-primary">Conjunto de anúncios</h2>
+            </div>
 
-          <div>
-            <FieldLabel hint="Mínimo R$ 6,00. Quanto mais alto, maior o alcance diário.">Orçamento diário (R$)</FieldLabel>
-            <input type="number" min="1" step="0.01" value={dailyBudget} onChange={(e) => setDailyBudget(e.target.value)} className={inputCls} />
-          </div>
+            <div className="shrink-0">
+              <FieldLabel>Nome do conjunto</FieldLabel>
+              <input type="text" value={adsetName} onChange={(e) => setAdsetName(e.target.value)}
+                placeholder="Ex: Conjunto BR 18-45" className={inputCls} />
+            </div>
 
-          <div>
-            <FieldLabel hint={`Opções compatíveis com o objetivo "${META_CAMPAIGN_OBJECTIVES.find(c => c.value === campaignObjective)?.label ?? campaignObjective}".`}>
-              Meta de desempenho
-            </FieldLabel>
-            <select value={isCurrentGoalAllowed ? optimizationGoal : getDefaultGoalForObjective(campaignObjective)}
-              onChange={(e) => {
-                const v = e.target.value; setOptimizationGoal(v);
-                if (!["OFFSITE_CONVERSIONS", "VALUE", "CONVERSIONS"].includes(v)) { setPixelId(""); setConversionEvent(""); }
-              }} className={selectCls}>
-              {allowedGoalsForObjective.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
-          </div>
+            <div className="shrink-0">
+              <FieldLabel hint="Mínimo R$ 6,00. Quanto mais alto, maior o alcance diário.">Orçamento diário (R$)</FieldLabel>
+              <input type="number" min="1" step="0.01" value={dailyBudget} onChange={(e) => setDailyBudget(e.target.value)} className={inputCls} />
+            </div>
 
-          {["OFFSITE_CONVERSIONS", "VALUE", "CONVERSIONS"].includes(optimizationGoal) && (
-            <SectionBox title="Pixel & conversão" icon={Target}>
-              <div>
-                <FieldLabel hint="Para campanhas de conversão. Opcional para tráfego/cliques.">Conjunto de dados (Pixel)</FieldLabel>
-                <select value={pixelId} onChange={(e) => setPixelId(e.target.value)} className={selectCls}>
-                  <option value="">Nenhum</option>
-                  {pixels.map((p) => <option key={p.id} value={p.id}>{p.name || p.id}</option>)}
-                </select>
-              </div>
-              {pixelId && (
+            {/* Otimização */}
+            {isSalesCampaign ? (
+              <div className="flex-1 rounded-xl border border-dark-border/60 bg-dark-bg/40 p-4 space-y-4">
+                <div className="flex items-center gap-2 border-l-2 border-shopee-orange/60 pl-2">
+                  <Target className="h-3.5 w-3.5 text-shopee-orange/80" />
+                  <h3 className="text-xs font-semibold text-text-primary uppercase tracking-wide">Otimização (vendas no site)</h3>
+                </div>
+                <p className="text-xs text-text-secondary/80">
+                  O Meta otimiza para conversões no site. Escolha o pixel e se quer priorizar <strong>compras</strong> ou <strong>adicionar ao carrinho</strong>.
+                </p>
                 <div>
-                  <FieldLabel>Evento de conversão</FieldLabel>
-                  <select value={conversionEvent} onChange={(e) => setConversionEvent(e.target.value)} className={selectCls}>
-                    <option value="">Nenhum</option>
-                    <option value="PURCHASE">Comprar (Purchase)</option>
-                    <option value="LEAD">Lead</option>
-                    <option value="COMPLETE_REGISTRATION">Cadastro completo</option>
-                    <option value="ADD_TO_CART">Adicionar ao carrinho</option>
-                    <option value="INITIATE_CHECKOUT">Iniciar checkout</option>
-                    <option value="VIEW_CONTENT">Visualizar conteúdo</option>
-                    <option value="PAGE_VIEW">Visualização de página</option>
+                  <FieldLabel hint="Obrigatório para campanhas de vendas.">Pixel</FieldLabel>
+                  <select value={pixelId} onChange={(e) => setPixelId(e.target.value)} className={selectCls}>
+                    <option value="">Selecione o pixel</option>
+                    {pixels.map((p) => <option key={p.id} value={p.id}>{p.name || p.id}</option>)}
                   </select>
                 </div>
-              )}
-            </SectionBox>
-          )}
+                <div>
+                  <FieldLabel>Evento para otimizar</FieldLabel>
+                  <select value={conversionEvent} onChange={(e) => setConversionEvent(e.target.value)} className={selectCls}>
+                    {META_SALES_CONVERSION_EVENTS.map((o) => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            ) : (
+              <div className="flex-1 space-y-4">
+                <div>
+                  <FieldLabel hint="Opções compatíveis com campanhas de tráfego.">Meta de desempenho</FieldLabel>
+                  <select
+                    value={isCurrentGoalAllowed ? optimizationGoal : getDefaultGoalForObjective(campaignObjective)}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setOptimizationGoal(v);
+                      if (!["OFFSITE_CONVERSIONS", "VALUE", "CONVERSIONS"].includes(v)) {
+                        setPixelId("");
+                        setConversionEvent("PURCHASE");
+                      }
+                    }}
+                    className={selectCls}
+                  >
+                    {allowedGoalsForObjective.map((o) => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
+                  </select>
+                </div>
+                {["OFFSITE_CONVERSIONS", "VALUE", "CONVERSIONS"].includes(optimizationGoal) && (
+                  <div className="rounded-xl border border-dark-border/60 bg-dark-bg/40 p-4 space-y-4">
+                    <div className="flex items-center gap-2 border-l-2 border-shopee-orange/60 pl-2">
+                      <Target className="h-3.5 w-3.5 text-shopee-orange/80" />
+                      <h3 className="text-xs font-semibold text-text-primary uppercase tracking-wide">Pixel & conversão</h3>
+                    </div>
+                    <div>
+                      <FieldLabel hint="Opcional para tráfego com meta de conversão.">Conjunto de dados (Pixel)</FieldLabel>
+                      <select value={pixelId} onChange={(e) => setPixelId(e.target.value)} className={selectCls}>
+                        <option value="">Nenhum</option>
+                        {pixels.map((p) => <option key={p.id} value={p.id}>{p.name || p.id}</option>)}
+                      </select>
+                    </div>
+                    {pixelId && (
+                      <div>
+                        <FieldLabel>Evento de conversão</FieldLabel>
+                        <select value={conversionEvent} onChange={(e) => setConversionEvent(e.target.value)} className={selectCls}>
+                          <option value="PURCHASE">Comprar</option>
+                          <option value="ADD_TO_CART">Adicionar ao carrinho</option>
+                          <option value="LEAD">Lead</option>
+                          <option value="COMPLETE_REGISTRATION">Cadastro completo</option>
+                          <option value="INITIATE_CHECKOUT">Iniciar checkout</option>
+                          <option value="VIEW_CONTENT">Visualizar conteúdo</option>
+                          <option value="PAGE_VIEW">Visualização de página</option>
+                        </select>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
 
-          <SectionBox title="Público" icon={Target}>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="flex gap-2 mt-auto shrink-0">
+              <button type="button" onClick={() => setStep(2)}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-dark-border px-4 py-2.5 text-sm font-medium text-text-secondary hover:bg-dark-bg transition-colors">
+                <ChevronLeft className="h-4 w-4" /> Voltar
+              </button>
+              <button type="button" onClick={createAdSet} disabled={!adsetName.trim() || loading}
+                className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-shopee-orange px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-40 transition-all shadow-[0_2px_12px_rgba(238,77,45,0.2)]">
+                {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                Criar conjunto e continuar
+              </button>
+            </div>
+          </div>
+
+          {/* ── Coluna direita: plataformas + público ── */}
+          <div className="bg-dark-card rounded-2xl border border-dark-border p-6 flex flex-col gap-5">
+            <div className="flex items-center gap-2 pb-1 border-b border-dark-border/50 shrink-0">
+              <Zap className="h-4 w-4 text-shopee-orange" />
+              <h2 className="text-sm font-bold text-text-primary">Distribuição & Público</h2>
+            </div>
+
+            {/* Plataformas */}
+            <div className="rounded-xl border border-dark-border/60 bg-dark-bg/40 p-4 space-y-3 shrink-0">
+              <div className="flex items-center gap-2 border-l-2 border-shopee-orange/60 pl-2">
+                <Zap className="h-3.5 w-3.5 text-shopee-orange/80" />
+                <h3 className="text-xs font-semibold text-text-primary uppercase tracking-wide">Plataformas</h3>
+              </div>
+              <p className="text-[11px] text-text-secondary/60">Onde o anúncio pode aparecer (publisher_platforms).</p>
+              <div className="grid grid-cols-2 gap-2">
+                {META_PUBLISHER_PLATFORMS.map((p) => (
+                  <label key={p.value}
+                    className={`flex items-center gap-2 rounded-lg border px-3 py-2.5 cursor-pointer text-sm font-medium transition-all ${
+                      publisherPlatforms[p.value]
+                        ? "border-shopee-orange/50 bg-shopee-orange/8 text-text-primary"
+                        : "border-dark-border/60 bg-dark-bg/30 text-text-secondary hover:border-shopee-orange/30"
+                    }`}>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(publisherPlatforms[p.value])}
+                      onChange={() => setPublisherPlatforms((prev) => ({ ...prev, [p.value]: !prev[p.value] }))}
+                      className="rounded border-dark-border accent-shopee-orange"
+                    />
+                    {p.label}
+                  </label>
+                ))}
+              </div>
+              <button type="button"
+                onClick={() => setPublisherPlatforms(Object.fromEntries(META_PUBLISHER_PLATFORMS.map((x) => [x.value, true])))}
+                className="text-xs text-shopee-orange hover:underline">
+                Marcar todas
+              </button>
+            </div>
+
+            {/* Público */}
+            <div className="flex-1 rounded-xl border border-dark-border/60 bg-dark-bg/40 p-4 space-y-4">
+              <div className="flex items-center gap-2 border-l-2 border-shopee-orange/60 pl-2">
+                <Target className="h-3.5 w-3.5 text-shopee-orange/80" />
+                <h3 className="text-xs font-semibold text-text-primary uppercase tracking-wide">Público-alvo</h3>
+              </div>
+
               <div>
                 <FieldLabel>País</FieldLabel>
                 <select value={countryCode} onChange={(e) => setCountryCode(e.target.value)} className={selectCls}>
                   {META_COUNTRIES.map((c) => <option key={c.code} value={c.code}>{c.name} ({c.code})</option>)}
                 </select>
               </div>
+
               <div>
                 <FieldLabel>Gênero</FieldLabel>
                 <select value={gender} onChange={(e) => setGender(e.target.value as "all" | "male" | "female")} className={selectCls}>
@@ -626,238 +768,365 @@ export default function MetaAdsClient() {
                   <option value="female">Feminino</option>
                 </select>
               </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <FieldLabel>Idade mín.</FieldLabel>
-                <input type="number" min="18" max="65" value={ageMin} onChange={(e) => setAgeMin(e.target.value)} className={inputCls} />
-              </div>
-              <div>
-                <FieldLabel>Idade máx.</FieldLabel>
-                <input type="number" min="18" max="65" value={ageMax} onChange={(e) => setAgeMax(e.target.value)} className={inputCls} />
-              </div>
-            </div>
-          </SectionBox>
 
-          <div className="flex gap-2 pt-1">
-            <button type="button" onClick={() => setStep(2)}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-dark-border px-4 py-2 text-sm font-medium text-text-secondary hover:bg-dark-bg transition-colors">
-              <ChevronLeft className="h-4 w-4" /> Voltar
-            </button>
-            <button type="button" onClick={createAdSet} disabled={!adsetName.trim() || loading}
-              className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-shopee-orange px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-40 transition-all shadow-[0_2px_12px_rgba(238,77,45,0.2)]">
-              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-              Criar conjunto e continuar
-            </button>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <FieldLabel>Idade mín.</FieldLabel>
+                  <input type="number" min="18" max="65" value={ageMin} onChange={(e) => setAgeMin(e.target.value)} className={inputCls} />
+                </div>
+                <div>
+                  <FieldLabel>Idade máx.</FieldLabel>
+                  <input type="number" min="18" max="65" value={ageMax} onChange={(e) => setAgeMax(e.target.value)} className={inputCls} />
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}
 
       {/* ── Step 4: Anúncio ── */}
-      {step === 4 && (
-        <div className="bg-dark-card rounded-2xl border border-dark-border p-5 max-w-xl space-y-5">
-          <div className="flex items-center gap-2">
-            <ImageIcon className="h-4 w-4 text-shopee-orange" />
-            <h2 className="text-sm font-bold text-text-primary">Anúncio — criativo</h2>
-          </div>
+      {step === 4 && (() => {
+        const imgTotalPages = Math.max(1, Math.ceil(libraryImages.length / IMG_PER_PAGE));
+        const vidTotalPages = Math.max(1, Math.ceil(libraryVideos.length / VID_PER_PAGE));
+        const pagedImages = libraryImages.slice(imgPage * IMG_PER_PAGE, (imgPage + 1) * IMG_PER_PAGE);
+        const pagedVideos = libraryVideos.slice(vidPage * VID_PER_PAGE, (vidPage + 1) * VID_PER_PAGE);
 
-          {/* Identidade */}
-          <SectionBox title="Identidade" icon={Building2}>
-            <div>
-              <FieldLabel>Página do Facebook</FieldLabel>
-              <p className="text-sm text-text-primary font-medium">{pages.find((p) => p.id === pageId)?.name || pageList.find((p) => p.id === pageId)?.name || "—"}</p>
-              <p className="text-[11px] text-text-secondary/60 mt-0.5">Definida no passo 1.</p>
-            </div>
-            <div>
-              <FieldLabel>Conta do Instagram</FieldLabel>
-              {instagramAccountId ? (
-                <p className="text-sm text-text-primary font-medium flex items-center gap-1.5">
-                  <Instagram className="h-3.5 w-3.5 text-pink-400" />
-                  @{igAccounts.find((ig) => ig.id === instagramAccountId)?.username || instagramAccountId}
-                </p>
-              ) : (
-                <p className="text-sm text-text-secondary/60">Não selecionada</p>
-              )}
-              <p className="text-[11px] text-text-secondary/60 mt-0.5">Definida no passo 1.</p>
-            </div>
-          </SectionBox>
+        return (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 max-w-5xl mx-auto" style={{ alignItems: "stretch" }}>
 
-          {/* Conteúdo */}
-          <div>
-            <FieldLabel>Nome do anúncio</FieldLabel>
-            <input type="text" value={adName} onChange={(e) => setAdName(e.target.value)}
-              placeholder="Ex: Anúncio 1 — Shopee Verão" className={inputCls} />
-          </div>
-
-          <div>
-            <FieldLabel hint="Opcional — pode gerar depois no ATI com o ad_id.">
-              <span className="flex items-center gap-1"><Link2 className="h-3 w-3" /> Link de destino</span>
-            </FieldLabel>
-            <input type="url" value={adLink} onChange={(e) => setAdLink(e.target.value)}
-              placeholder="Deixe em branco ou cole o link da Shopee" className={inputCls} />
-          </div>
-
-          <div>
-            <FieldLabel>Texto do anúncio *</FieldLabel>
-            <textarea value={adMessage} onChange={(e) => setAdMessage(e.target.value)}
-              placeholder="Descrição ou chamada para ação…" rows={3}
-              className={`${inputCls} resize-none`} />
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <FieldLabel>Título (opcional)</FieldLabel>
-              <input type="text" value={adTitle} onChange={(e) => setAdTitle(e.target.value)}
-                placeholder="Título do link" className={inputCls} />
-            </div>
-            <div>
-              <FieldLabel hint="Botão exibido no anúncio.">Chamada para ação</FieldLabel>
-              <select value={callToAction} onChange={(e) => setCallToAction(e.target.value)} className={selectCls}>
-                {META_CALL_TO_ACTIONS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
-              </select>
-            </div>
-          </div>
-
-          {/* Tipo de mídia */}
-          <div>
-            <FieldLabel>Tipo de mídia</FieldLabel>
-            <div className="flex gap-2">
-              {[
-                { type: "image" as const, label: "Imagem", Icon: ImageIcon },
-                { type: "video" as const, label: "Vídeo", Icon: Video },
-              ].map(({ type, label, Icon }) => (
-                <button key={type} type="button"
-                  onClick={() => { setMediaType(type); setVideoId(""); }}
-                  className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-xl border text-sm font-medium transition-all ${
-                    mediaType === type
-                      ? "bg-shopee-orange/10 border-shopee-orange text-shopee-orange"
-                      : "border-dark-border text-text-secondary hover:border-dark-border/80 hover:text-text-primary"
-                  }`}>
-                  <Icon className="h-4 w-4" /> {label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Imagem */}
-          {mediaType === "image" && (
-            <SectionBox title="Imagem do anúncio" icon={ImagePlus}>
-              <p className="text-[11px] text-text-secondary/70">Use a biblioteca do Meta para evitar erros de download. Envie ou escolha uma imagem já enviada.</p>
-              <div className="flex flex-wrap gap-2">
-                <label className={`inline-flex items-center gap-1.5 rounded-xl border border-dark-border bg-dark-bg px-3 py-2 text-xs font-medium text-text-secondary hover:text-text-primary hover:border-shopee-orange/40 cursor-pointer transition-all ${uploadingImage ? "opacity-50 cursor-not-allowed" : ""}`}>
-                  {uploadingImage ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
-                  Enviar imagem
-                  <input type="file" accept="image/*" className="sr-only" disabled={uploadingImage || !adAccountId}
-                    onChange={async (e) => { const f = e.target.files?.[0]; if (f) { await uploadImage(f); e.target.value = ""; } }} />
-                </label>
-                <select value={imageHash} onChange={(e) => { setImageHash(e.target.value); if (e.target.value) setImageUrl(""); }}
-                  className={`flex-1 min-w-[160px] ${selectCls}`}>
-                  <option value="">Escolher da biblioteca…</option>
-                  {libraryImages.map((img) => (
-                    <option key={img.hash} value={img.hash}>
-                      {img.url ? `Imagem (${img.hash.slice(0, 12)}…)` : `Hash: ${img.hash.slice(0, 16)}…`}
-                    </option>
-                  ))}
-                </select>
+            {/* ── Coluna esquerda: formulário ── */}
+            <div className="bg-dark-card rounded-2xl border border-dark-border p-6 flex flex-col gap-4">
+              <div className="flex items-center gap-2 pb-1 border-b border-dark-border/50 shrink-0">
+                <ImageIcon className="h-4 w-4 text-shopee-orange" />
+                <h2 className="text-sm font-bold text-text-primary">Anúncio — detalhes</h2>
               </div>
-              {(imageHash || imageUrl) && (
-                <div className="flex items-center gap-1.5 text-xs text-emerald-400">
-                  <CheckCircle2 className="h-3.5 w-3.5" />
-                  {imageHash ? "Imagem da biblioteca selecionada." : "URL da imagem preenchida."}
+
+              {/* Identidade resumida */}
+              <div className="flex items-center gap-3 rounded-xl bg-dark-bg/60 border border-dark-border/50 px-3 py-2.5 shrink-0">
+                <Building2 className="h-4 w-4 text-shopee-orange/70 shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold text-text-primary truncate">
+                    {pages.find((p) => p.id === pageId)?.name || pageList.find((p) => p.id === pageId)?.name || "—"}
+                  </p>
                 </div>
-              )}
-              {libraryImages.some((i) => i.hash === imageHash && i.url) && (
-                <img src={libraryImages.find((i) => i.hash === imageHash)!.url!} alt="Preview"
-                  className="max-h-28 rounded-xl border border-dark-border object-contain bg-dark-bg" />
-              )}
-              <div>
-                <FieldLabel hint="Só use se a imagem estiver acessível publicamente na internet.">Ou URL da imagem</FieldLabel>
-                <input type="url" value={imageUrl} onChange={(e) => { setImageUrl(e.target.value); if (e.target.value) setImageHash(""); }}
-                  placeholder="https://..." className={inputCls} />
-                {imageUrl && <img src={imageUrl} alt="Preview" className="mt-2 max-h-28 rounded-xl border border-dark-border object-contain bg-dark-bg" />}
               </div>
-            </SectionBox>
-          )}
 
-          {/* Vídeo */}
-          {mediaType === "video" && (
-            <SectionBox title="Vídeo do anúncio" icon={Video}>
-              <p className="text-[11px] text-text-secondary/70">Envie um vídeo ou escolha um da biblioteca da conta de anúncios.</p>
-              <div className="flex flex-wrap gap-2">
-                <label className={`inline-flex items-center gap-1.5 rounded-xl border border-dark-border bg-dark-bg px-3 py-2 text-xs font-medium text-text-secondary hover:text-text-primary hover:border-shopee-orange/40 cursor-pointer transition-all ${uploadingVideo ? "opacity-50 cursor-not-allowed" : ""}`}>
-                  {uploadingVideo ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
-                  {uploadingVideo ? "Enviando…" : "Enviar vídeo"}
-                  <input type="file" accept="video/*" className="sr-only" disabled={uploadingVideo || !adAccountId}
-                    onChange={async (e) => { const f = e.target.files?.[0]; if (f) { await uploadVideo(f); e.target.value = ""; } }} />
-                </label>
-                <select value={videoId} onChange={(e) => setVideoId(e.target.value)} className={`flex-1 min-w-[160px] ${selectCls}`}>
-                  <option value="">Escolher da biblioteca…</option>
-                  {libraryVideos.map((v) => (
-                    <option key={v.id} value={v.id}>{v.title}{v.length != null ? ` (${Math.round(v.length)}s)` : ""}</option>
-                  ))}
-                </select>
+              <div className="shrink-0">
+                <FieldLabel>Nome do anúncio</FieldLabel>
+                <input type="text" value={adName} onChange={(e) => setAdName(e.target.value)}
+                  placeholder="Ex: Anúncio 1 — Shopee Verão" className={inputCls} />
               </div>
-              {videoId && (
-                <div className="space-y-2">
-                  <div className="flex items-center gap-1.5 text-xs text-emerald-400"><CheckCircle2 className="h-3.5 w-3.5" /> Vídeo selecionado.</div>
-                  <img
-                    src={libraryVideos.find((v) => v.id === videoId)?.picture ?? `/api/meta/advideos/thumbnail?video_id=${encodeURIComponent(videoId)}`}
-                    alt="Miniatura" className="max-h-32 w-auto rounded-xl border border-dark-border object-contain bg-dark-bg" />
+
+              <div className="shrink-0">
+                <FieldLabel hint="Opcional — pode gerar depois no ATI com o ad_id.">
+                  <span className="flex items-center gap-1"><Link2 className="h-3 w-3" /> Link de destino</span>
+                </FieldLabel>
+                <input type="url" value={adLink} onChange={(e) => setAdLink(e.target.value)}
+                  placeholder="Deixe em branco ou cole o link da Shopee" className={inputCls} />
+              </div>
+
+              <div className="flex-1">
+                <FieldLabel>Texto do anúncio *</FieldLabel>
+                <textarea value={adMessage} onChange={(e) => setAdMessage(e.target.value)}
+                  placeholder="Descrição ou chamada para ação…"
+                  className={`${inputCls} resize-none w-full h-full min-h-[100px]`} />
+              </div>
+
+              <div className="shrink-0 rounded-xl border border-dark-border/60 bg-dark-bg/40 p-3 space-y-3">
+                <div className="flex items-center gap-1.5 border-l-2 border-shopee-orange/50 pl-2">
+                  <Link2 className="h-3 w-3 text-shopee-orange/70" />
+                  <span className="text-[11px] font-semibold text-text-secondary uppercase tracking-wide">Link do anúncio</span>
+                </div>
+                <div>
+                  <FieldLabel>Título (opcional)</FieldLabel>
+                  <input type="text" value={adTitle} onChange={(e) => setAdTitle(e.target.value)}
+                    placeholder="Ex: Oferta exclusiva Shopee" className={inputCls} />
+                </div>
+                <div>
+                  <FieldLabel hint="Botão de ação exibido no anúncio.">Chamada para ação</FieldLabel>
+                  <select value={callToAction} onChange={(e) => setCallToAction(e.target.value)} className={selectCls}>
+                    {META_CALL_TO_ACTIONS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex gap-2 shrink-0 mt-auto">
+                <button type="button" onClick={() => setStep(3)}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-dark-border px-4 py-2.5 text-sm font-medium text-text-secondary hover:bg-dark-bg transition-colors">
+                  <ChevronLeft className="h-4 w-4" /> Voltar
+                </button>
+                <button type="button" onClick={createAd}
+                  disabled={!adMessage.trim() || loading ||
+                    (mediaType === "image" && !imageHash.trim() && !imageUrl.trim()) ||
+                    (mediaType === "video" && (!videoId.trim() || (!imageHash.trim() && !imageUrl.trim())))}
+                  className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-shopee-orange px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-40 transition-all shadow-[0_2px_12px_rgba(238,77,45,0.2)]">
+                  {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
+                  Criar anúncio
+                </button>
+              </div>
+            </div>
+
+            {/* ── Coluna direita: biblioteca de mídia ── */}
+            <div className="bg-dark-card rounded-2xl border border-dark-border p-6 flex flex-col gap-3">
+
+              {/* Header + tabs */}
+              <div className="flex items-center justify-between pb-2 border-b border-dark-border/50 shrink-0">
+                <div className="flex items-center gap-2">
+                  <ImagePlus className="h-4 w-4 text-shopee-orange" />
+                  <h2 className="text-sm font-bold text-text-primary">Biblioteca de Mídia</h2>
+                </div>
+                <div className="flex rounded-xl overflow-hidden border border-dark-border text-xs font-semibold">
+                  {([
+                    { type: "image" as const, label: "Imagem", Icon: ImageIcon },
+                    { type: "video" as const, label: "Vídeo", Icon: Video },
+                  ]).map(({ type, label, Icon }) => (
+                    <button key={type} type="button"
+                      onClick={() => { setMediaType(type); setVideoId(""); }}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 transition-colors ${
+                        mediaType === type ? "bg-shopee-orange text-white" : "bg-dark-bg text-text-secondary hover:text-text-primary"
+                      }`}>
+                      <Icon className="h-3.5 w-3.5" /> {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Banner de seleção */}
+              <div className="shrink-0 h-9">
+                {mediaType === "image" && (imageHash || imageUrl) ? (
+                  <div className="flex items-center gap-2 rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 h-full">
+                    <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
+                    <p className="text-xs text-emerald-400 font-medium flex-1">
+                      {imageUrl ? "URL de imagem definida" : "Imagem da biblioteca selecionada"}
+                    </p>
+                    <button type="button" onClick={() => { setImageHash(""); setImageUrl(""); }}
+                      className="text-text-secondary/50 hover:text-red-400 transition-colors">
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ) : mediaType === "video" && videoId ? (
+                  <div className="flex items-center gap-2 rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 h-full">
+                    <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
+                    <p className="text-xs text-emerald-400 font-medium flex-1">Vídeo selecionado</p>
+                    <button type="button" onClick={() => setVideoId("")}
+                      className="text-text-secondary/50 hover:text-red-400 transition-colors">
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ) : <div className="h-full" />}
+              </div>
+
+              {/* Upload */}
+              <div className="shrink-0">
+                {mediaType === "image" ? (
+                  <label className={`flex items-center justify-center gap-2 rounded-xl border-2 border-dashed px-4 py-3 cursor-pointer transition-all ${uploadingImage ? "border-shopee-orange/40 bg-shopee-orange/5 cursor-not-allowed" : "border-dark-border hover:border-shopee-orange/50 hover:bg-shopee-orange/5"}`}>
+                    {uploadingImage ? <Loader2 className="h-4 w-4 text-shopee-orange animate-spin" /> : <Upload className="h-4 w-4 text-text-secondary/50" />}
+                    <span className="text-xs text-text-secondary font-medium">
+                      {uploadingImage ? "Enviando imagem…" : "Clique ou arraste para enviar nova imagem"}
+                    </span>
+                    <input type="file" accept="image/*" className="sr-only" disabled={uploadingImage || !adAccountId}
+                      onChange={async (e) => { const f = e.target.files?.[0]; if (f) { await uploadImage(f); e.target.value = ""; } }} />
+                  </label>
+                ) : (
+                  <label className={`flex items-center justify-center gap-2 rounded-xl border-2 border-dashed px-4 py-3 cursor-pointer transition-all ${uploadingVideo ? "border-shopee-orange/40 bg-shopee-orange/5 cursor-not-allowed" : "border-dark-border hover:border-shopee-orange/50 hover:bg-shopee-orange/5"}`}>
+                    {uploadingVideo ? <Loader2 className="h-4 w-4 text-shopee-orange animate-spin" /> : <Upload className="h-4 w-4 text-text-secondary/50" />}
+                    <span className="text-xs text-text-secondary font-medium">
+                      {uploadingVideo ? "Enviando vídeo…" : "Clique ou arraste para enviar novo vídeo"}
+                    </span>
+                    <input type="file" accept="video/*" className="sr-only" disabled={uploadingVideo || !adAccountId}
+                      onChange={async (e) => { const f = e.target.files?.[0]; if (f) { await uploadVideo(f); e.target.value = ""; } }} />
+                  </label>
+                )}
+              </div>
+
+              {/* Label contagem */}
+              <div className="flex items-center justify-between shrink-0">
+                <p className="text-[11px] text-text-secondary/60 font-medium uppercase tracking-wide">
+                  {mediaType === "image" ? `Imagens (${libraryImages.length})` : `Vídeos (${libraryVideos.length})`}
+                </p>
+                {mediaType === "image" && imgTotalPages > 1 && (
+                  <p className="text-[11px] text-text-secondary/50">Pág. {imgPage + 1}/{imgTotalPages}</p>
+                )}
+                {mediaType === "video" && vidTotalPages > 1 && (
+                  <p className="text-[11px] text-text-secondary/50">Pág. {vidPage + 1}/{vidTotalPages}</p>
+                )}
+              </div>
+
+              {/* Grade fixa — flex-1 para ocupar espaço disponível */}
+              <div className="flex-1 min-h-0">
+                {mediaType === "image" ? (
+                  libraryImages.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center gap-2 h-full text-center">
+                      <ImageIcon className="h-10 w-10 text-text-secondary/20" />
+                      <p className="text-xs text-text-secondary/50">Nenhuma imagem na conta.<br />Envie a primeira acima.</p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-4 gap-2 content-start h-full">
+                      {pagedImages.map((img) => {
+                        const selected = imageHash === img.hash;
+                        return (
+                          <button key={img.hash} type="button"
+                            onClick={() => { setImageHash(img.hash); setImageUrl(""); }}
+                            className={`relative aspect-square rounded-xl overflow-hidden border-2 transition-all hover:scale-[1.02] focus:outline-none ${selected ? "border-shopee-orange shadow-[0_0_0_2px_rgba(238,77,45,0.3)]" : "border-transparent hover:border-shopee-orange/40"}`}
+                          >
+                            {img.url ? (
+                              <img src={img.url} alt="" className="w-full h-full object-cover" />
+                            ) : (
+                              <div className="w-full h-full bg-gradient-to-br from-dark-bg to-dark-border flex items-center justify-center">
+                                <ImageIcon className="h-5 w-5 text-text-secondary/30" />
+                              </div>
+                            )}
+                            {selected && (
+                              <div className="absolute inset-0 bg-shopee-orange/20 flex items-center justify-center">
+                                <div className="w-5 h-5 rounded-full bg-shopee-orange flex items-center justify-center shadow-lg">
+                                  <Check className="h-3 w-3 text-white" />
+                                </div>
+                              </div>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )
+                ) : (
+                  libraryVideos.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center gap-2 h-full text-center">
+                      <Video className="h-10 w-10 text-text-secondary/20" />
+                      <p className="text-xs text-text-secondary/50">Nenhum vídeo na conta.<br />Envie o primeiro acima.</p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-2 content-start h-full">
+                      {pagedVideos.map((v) => {
+                        const selected = videoId === v.id;
+                        return (
+                          <button key={v.id} type="button"
+                            onClick={() => setVideoId(v.id)}
+                            className={`relative aspect-video rounded-xl overflow-hidden border-2 transition-all hover:scale-[1.02] focus:outline-none group ${selected ? "border-shopee-orange shadow-[0_0_0_2px_rgba(238,77,45,0.3)]" : "border-transparent hover:border-shopee-orange/40"}`}
+                          >
+                            {v.picture ? (
+                              <img src={v.picture} alt={v.title} className="w-full h-full object-cover" />
+                            ) : (
+                              <div className="w-full h-full bg-gradient-to-br from-dark-bg to-dark-border" />
+                            )}
+                            <div className={`absolute inset-0 flex items-center justify-center transition-all ${selected ? "bg-shopee-orange/25" : "bg-black/30 group-hover:bg-black/50"}`}>
+                              {selected ? (
+                                <div className="w-7 h-7 rounded-full bg-shopee-orange flex items-center justify-center shadow-lg">
+                                  <Check className="h-4 w-4 text-white" />
+                                </div>
+                              ) : (
+                                <div className="w-7 h-7 rounded-full bg-black/60 flex items-center justify-center">
+                                  <Play className="h-4 w-4 text-white ml-0.5" />
+                                </div>
+                              )}
+                            </div>
+                            {v.length != null && (
+                              <div className="absolute bottom-1 right-1 bg-black/70 text-white text-[10px] px-1.5 py-0.5 rounded font-mono">
+                                {Math.floor(v.length / 60)}:{String(Math.round(v.length % 60)).padStart(2, "0")}
+                              </div>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )
+                )}
+              </div>
+
+              {/* Paginação */}
+              <div className="shrink-0 flex items-center justify-between gap-2">
+                {mediaType === "image" ? (
+                  <>
+                    <button type="button" disabled={imgPage === 0}
+                      onClick={() => setImgPage((p) => Math.max(0, p - 1))}
+                      className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-dark-border text-xs font-medium text-text-secondary hover:text-text-primary hover:border-shopee-orange/40 disabled:opacity-30 disabled:cursor-not-allowed transition-all">
+                      <ChevronLeft className="h-3.5 w-3.5" /> Anterior
+                    </button>
+                    <div className="flex gap-1">
+                      {Array.from({ length: imgTotalPages }).map((_, i) => (
+                        <button key={i} type="button" onClick={() => setImgPage(i)}
+                          className={`w-6 h-6 rounded-lg text-[11px] font-bold transition-colors ${imgPage === i ? "bg-shopee-orange text-white" : "bg-dark-bg border border-dark-border text-text-secondary hover:border-shopee-orange/40"}`}>
+                          {i + 1}
+                        </button>
+                      ))}
+                    </div>
+                    <button type="button" disabled={imgPage >= imgTotalPages - 1}
+                      onClick={() => setImgPage((p) => Math.min(imgTotalPages - 1, p + 1))}
+                      className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-dark-border text-xs font-medium text-text-secondary hover:text-text-primary hover:border-shopee-orange/40 disabled:opacity-30 disabled:cursor-not-allowed transition-all">
+                      Próxima <ChevronRight className="h-3.5 w-3.5" />
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button type="button" disabled={vidPage === 0}
+                      onClick={() => setVidPage((p) => Math.max(0, p - 1))}
+                      className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-dark-border text-xs font-medium text-text-secondary hover:text-text-primary hover:border-shopee-orange/40 disabled:opacity-30 disabled:cursor-not-allowed transition-all">
+                      <ChevronLeft className="h-3.5 w-3.5" /> Anterior
+                    </button>
+                    <div className="flex gap-1">
+                      {Array.from({ length: vidTotalPages }).map((_, i) => (
+                        <button key={i} type="button" onClick={() => setVidPage(i)}
+                          className={`w-6 h-6 rounded-lg text-[11px] font-bold transition-colors ${vidPage === i ? "bg-shopee-orange text-white" : "bg-dark-bg border border-dark-border text-text-secondary hover:border-shopee-orange/40"}`}>
+                          {i + 1}
+                        </button>
+                      ))}
+                    </div>
+                    <button type="button" disabled={vidPage >= vidTotalPages - 1}
+                      onClick={() => setVidPage((p) => Math.min(vidTotalPages - 1, p + 1))}
+                      className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-dark-border text-xs font-medium text-text-secondary hover:text-text-primary hover:border-shopee-orange/40 disabled:opacity-30 disabled:cursor-not-allowed transition-all">
+                      Próxima <ChevronRight className="h-3.5 w-3.5" />
+                    </button>
+                  </>
+                )}
+              </div>
+
+              {/* URL fallback (imagens) */}
+              {mediaType === "image" && (
+                <div className="shrink-0 pt-2 border-t border-dark-border/50 space-y-1.5">
+                  <p className="text-[11px] text-text-secondary/50">Ou cole URL pública</p>
+                  <div className="flex gap-2">
+                    <input type="url" value={imageUrl}
+                      onChange={(e) => { setImageUrl(e.target.value); if (e.target.value) setImageHash(""); }}
+                      placeholder="https://..." className={`${inputCls} text-xs`} />
+                    {imageUrl && (
+                      <button type="button" onClick={() => setImageUrl("")}
+                        className="shrink-0 rounded-xl border border-dark-border px-2 text-text-secondary hover:text-red-400 transition-colors">
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
 
               {/* Capa do vídeo */}
-              <div className="border-t border-dark-border/60 pt-4 mt-2 space-y-3">
-                <FieldLabel hint="O Meta exige uma imagem de capa para anúncios com vídeo.">Imagem de capa *</FieldLabel>
-                <div className="flex flex-wrap gap-2">
+              {mediaType === "video" && videoId && (
+                <div className="shrink-0 pt-2 border-t border-dark-border/50 space-y-2">
+                  <p className="text-[11px] text-text-secondary/60 font-medium uppercase tracking-wide">
+                    Imagem de capa * <span className="normal-case text-text-secondary/40">(obrigatória)</span>
+                  </p>
+                  {(imageHash || imageUrl) ? (
+                    <div className="flex items-center gap-2 rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-3 py-2">
+                      <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
+                      <p className="text-xs text-emerald-400 font-medium flex-1">Capa selecionada</p>
+                      <button type="button" onClick={() => { setImageHash(""); setImageUrl(""); }}
+                        className="text-text-secondary/50 hover:text-red-400 transition-colors">
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-amber-400/80">Mude para aba Imagem e selecione a capa, ou envie:</p>
+                  )}
                   <label className={`inline-flex items-center gap-1.5 rounded-xl border border-dark-border bg-dark-bg px-3 py-2 text-xs font-medium text-text-secondary hover:text-text-primary hover:border-shopee-orange/40 cursor-pointer transition-all ${uploadingImage ? "opacity-50 cursor-not-allowed" : ""}`}>
                     {uploadingImage ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
-                    Enviar capa
+                    {uploadingImage ? "Enviando…" : "Enviar capa"}
                     <input type="file" accept="image/*" className="sr-only" disabled={uploadingImage || !adAccountId}
                       onChange={async (e) => { const f = e.target.files?.[0]; if (f) { await uploadImage(f); e.target.value = ""; } }} />
                   </label>
-                  <select value={imageHash} onChange={(e) => { setImageHash(e.target.value); if (e.target.value) setImageUrl(""); }}
-                    className={`flex-1 min-w-[160px] ${selectCls}`}>
-                    <option value="">Escolher da biblioteca…</option>
-                    {libraryImages.map((img) => (
-                      <option key={img.hash} value={img.hash}>
-                        {img.url ? `Imagem (${img.hash.slice(0, 12)}…)` : `Hash: ${img.hash.slice(0, 16)}…`}
-                      </option>
-                    ))}
-                  </select>
                 </div>
-                <input type="url" value={imageUrl} onChange={(e) => { setImageUrl(e.target.value); if (e.target.value) setImageHash(""); }}
-                  placeholder="Ou URL da imagem de capa" className={inputCls} />
-                {(imageHash || imageUrl) && (
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-1.5 text-xs text-emerald-400"><CheckCircle2 className="h-3.5 w-3.5" /> Capa selecionada.</div>
-                    {imageUrl ? (
-                      <img src={imageUrl} alt="Capa" className="max-h-28 w-auto rounded-xl border border-dark-border object-contain bg-dark-bg" />
-                    ) : libraryImages.find((i) => i.hash === imageHash)?.url ? (
-                      <img src={libraryImages.find((i) => i.hash === imageHash)!.url!} alt="Capa" className="max-h-28 w-auto rounded-xl border border-dark-border object-contain bg-dark-bg" />
-                    ) : null}
-                  </div>
-                )}
-              </div>
-            </SectionBox>
-          )}
-
-          <div className="flex gap-2 pt-1">
-            <button type="button" onClick={() => setStep(3)}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-dark-border px-4 py-2 text-sm font-medium text-text-secondary hover:bg-dark-bg transition-colors">
-              <ChevronLeft className="h-4 w-4" /> Voltar
-            </button>
-            <button type="button" onClick={createAd}
-              disabled={!adMessage.trim() || loading ||
-                (mediaType === "image" && !imageHash.trim() && !imageUrl.trim()) ||
-                (mediaType === "video" && (!videoId.trim() || (!imageHash.trim() && !imageUrl.trim())))}
-              className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-shopee-orange px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-40 transition-all shadow-[0_2px_12px_rgba(238,77,45,0.2)]">
-              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
-              Criar anúncio
-            </button>
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ── Sucesso ── */}
       {step === 4 && createdAdId && (

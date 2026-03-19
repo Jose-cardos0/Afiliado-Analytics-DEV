@@ -12,6 +12,9 @@ const ALLOWED_OBJECTIVES = [
   "OUTCOME_APP_PROMOTION",
 ];
 
+/** Apenas estes objetivos na criação de campanha pelo app. */
+const CREATE_CAMPAIGN_OBJECTIVES = ["OUTCOME_TRAFFIC", "OUTCOME_SALES"];
+
 import { NextResponse } from "next/server";
 import { createClient } from "../../../../../utils/supabase/server";
 
@@ -22,6 +25,30 @@ async function getToken(supabase: Awaited<ReturnType<typeof createClient>>) {
   if (!user) return { user: null, token: null };
   const { data: profile } = await supabase.from("profiles").select("meta_access_token").eq("id", user.id).single();
   return { user, token: profile?.meta_access_token?.trim() || null };
+}
+
+/** GET ?campaign_id= — objective e nome (para formulário de conjunto no ATI). */
+export async function GET(req: Request) {
+  try {
+    const supabase = await createClient();
+    const { user, token } = await getToken(supabase);
+    if (!user || !token) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+    const campaign_id = new URL(req.url).searchParams.get("campaign_id")?.trim();
+    if (!campaign_id) return NextResponse.json({ error: "campaign_id é obrigatório." }, { status: 400 });
+    const res = await fetch(
+      `${GRAPH_BASE}/${campaign_id}?fields=objective,name&access_token=${encodeURIComponent(token)}`
+    );
+    const json = (await res.json()) as { objective?: string; name?: string; error?: { message: string } };
+    if (json.error) {
+      return NextResponse.json({ error: json.error.message ?? "Erro ao buscar campanha" }, { status: 500 });
+    }
+    return NextResponse.json({
+      objective: (json.objective ?? "OUTCOME_TRAFFIC").toUpperCase(),
+      name: json.name ?? "",
+    });
+  } catch (e) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : "Erro" }, { status: 500 });
+  }
 }
 
 export async function PATCH(req: Request) {
@@ -112,9 +139,9 @@ export async function POST(req: Request) {
         { status: 400 }
       );
     }
-    if (!ALLOWED_OBJECTIVES.includes(objective)) {
+    if (!CREATE_CAMPAIGN_OBJECTIVES.includes(objective)) {
       return NextResponse.json(
-        { error: `objective inválido. Use: ${ALLOWED_OBJECTIVES.join(", ")}` },
+        { error: `Neste fluxo só é permitido criar campanhas: ${CREATE_CAMPAIGN_OBJECTIVES.join(" ou ")}.` },
         { status: 400 }
       );
     }
