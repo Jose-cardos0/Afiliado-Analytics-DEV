@@ -1,40 +1,22 @@
 import { NextResponse } from "next/server";
-import { spawn } from "node:child_process";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 const VIDEO_RE = /\.(mp4|m3u8|webm|ts)(\?|$)/i;
 
-function extractIds(url: string): boolean {
-  return /i\.\d+\.\d+/.test(url) || /\/product\/\d+\/\d+/.test(url);
-}
-
-function runScraper(url: string): Promise<{ productName: string; media: { url: string; type: string; label: string }[]; error?: string }> {
-  return new Promise((resolve) => {
-    const cwd = process.cwd();
-    const sep = process.platform === "win32" ? "\\" : "/";
-    const scriptPath = [cwd, "scripts", "shopee-scraper.cjs"].join(sep);
-
-    const child = spawn("node", [scriptPath, url], { timeout: 50000, stdio: ["ignore", "pipe", "pipe"] });
-
-    let stdout = "";
-    let stderr = "";
-    child.stdout.on("data", (d: Buffer) => { stdout += d.toString(); });
-    child.stderr.on("data", (d: Buffer) => { stderr += d.toString(); });
-
-    child.on("close", () => {
-      try {
-        resolve(JSON.parse(stdout));
-      } catch {
-        resolve({ productName: "", media: [], error: stderr.slice(0, 300) || "Resposta inválida do scraper" });
-      }
-    });
-
-    child.on("error", (err: Error) => {
-      resolve({ productName: "", media: [], error: err.message });
-    });
-  });
+async function runScraper(url: string): Promise<{ productName: string; media: { url: string; type: string; label: string }[]; error?: string }> {
+  // Evita dependência de arquivo fora do bundle (ex.: /scripts) no runtime da Vercel
+  const mod = await import("../../../../server/shopee-scraper.cjs");
+  const scrape = mod.scrape ?? mod.default?.scrape;
+  if (typeof scrape !== "function") {
+    return { productName: "", media: [], error: "Scraper não encontrado no servidor" };
+  }
+  try {
+    return await scrape(url);
+  } catch (e) {
+    return { productName: "", media: [], error: e instanceof Error ? e.message : "Falha no scraper" };
+  }
 }
 
 export async function POST(req: Request) {
@@ -64,12 +46,7 @@ export async function POST(req: Request) {
       }
     }
 
-    if (!extractIds(shopeeUrl)) {
-      return NextResponse.json(
-        { error: "URL inválida. Use: shopee.com.br/Produto-i.SHOPID.ITEMID" },
-        { status: 400 }
-      );
-    }
+    // Mantém validação mínima; o scraper em si lida com a navegação.
 
     const result = await runScraper(shopeeUrl);
 

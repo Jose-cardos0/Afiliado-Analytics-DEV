@@ -281,11 +281,11 @@ export default function VideoEditorPage() {
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-xl bg-shopee-orange/15 border border-shopee-orange/30 flex items-center justify-center shadow-[0_0_16px_rgba(238,77,45,0.15)]">
             <Film className="h-4.5 w-4.5 text-shopee-orange" />
-          </div>
+        </div>
           <div>
             <h1 className="text-base font-bold text-text-primary">Gerador de Criativos</h1>
             <p className="text-[11px] text-text-secondary/60">Shopee → IA Copy + Voz → Estilo → MP4</p>
-          </div>
+            </div>
         </div>
         {/* Progress */}
         <div className="hidden md:flex items-center gap-1 text-[11px] text-text-secondary/50">
@@ -314,20 +314,20 @@ export default function VideoEditorPage() {
                   : "bg-dark-card border-2 border-dark-border text-text-secondary"
                 }`}>
                   {done ? <CheckCircle2 className="h-3.5 w-3.5" /> : s.id}
-                </div>
+          </div>
                 {/* Label */}
                 <span className={`hidden sm:block text-xs font-medium whitespace-nowrap ${current ? "text-text-primary font-semibold" : done ? "text-emerald-400" : "text-text-secondary"}`}>
                   {s.title}
                 </span>
-              </button>
+                    </button>
               {/* Linha conectora */}
               {idx < STEPS.length - 1 && (
                 <div className={`flex-1 h-px mx-2 transition-colors ${done ? "bg-emerald-500/40" : "bg-dark-border"}`} />
               )}
-            </div>
+                  </div>
           );
         })}
-      </div>
+                      </div>
       {/* Label mobile do step atual */}
       <p className="sm:hidden text-xs font-medium text-text-primary mt-2 ml-0.5">
         {STEPS[step - 1]?.title}
@@ -338,7 +338,7 @@ export default function VideoEditorPage() {
           <AlertCircle className="h-4 w-4 text-red-400 shrink-0 mt-0.5" />
           <p className="text-sm text-red-400 flex-1">{error}</p>
           <button type="button" onClick={() => setError(null)} className="text-red-400/50 hover:text-red-400 text-xs px-1">✕</button>
-        </div>
+                      </div>
       )}
 
       {/* ════════════════════════════════════════
@@ -357,11 +357,11 @@ export default function VideoEditorPage() {
                 <p className="text-sm font-bold text-text-primary">Importar da Shopee</p>
                 <Tooltip text="Cole o link do produto (shopee.com.br/...) para buscar imagens e vídeos. Você também pode enviar arquivos próprios abaixo." wide />
               </div>
-            </div>
+                </div>
 
             <div className="p-5 flex flex-col gap-4 flex-1">
               {/* Search */}
-              <div className="flex gap-2">
+                  <div className="flex gap-2">
                 <div className="flex-1 relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-text-secondary/40" />
                   <input
@@ -370,12 +370,12 @@ export default function VideoEditorPage() {
                     className="w-full rounded-xl border border-dark-border bg-dark-bg py-2.5 pl-9 pr-3 text-sm text-text-primary placeholder-text-secondary/40 focus:outline-none focus:border-shopee-orange/70 focus:ring-1 focus:ring-shopee-orange/20 transition-all"
                     onKeyDown={(e) => e.key === "Enter" && handleShopeeSearch()}
                   />
-                </div>
+                  </div>
                 <button type="button" onClick={handleShopeeSearch} disabled={searching || !shopeeUrl.trim()} className={btnPrimary}>
                   {searching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
                   {searching ? "Buscando…" : "Buscar"}
                 </button>
-              </div>
+                </div>
 
               {/* Product tag */}
               {productName && !searching && (
@@ -384,7 +384,7 @@ export default function VideoEditorPage() {
                   <div className="min-w-0">
                     <p className="text-[10px] font-semibold text-emerald-400/70 uppercase tracking-wide">Produto encontrado</p>
                     <p className="text-sm font-semibold text-text-primary truncate">{productName}</p>
-                  </div>
+                        </div>
                   {(videoCount > 0 || imageCount > 0) && (
                     <div className="ml-auto flex items-center gap-2 shrink-0">
                       {videoCount > 0 && (
@@ -408,7 +408,7 @@ export default function VideoEditorPage() {
                   <div className="relative">
                     <span className="absolute inset-0 rounded-full bg-shopee-orange/15 animate-ping" />
                     <Loader2 className="h-8 w-8 animate-spin text-shopee-orange relative" />
-                  </div>
+                </div>
                   <p className="text-xs text-text-secondary/60">Buscando mídias do produto…</p>
                 </div>
               )}
@@ -425,14 +425,14 @@ export default function VideoEditorPage() {
                         onClick={() => setSelectedMedia(new Set(mediaAssets.map((_, i) => i)))}
                         className="text-[10px] font-semibold text-shopee-orange hover:text-shopee-orange/80 transition-colors px-2 py-0.5 rounded-lg hover:bg-shopee-orange/10">
                         Todas
-                      </button>
+                </button>
                       <button type="button"
                         onClick={() => setSelectedMedia(new Set())}
                         className="text-[10px] font-semibold text-text-secondary/50 hover:text-text-secondary transition-colors px-2 py-0.5 rounded-lg hover:bg-white/5">
                         Limpar
-                      </button>
-                    </div>
+                    </button>
                   </div>
+              </div>
                   <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2">
                     {mediaAssets.map((asset, i) => {
                       const sel = selectedMedia.has(i);
@@ -454,9 +454,9 @@ export default function VideoEditorPage() {
                             <div className="absolute inset-0 bg-shopee-orange/15 flex items-center justify-center">
                               <div className="w-5 h-5 rounded-full bg-shopee-orange flex items-center justify-center shadow-lg">
                                 <Check className="h-3 w-3 text-white" />
-                              </div>
-                            </div>
-                          )}
+                </div>
+              </div>
+            )}
                           <span className={`absolute top-1 left-1 text-[8px] font-bold px-1.5 py-0.5 rounded-md ${
                             asset.type === "video"
                               ? "bg-purple-500/80 text-white"
@@ -464,7 +464,7 @@ export default function VideoEditorPage() {
                           }`}>
                             {asset.type === "video" ? "▶" : "⊞"}
                           </span>
-                        </button>
+                      </button>
                       );
                     })}
                   </div>
@@ -476,10 +476,10 @@ export default function VideoEditorPage() {
                 <div className="flex-1 flex flex-col items-center justify-center gap-3 py-8 text-text-secondary/30">
                   <div className="w-14 h-14 rounded-2xl border-2 border-dashed border-dark-border/40 flex items-center justify-center">
                     <ShoppingBag className="h-6 w-6" />
-                  </div>
-                  <p className="text-xs text-center">Cole um link da Shopee acima para importar imagens e vídeos do produto</p>
                 </div>
-              )}
+                  <p className="text-xs text-center">Cole um link da Shopee acima para importar imagens e vídeos do produto</p>
+              </div>
+            )}
 
               {/* Upload zone */}
               <label className="group flex items-center justify-center gap-2.5 rounded-xl border-2 border-dashed border-shopee-orange/50 bg-shopee-orange/10 py-3.5 cursor-pointer hover:border-shopee-orange/60 hover:bg-shopee-orange/50 transition-all mt-auto">
@@ -514,7 +514,7 @@ export default function VideoEditorPage() {
                 <div className="flex flex-col items-center justify-center gap-3 text-text-secondary/25 py-8">
                   <div className="w-16 h-16 rounded-2xl border-2 border-dashed border-dark-border/30 flex items-center justify-center">
                     <ImageIcon className="h-7 w-7" />
-                  </div>
+                </div>
                   <p className="text-xs text-center max-w-[160px]">Selecione mídias na esquerda para visualizar aqui</p>
                 </div>
               ) : (
@@ -534,8 +534,8 @@ export default function VideoEditorPage() {
                       )}
                     </div>
                   ))}
-                </div>
-              )}
+              </div>
+            )}
 
               <button
                 type="button"
@@ -546,9 +546,9 @@ export default function VideoEditorPage() {
                 Continuar para Copy & Voz
                 <ChevronRight className="h-4 w-4" />
               </button>
-            </div>
-          </div>
-        </div>
+                      </div>
+                    </div>
+                        </div>
       )}
 
       {/* ════════════════════════════════════════
@@ -565,15 +565,15 @@ export default function VideoEditorPage() {
               <div>
                 <p className="text-sm font-bold text-text-primary">Copy com IA</p>
                 <p className="text-[11px] text-text-secondary/50">Gere o roteiro do vídeo automaticamente</p>
-              </div>
-            </div>
+          </div>
+        </div>
 
             <div className="p-5 flex flex-col gap-4 flex-1">
               <div>
                 <FieldLabel hint="Usado pela IA para gerar o roteiro. Pode ser o nome que veio da Shopee ou um título que você preferir.">Nome do produto</FieldLabel>
                 <input type="text" value={productName} onChange={(e) => setProductName(e.target.value)}
                   placeholder="Ex: Camiseta Oversized Anime" className={inputCls} />
-              </div>
+            </div>
 
               {/* Style cards */}
               <div>
@@ -584,7 +584,7 @@ export default function VideoEditorPage() {
                     const active = copyStyle === s.value;
                     const colorMap = { emerald: "emerald", yellow: "yellow", red: "red" } as const;
                     const c = colorMap[s.color];
-                    return (
+              return (
                       <button key={s.value} type="button" onClick={() => setCopyStyle(s.value)}
                         className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border transition-all ${
                           active
@@ -602,9 +602,9 @@ export default function VideoEditorPage() {
                           active ? "text-text-primary" : "text-text-secondary/60"
                         }`}>{s.label}</span>
                       </button>
-                    );
-                  })}
-                </div>
+              );
+            })}
+              </div>
               </div>
 
               <button type="button" onClick={handleGenerateCopy} disabled={generatingCopy || !productName.trim()} className={btnPrimary}>
@@ -619,28 +619,28 @@ export default function VideoEditorPage() {
                     <span className="text-[10px] text-text-secondary/50 bg-dark-bg/80 px-2 py-0.5 rounded-full border border-dark-border/50">
                       {wordCount} palavras · ~{Math.round(wordCount / 2.5)}s
                     </span>
-                  )}
-                </div>
+            )}
+          </div>
                 <textarea
                   value={copyText} onChange={(e) => setCopyText(e.target.value)}
                   placeholder="Cole ou gere a copy com IA acima…"
                   className={`${inputCls} resize-none flex-1 min-h-[140px] font-medium leading-relaxed scrollbar-shopee overflow-y-auto`}
                 />
-              </div>
             </div>
-          </div>
+        </div>
+                </div>
 
           {/* Right: Voice */}
           <div className="bg-dark-card rounded-2xl border border-dark-border flex flex-col overflow-hidden">
             <div className="px-5 py-4 border-b border-dark-border/60 flex items-center gap-2.5">
               <div className="w-7 h-7 rounded-lg bg-pink-500/15 flex items-center justify-center">
                 <Mic className="h-3.5 w-3.5 text-pink-400" />
-              </div>
+                    </div>
               <div>
                 <p className="text-sm font-bold text-text-primary">Voz com IA + Legendas</p>
                 <p className="text-[11px] text-text-secondary/50">ElevenLabs · timestamps sincronizados</p>
-              </div>
-            </div>
+                  </div>
+                </div>
 
             <div className="p-5 flex flex-col gap-4 flex-1">
               {/* Voice selector */}
@@ -660,7 +660,7 @@ export default function VideoEditorPage() {
                     ))}
                   </select>
                 )}
-              </div>
+                </div>
 
               {/* Generate button */}
               <button type="button" onClick={handleGenerateVoice}
@@ -678,20 +678,20 @@ export default function VideoEditorPage() {
                   <div className="px-4 py-3 flex items-center gap-3 border-b border-emerald-500/15">
                     <div className="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center">
                       <Check className="h-4 w-4 text-emerald-400" />
-                    </div>
+                  </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-bold text-emerald-300">Áudio gerado com sucesso</p>
                       <p className="text-[11px] text-emerald-400/60">{voiceAudioDuration.toFixed(1)}s de narração</p>
-                    </div>
+                </div>
                     {captions.length > 0 && (
                       <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-300 bg-emerald-500/20 px-2 py-1 rounded-lg">
                         <Check className="h-2.5 w-2.5" /> {captions.length} legendas
                       </span>
                     )}
-                  </div>
+                </div>
                   <div className="px-4 py-3">
                     <audio src={voiceAudioUrl} controls className="w-full h-9 rounded-lg" />
-                  </div>
+                </div>
                 </div>
               )}
 
@@ -710,18 +710,18 @@ export default function VideoEditorPage() {
                       <div key={i} className="w-1 bg-shopee-orange rounded-full animate-pulse"
                         style={{ height: `${12 + (i % 3) * 8}px`, animationDelay: `${i * 0.1}s` }} />
                     ))}
-                  </div>
+                    </div>
                   <p className="text-xs text-text-secondary/50">Sintetizando voz e sincronizando legendas…</p>
-                </div>
-              )}
+                  </div>
+                )}
 
               {/* Music — mesmo estilo do botão Mídia "Ou envie seus próprios arquivos" */}
               <div className="mt-auto pt-2 border-t border-dark-border/40">
                 <div className="flex items-center gap-1.5 mb-2">
                   <label className="text-[11px] font-semibold text-text-secondary/60 uppercase tracking-wide">Música de fundo (opcional)</label>
                   <Tooltip text="Envie um MP3 para tocar em segundo plano. Use o slider abaixo para ajustar o volume em relação à narração." wide />
-                </div>
-                <div className="flex items-center gap-2">
+                    </div>
+                    <div className="flex items-center gap-2">
                   <label className={`group flex-1 flex items-center justify-center gap-2.5 rounded-xl border-2 border-dashed cursor-pointer py-3.5 transition-all ${
                     musicUrl
                       ? "border-emerald-500/30 bg-emerald-500/6 hover:bg-emerald-500/10"
@@ -737,9 +737,9 @@ export default function VideoEditorPage() {
                     <button type="button" onClick={() => setMusicUrl(null)}
                       className="p-2.5 rounded-xl border border-dark-border/50 text-text-secondary/50 hover:text-red-400 hover:border-red-500/30 transition-all">
                       <Trash2 className="h-3.5 w-3.5" />
-                    </button>
+                      </button>
                   )}
-                </div>
+                    </div>
                 {musicUrl && (
                   <div className="flex items-center gap-3 mt-2.5">
                     <Volume2 className="h-3 w-3 text-text-secondary/40 shrink-0" />
@@ -759,11 +759,11 @@ export default function VideoEditorPage() {
                 <button type="button" onClick={() => setStep(3)} className={`flex-1 ${btnPrimary}`}>
                   Continuar para Estilo <ChevronRight className="h-4 w-4" />
                 </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+                    </div>
+                        </div>
+                    </div>
+                  </div>
+                )}
 
       {/* ════════════════════════════════════════
           STEP 3: ESTILO
@@ -790,8 +790,8 @@ export default function VideoEditorPage() {
                       <p className={`text-sm font-semibold ${videoStyle === key ? "text-shopee-orange" : "text-text-primary"}`}>{val.label}</p>
                       <p className="text-[11px] text-text-secondary/50 mt-0.5">{val.description}</p>
                     </button>
-                  ))}
-              </div>
+                      ))}
+                    </div>
               <div>
                 <FieldLabel hint="Proporção do vídeo final. Stories 9:16, Feed 1:1, Paisagem 16:9.">Formato</FieldLabel>
                 <div className="flex gap-2">
@@ -805,30 +805,30 @@ export default function VideoEditorPage() {
                       <span className="text-[9px] opacity-60">{r.sub}</span>
                     </button>
                   ))}
-                </div>
-              </div>
+                      </div>
+                  </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <FieldLabel hint="Exibido como overlay no vídeo (ex.: R$ 49,90). Deixe em branco se não quiser.">Preço (opcional)</FieldLabel>
                   <input type="text" value={price} onChange={(e) => setPrice(e.target.value)} placeholder="R$ 49,90" className={inputCls} />
-                </div>
+              </div>
                 <div>
                   <FieldLabel hint="Chamada final do vídeo (ex.: Link na bio, Compre agora).">CTA final</FieldLabel>
                   <input type="text" value={ctaText} onChange={(e) => setCtaText(e.target.value)} placeholder="Link na bio" className={inputCls} />
-                </div>
-              </div>
-            </div>
           </div>
+        </div>
+      </div>
+        </div>
           <div className="bg-dark-card rounded-2xl border border-dark-border flex flex-col overflow-hidden">
             <div className="px-5 py-4 border-b border-dark-border/60 flex items-center gap-2.5">
               <div className="w-7 h-7 rounded-lg bg-cyan-500/15 flex items-center justify-center">
                 <Sparkles className="h-3.5 w-3.5 text-cyan-400" />
-              </div>
+      </div>
               <div className="flex items-center gap-1.5">
                 <p className="text-sm font-bold text-text-primary">Estilo das legendas</p>
                 <Tooltip text="Legendas em 3 palavras por vez, UPPERCASE, sincronizadas com a narração. Escolha a aparência (fonte, cor, posição)." wide />
               </div>
-            </div>
+          </div>
             <div className="p-5 flex flex-col gap-2 flex-1">
               {Object.entries(SUBTITLE_THEMES).map(([key, theme]) => (
                 <button key={key} type="button" onClick={() => setSubtitleThemeKey(key)}
@@ -850,11 +850,11 @@ export default function VideoEditorPage() {
               <div className="flex gap-2 mt-auto pt-2">
                 <button type="button" onClick={() => setStep(2)} className={btnSecondary}><ChevronLeft className="h-4 w-4" /> Voltar</button>
                 <button type="button" onClick={() => setStep(4)} className={`flex-1 ${btnPrimary}`}>Ver Preview <ChevronRight className="h-4 w-4" /></button>
-              </div>
+            </div>
             </div>
           </div>
-        </div>
-      )}
+                            </div>
+                          )}
 
       {/* ════════════════════════════════════════
           STEP 4: PREVIEW & EXPORTAR
@@ -868,12 +868,12 @@ export default function VideoEditorPage() {
               <div className="flex items-center gap-2.5">
                 <div className="w-7 h-7 rounded-lg bg-shopee-orange/15 flex items-center justify-center">
                   <Play className="h-3.5 w-3.5 text-shopee-orange ml-0.5" />
-                </div>
+                          </div>
                 <div>
                   <p className="text-sm font-bold text-text-primary">Preview em tempo real</p>
                   <p className="text-[11px] text-text-secondary/50">{dimensions.width}×{dimensions.height} · {fps}fps · ~{totalDurationSec}s</p>
-                </div>
-              </div>
+                              </div>
+                            </div>
               <div className="flex items-center gap-1.5">
                 {captions.length > 0 && (
                   <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-300 bg-emerald-500/15 px-2 py-1 rounded-lg">
@@ -884,9 +884,9 @@ export default function VideoEditorPage() {
                   <span className="flex items-center gap-1 text-[10px] font-bold text-blue-300 bg-blue-500/15 px-2 py-1 rounded-lg">
                     <Volume2 className="h-2.5 w-2.5" /> {voiceAudioDuration.toFixed(0)}s voz
                   </span>
-                )}
-              </div>
-            </div>
+                          )}
+                        </div>
+                  </div>
 
             {/* Player */}
             <div className="flex items-center justify-center bg-black/40 p-6">
@@ -919,8 +919,8 @@ export default function VideoEditorPage() {
               <button type="button" onClick={() => setStep(3)} className={btnSecondary}>
                 <ChevronLeft className="h-3.5 w-3.5" /> Editar estilo
               </button>
-            </div>
-          </div>
+        </div>
+      </div>
 
           {/* Right: Summary + Export */}
           <div className="flex flex-col gap-3">
@@ -943,9 +943,9 @@ export default function VideoEditorPage() {
                     <Icon className="h-3 w-3 text-text-secondary/40 shrink-0" />
                     <span className="text-xs text-text-secondary/60 flex-1">{label}</span>
                     <span className="text-xs font-semibold text-text-primary text-right">{value}</span>
-                  </div>
-                ))}
               </div>
+                ))}
+            </div>
             </div>
 
             {/* Export card */}
