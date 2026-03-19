@@ -28,21 +28,25 @@ function isJunk(url: string): boolean {
 }
 
 async function getBrowser(): Promise<any> {
-  const puppeteer = require("puppeteer-extra");
-  const StealthPlugin = require("puppeteer-extra-plugin-stealth");
-  puppeteer.use(StealthPlugin());
-
   const isVercel = !!process.env.VERCEL || !!process.env.AWS_LAMBDA_FUNCTION_NAME;
 
   if (isVercel) {
+    const puppeteerCore = require("puppeteer-core");
     const chromium = require("@sparticuz/chromium");
-    return puppeteer.launch({
-      args: chromium.args,
+    return puppeteerCore.launch({
+      args: [
+        ...chromium.args,
+        "--disable-blink-features=AutomationControlled",
+      ],
       executablePath: await chromium.executablePath(),
       headless: chromium.headless,
       defaultViewport: { width: 1280, height: 800 },
     });
   }
+
+  const puppeteer = require("puppeteer-extra");
+  const StealthPlugin = require("puppeteer-extra-plugin-stealth");
+  puppeteer.use(StealthPlugin());
 
   const fs = require("fs");
   const paths = [
