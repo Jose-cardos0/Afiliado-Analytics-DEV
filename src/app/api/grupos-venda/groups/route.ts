@@ -71,7 +71,7 @@ export async function POST(req: Request) {
 
     const toInsert = groups
       .filter((g: { id?: string }) => g?.id)
-      .map((g: { id: string; nome?: string }) => ({
+      .map((g: { id: string; nome?: string; name?: string }) => ({
         user_id: user.id,
         instance_id: instanceId,
         group_id: String(g.id),

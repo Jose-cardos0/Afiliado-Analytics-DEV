@@ -7,6 +7,8 @@
 import { NextResponse } from "next/server";
 import { createClient } from "../../../../../utils/supabase/server";
 
+type GroupRow = { id: string; nome: string; qtdMembros: number };
+
 function todayUTC(): string {
   const d = new Date();
   return d.toISOString().slice(0, 10);
@@ -34,7 +36,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "instance_id é obrigatório" }, { status: 400 });
     }
 
-    const payload = groups.map((g: { id?: string; nome?: string; qtdMembros?: number }) => ({
+    const payload: GroupRow[] = groups.map((g: { id?: string; nome?: string; qtdMembros?: number }) => ({
       id: String(g?.id ?? ""),
       nome: String(g?.nome ?? ""),
       qtdMembros: Number(g?.qtdMembros ?? 0),
@@ -61,9 +63,9 @@ export async function POST(req: Request) {
       .eq("snapshot_date", snapshotDate)
       .maybeSingle();
 
-    let previousGroups: Array<{ id: string; nome: string; qtdMembros: number }> = [];
+    let previousGroups: GroupRow[] = [];
     if (todaySnapshotRow?.groups && Array.isArray(todaySnapshotRow.groups)) {
-      previousGroups = todaySnapshotRow.groups as Array<{ id: string; nome: string; qtdMembros: number }>;
+      previousGroups = todaySnapshotRow.groups as GroupRow[];
     } else {
       const { data: prevSnapshotRow } = await supabase
         .from("gpl_group_snapshots")
@@ -76,7 +78,7 @@ export async function POST(req: Request) {
         .maybeSingle();
 
       if (prevSnapshotRow?.groups && Array.isArray(prevSnapshotRow.groups)) {
-        previousGroups = prevSnapshotRow.groups as Array<{ id: string; nome: string; qtdMembros: number }>;
+        previousGroups = prevSnapshotRow.groups as GroupRow[];
       } else {
         const { data: baseRow } = await supabase
           .from("gpl_group_snapshots_base")
@@ -85,7 +87,7 @@ export async function POST(req: Request) {
           .eq("instance_id", instanceId)
           .maybeSingle();
         if (baseRow?.groups && Array.isArray(baseRow.groups)) {
-          previousGroups = baseRow.groups as Array<{ id: string; nome: string; qtdMembros: number }>;
+          previousGroups = baseRow.groups as GroupRow[];
         }
       }
     }
@@ -115,14 +117,13 @@ export async function POST(req: Request) {
       (existingCumulative ?? []).map((r) => [r.group_id, { novos: r.total_novos ?? 0, saidas: r.total_saidas ?? 0 }])
     );
     const now = new Date().toISOString();
-    type GroupRow = { id: string; nome: string; qtdMembros: number };
-    const allGroupIds = new Set([...payload.map((g: GroupRow) => g.id), ...novosDelta.keys(), ...saidasDelta.keys()]);
+    const allGroupIds = new Set([...payload.map((g) => g.id), ...novosDelta.keys(), ...saidasDelta.keys()]);
     for (const g of payload) {
       if (!allGroupIds.has(g.id)) allGroupIds.add(g.id);
     }
     for (const gid of allGroupIds) {
-      const gPayload = payload.find((p: GroupRow) => p.id === gid);
-      const nome = gPayload?.nome ?? previousGroups.find((p: GroupRow) => p.id === gid)?.nome ?? "";
+      const gPayload = payload.find((p) => p.id === gid);
+      const nome = gPayload?.nome ?? previousGroups.find((p) => p.id === gid)?.nome ?? "";
       const cur = cumMap.get(gid) ?? { novos: 0, saidas: 0 };
       const novos = cur.novos + (novosDelta.get(gid) ?? 0);
       const saidas = cur.saidas + (saidasDelta.get(gid) ?? 0);

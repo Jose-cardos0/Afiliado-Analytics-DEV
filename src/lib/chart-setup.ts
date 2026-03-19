@@ -41,18 +41,18 @@ ChartJS.register({
       const active = chart.getActiveElements?.() ?? [];
       for (const el of active) {
         if (!el) {
-          chart.tooltip?.setActiveElements?.([]);
+          chart.tooltip?.setActiveElements?.([], { x: 0, y: 0 });
           return;
         }
         const meta = chart.getDatasetMeta?.(el.datasetIndex);
         if (!meta?.controller) {
-          chart.tooltip?.setActiveElements?.([]);
+          chart.tooltip?.setActiveElements?.([], { x: 0, y: 0 });
           return;
         }
       }
     } catch {
       try {
-        chart.tooltip?.setActiveElements?.([]);
+        chart.tooltip?.setActiveElements?.([], { x: 0, y: 0 });
       } catch {
         // ignore
       }

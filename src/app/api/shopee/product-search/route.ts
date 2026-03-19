@@ -105,11 +105,11 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: msg }, { status: 500 });
     }
 
-    const nodes = json?.data?.productOfferV2?.nodes ?? [];
+    const nodes = (json?.data?.productOfferV2?.nodes ?? []) as Record<string, unknown>[];
     const pageInfo = json?.data?.productOfferV2?.pageInfo ?? {};
 
     return NextResponse.json({
-      products: nodes.map((n: Record<string, unknown>) => ({
+      products: nodes.map((n) => ({
         itemId: n.itemId,
         productName: n.productName ?? "",
         productLink: n.productLink ?? "",

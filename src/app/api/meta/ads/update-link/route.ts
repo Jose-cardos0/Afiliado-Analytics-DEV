@@ -110,7 +110,7 @@ export async function POST(req: Request) {
     };
     if (adJson.error || !adJson.account_id) {
       const err = adJson.error;
-      const msg = (err as { error_user_msg?: string })?.error_user_msg || err?.message ?? "Anúncio não encontrado ou sem permissão.";
+      const msg = ((err as { error_user_msg?: string })?.error_user_msg || (err as { message?: string })?.message) ?? "Anúncio não encontrado ou sem permissão.";
       return NextResponse.json(
         { error: msg, step: "buscar_anuncio", meta_error: err },
         { status: adRes.ok ? 400 : 500 }
@@ -134,7 +134,7 @@ export async function POST(req: Request) {
     };
     if (creativeJson.error || !creativeJson.object_story_spec) {
       const err = creativeJson.error;
-      const msg = (err as { error_user_msg?: string })?.error_user_msg || err?.message ?? "Criativo não encontrado.";
+      const msg = ((err as { error_user_msg?: string })?.error_user_msg || (err as { message?: string })?.message) ?? "Criativo não encontrado.";
       return NextResponse.json(
         { error: msg, step: "buscar_criativo", meta_error: err },
         { status: creativeRes.ok ? 400 : 500 }

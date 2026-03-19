@@ -21,10 +21,11 @@ export async function GET() {
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-    const listas = (rows ?? []).map((r: Record<string, unknown>) => ({
-      id: r.id,
-      nome: r.nome ?? "",
-      createdAt: r.created_at,
+    type ListaRow = { id: string; nome: string; createdAt: string };
+    const listas: ListaRow[] = (rows ?? []).map((r: Record<string, unknown>) => ({
+      id: String(r.id ?? ""),
+      nome: String(r.nome ?? ""),
+      createdAt: String(r.created_at ?? ""),
     }));
 
     const { data: counts } = await supabase
@@ -35,7 +36,7 @@ export async function GET() {
       countByLista[c.lista_id] = (countByLista[c.lista_id] ?? 0) + 1;
     });
 
-    const data = listas.map((l: { id: string; nome: string; createdAt: string }) => ({
+    const data = listas.map((l) => ({
       ...l,
       totalItens: countByLista[l.id] ?? 0,
     }));

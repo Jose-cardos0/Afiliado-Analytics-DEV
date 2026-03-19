@@ -68,7 +68,7 @@ export async function POST(req: Request) {
 
     const toInsert = groups
       .filter((g: { id?: string }) => g?.id)
-      .map((g: { id: string; nome?: string }) => ({
+      .map((g: { id: string; nome?: string; name?: string }) => ({
         group_id: String(g.id),
         group_name: String(g.nome ?? g.name ?? "").trim() || "Grupo",
       }));
