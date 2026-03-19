@@ -25,7 +25,6 @@ export const ShowcaseVideo: React.FC<VideoInputProps> = (props) => {
 
   return (
     <AbsoluteFill style={{ backgroundColor: "#000" }}>
-      {/* Media scenes with transitions */}
       <TransitionSeries>
         {media.map((asset, i) => (
           <React.Fragment key={i}>
@@ -41,7 +40,6 @@ export const ShowcaseVideo: React.FC<VideoInputProps> = (props) => {
             )}
           </React.Fragment>
         ))}
-        {/* CTA final */}
         <TransitionSeries.Transition
           presentation={fade()}
           timing={linearTiming({ durationInFrames: Math.round(fps * 0.4) })}
@@ -51,28 +49,19 @@ export const ShowcaseVideo: React.FC<VideoInputProps> = (props) => {
         </TransitionSeries.Sequence>
       </TransitionSeries>
 
-      {/* Voiceover */}
-      {voiceoverSrc && (
-        <Audio src={voiceoverSrc} volume={1} />
-      )}
-
-      {/* Background music */}
+      {voiceoverSrc && <Audio src={voiceoverSrc} volume={1} />}
       {musicSrc && (
         <Audio
           src={musicSrc}
           volume={(f) => {
             const vol = musicVolume ?? 0.15;
-            const fadeOut = interpolate(f, [durationInFrames - fps * 2, durationInFrames], [vol, 0], {
-              extrapolateLeft: "clamp",
-              extrapolateRight: "clamp",
+            return interpolate(f, [durationInFrames - fps * 2, durationInFrames], [vol, 0], {
+              extrapolateLeft: "clamp", extrapolateRight: "clamp",
             });
-            return fadeOut;
           }}
           loop
         />
       )}
-
-      {/* Captions overlay */}
       {captions.length > 0 && <AnimatedCaption captions={captions} theme={subtitleTheme} />}
     </AbsoluteFill>
   );

@@ -2,26 +2,21 @@ import React from "react";
 import { AbsoluteFill, useCurrentFrame, useVideoConfig, spring, interpolate } from "remotion";
 
 const BouncingArrow: React.FC<{ fps: number; frame: number }> = ({ fps, frame }) => {
-  const cycleLength = fps * 0.8;
+  const cycleLength = Math.round(fps * 0.6);
   const loopFrame = frame % cycleLength;
   const bounce = spring({
     fps,
     frame: loopFrame,
-    config: { damping: 6, stiffness: 120, mass: 0.5 },
+    config: { damping: 4, stiffness: 160, mass: 0.35 },
     durationInFrames: cycleLength,
   });
-  const y = interpolate(bounce, [0, 1], [0, 28]);
+  const y = interpolate(bounce, [0, 1], [-16, 24]);
 
   return (
-    <div style={{ transform: `translateY(${y}px)`, display: "flex", flexDirection: "column", alignItems: "center", gap: 0 }}>
-      <svg width="120" height="120" viewBox="0 0 120 120" fill="none">
-        <path
-          d="M60 10 L60 90 M30 65 L60 95 L90 65"
-          stroke="#EE4D2D"
-          strokeWidth="10"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
+    <div style={{ transform: `translateY(${y}px)`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <svg width="260" height="260" viewBox="0 0 260 260">
+        <rect x="90" y="0" width="80" height="140" rx="6" fill="#FFFFFF" />
+        <polygon points="130,260 0,130 60,130 200,130 260,130" fill="#FFFFFF" />
       </svg>
     </div>
   );
@@ -30,59 +25,53 @@ const BouncingArrow: React.FC<{ fps: number; frame: number }> = ({ fps, frame })
 export const CTASlide: React.FC<{
   text: string;
   productName?: string;
-}> = ({ text, productName }) => {
+}> = ({ text }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
 
   const bgScale = spring({ fps, frame, config: { damping: 20, stiffness: 100 } });
-  const textOpacity = interpolate(frame, [4, 16], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
+  const textScale = spring({ fps, frame: Math.max(0, frame - 3), config: { damping: 10, stiffness: 160 } });
   const arrowDelay = 10;
-  const arrowOpacity = interpolate(frame, [arrowDelay, arrowDelay + 10], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
-  const subtitleOpacity = interpolate(frame, [14, 26], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
+  const arrowOpacity = interpolate(frame, [arrowDelay, arrowDelay + 6], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
+  const arrowScale = spring({ fps, frame: Math.max(0, frame - arrowDelay), config: { damping: 8, stiffness: 120 } });
 
   return (
     <AbsoluteFill
       style={{
-        background: "linear-gradient(135deg, #EE4D2D 0%, #D43B1A 60%, #1a1a2e 100%)",
-        justifyContent: "center",
-        alignItems: "center",
+        backgroundColor: "#000000",
         transform: `scale(${bgScale})`,
       }}
     >
-      <div style={{ textAlign: "center", padding: "0 40px", display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
+      <div style={{
+        position: "absolute",
+        inset: 0,
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 24,
+      }}>
         <div
           style={{
-            fontSize: 36,
+            fontSize: 80,
             fontWeight: 900,
-            color: "#FFF",
-            fontFamily: "Arial Black, sans-serif",
-            textShadow: "0 4px 24px rgba(0,0,0,0.4)",
-            lineHeight: 1.2,
-            opacity: textOpacity,
+            color: "#FFFFFF",
+            fontFamily: "Impact, 'Arial Black', sans-serif",
+            textShadow: "0 4px 40px rgba(255,255,255,0.2)",
+            lineHeight: 1.05,
             textTransform: "uppercase",
-            letterSpacing: 2,
+            letterSpacing: 6,
+            textAlign: "center",
+            padding: "0 40px",
+            transform: `scale(${textScale})`,
           }}
         >
           {text}
         </div>
 
-        <div style={{ opacity: arrowOpacity, marginTop: 8 }}>
+        <div style={{ opacity: arrowOpacity, transform: `scale(${arrowScale})` }}>
           <BouncingArrow fps={fps} frame={Math.max(0, frame - arrowDelay)} />
         </div>
-
-        {productName && (
-          <div
-            style={{
-              fontSize: 22,
-              color: "rgba(255,255,255,0.7)",
-              fontFamily: "Arial, sans-serif",
-              opacity: subtitleOpacity,
-              marginTop: 4,
-            }}
-          >
-            {productName}
-          </div>
-        )}
       </div>
     </AbsoluteFill>
   );

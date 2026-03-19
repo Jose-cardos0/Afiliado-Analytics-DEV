@@ -80,6 +80,25 @@ function FieldLabel({ children, hint }: { children: React.ReactNode; hint?: stri
   );
 }
 
+function PaginationControls({ page, totalPages, onPrev, onNext }: { page: number; totalPages: number; onPrev: () => void; onNext: () => void }) {
+  if (totalPages <= 1) return null;
+  return (
+    <div className="flex items-center justify-center gap-2 mt-2">
+      <button type="button" onClick={onPrev} disabled={page === 0}
+        className="w-7 h-7 rounded-lg border border-dark-border flex items-center justify-center text-text-secondary/60 hover:bg-white/5 disabled:opacity-30 transition-all">
+        <ChevronLeft className="h-3.5 w-3.5" />
+      </button>
+      <span className="text-[10px] font-semibold text-text-secondary/50 tabular-nums">
+        {page + 1} / {totalPages}
+      </span>
+      <button type="button" onClick={onNext} disabled={page >= totalPages - 1}
+        className="w-7 h-7 rounded-lg border border-dark-border flex items-center justify-center text-text-secondary/60 hover:bg-white/5 disabled:opacity-30 transition-all">
+        <ChevronRight className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  );
+}
+
 const COPY_STYLES = [
   { value: "vendas", label: "Vendas Persuasiva", icon: TrendingUp, color: "emerald" },
   { value: "humor", label: "Humor Viral", icon: Zap, color: "yellow" },
@@ -130,7 +149,15 @@ export default function VideoEditorPage() {
   const [musicLibraryError, setMusicLibraryError] = useState<string | null>(null);
   const [selectedTrack, setSelectedTrack] = useState<MusicTrack | null>(null);
   const [previewingTrackId, setPreviewingTrackId] = useState<string | null>(null);
+  const [loadingTrackId, setLoadingTrackId] = useState<string | null>(null);
   const musicPreviewRef = useRef<HTMLAudioElement | null>(null);
+
+  // ── Pagination ──
+  const [videoStylePage, setVideoStylePage] = useState(0);
+  const [subtitlePage, setSubtitlePage] = useState(0);
+  const [musicPage, setMusicPage] = useState(0);
+  const [shopeeMediaPage, setShopeeMediaPage] = useState(0);
+  const [selectedMediaPage, setSelectedMediaPage] = useState(0);
 
   // ── Step 4 ──
   const [error, setError] = useState<string | null>(null);
@@ -188,16 +215,45 @@ export default function VideoEditorPage() {
     }
   }, [shopeeUrl]);
 
+  const MAX_VIDEO_SIZE = 50 * 1024 * 1024;
+  const MAX_VIDEO_DURATION = 60;
+  const MAX_AUDIO_SIZE = 10 * 1024 * 1024;
+  const MAX_AUDIO_DURATION = 60;
+
   // ── File upload ──
   const handleFileUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files) return;
-    const newAssets: MediaAsset[] = [];
-    for (const f of Array.from(files)) {
+
+    const processFile = async (f: File) => {
+      const isVideo = f.type.startsWith("video/");
+
+      if (isVideo) {
+        if (f.size > MAX_VIDEO_SIZE) {
+          setError(`"${f.name}" excede 50MB. Máximo permitido: 50MB.`);
+          return null;
+        }
+        const dur = await new Promise<number>((resolve) => {
+          const v = document.createElement("video");
+          v.preload = "metadata";
+          v.onloadedmetadata = () => { resolve(v.duration); URL.revokeObjectURL(v.src); };
+          v.onerror = () => resolve(0);
+          v.src = URL.createObjectURL(f);
+        });
+        if (dur > MAX_VIDEO_DURATION) {
+          setError(`"${f.name}" tem ${Math.ceil(dur)}s. Máximo permitido: 1 minuto.`);
+          return null;
+        }
+      }
+
       const url = URL.createObjectURL(f);
-      newAssets.push({ type: f.type.startsWith("video/") ? "video" : "image", src: url });
-    }
-    setUploadedFiles((prev) => [...prev, ...newAssets]);
+      return { type: isVideo ? "video" as const : "image" as const, src: url };
+    };
+
+    Promise.all(Array.from(files).map(processFile)).then((results) => {
+      const valid = results.filter(Boolean) as MediaAsset[];
+      if (valid.length > 0) setUploadedFiles((prev) => [...prev, ...valid]);
+    });
   }, []);
 
   // ── Generate copy ──
@@ -283,9 +339,28 @@ export default function VideoEditorPage() {
   }, [copyText, voiceId, totalDurationSec]);
 
   // ── Music upload ──
-  const handleMusicUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleMusicUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    if (file.size > MAX_AUDIO_SIZE) {
+      setError(`"${file.name}" excede 10MB. Máximo permitido para áudio: 10MB.`);
+      return;
+    }
+
+    const dur = await new Promise<number>((resolve) => {
+      const a = new Audio();
+      a.preload = "metadata";
+      const objUrl = URL.createObjectURL(file);
+      a.onloadedmetadata = () => { resolve(a.duration); URL.revokeObjectURL(objUrl); };
+      a.onerror = () => resolve(0);
+      a.src = objUrl;
+    });
+    if (dur > MAX_AUDIO_DURATION) {
+      setError(`"${file.name}" tem ${Math.ceil(dur)}s. Máximo permitido: 1 minuto.`);
+      return;
+    }
+
     setMusicUrl(URL.createObjectURL(file));
     setSelectedTrack(null);
   }, []);
@@ -323,15 +398,17 @@ export default function VideoEditorPage() {
     if (previewingTrackId === track.id) {
       musicPreviewRef.current?.pause();
       setPreviewingTrackId(null);
+      setLoadingTrackId(null);
       return;
     }
     if (musicPreviewRef.current) musicPreviewRef.current.pause();
+    setLoadingTrackId(track.id);
     const audio = new Audio(track.audioUrl);
     audio.volume = 0.5;
-    audio.play();
-    audio.onended = () => setPreviewingTrackId(null);
+    audio.oncanplay = () => { setLoadingTrackId(null); audio.play(); setPreviewingTrackId(track.id); };
+    audio.onended = () => { setPreviewingTrackId(null); setLoadingTrackId(null); };
+    audio.onerror = () => { setLoadingTrackId(null); setError("Não foi possível carregar o áudio."); };
     musicPreviewRef.current = audio;
-    setPreviewingTrackId(track.id);
   }, [previewingTrackId]);
 
   const handleSelectTrack = useCallback((track: MusicTrack) => {
@@ -509,41 +586,55 @@ export default function VideoEditorPage() {
                     </button>
                   </div>
               </div>
-                  <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2">
-                    {mediaAssets.map((asset, i) => {
-                      const sel = selectedMedia.has(i);
-                      return (
-                        <button key={i} type="button"
-                          onClick={() => setSelectedMedia((prev) => {
-                            const next = new Set(prev);
-                            if (next.has(i)) next.delete(i); else next.add(i);
-                            return next;
+                  {(() => {
+                    const perPage = 8;
+                    const totalPages = Math.ceil(mediaAssets.length / perPage);
+                    const paged = mediaAssets.slice(shopeeMediaPage * perPage, (shopeeMediaPage + 1) * perPage);
+                    const pageOffset = shopeeMediaPage * perPage;
+                    return (
+                      <>
+                        <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                          {paged.map((asset, idx) => {
+                            const i = pageOffset + idx;
+                            const sel = selectedMedia.has(i);
+                            return (
+                              <button key={i} type="button"
+                                onClick={() => setSelectedMedia((prev) => {
+                                  const next = new Set(prev);
+                                  if (next.has(i)) next.delete(i); else next.add(i);
+                                  return next;
+                                })}
+                                className={`relative aspect-square rounded-xl overflow-hidden border-2 transition-all hover:scale-[1.03] ${
+                                  sel ? "border-shopee-orange shadow-[0_0_12px_rgba(238,77,45,0.3)]" : "border-dark-border/30 opacity-50 hover:opacity-90 hover:border-dark-border"
+                                }`}>
+                                {asset.type === "image"
+                                  ? <img src={asset.src} alt="" className="w-full h-full object-cover" />
+                                  : <video src={asset.src} muted className="w-full h-full object-cover" />
+                                }
+                                {sel && (
+                                  <div className="absolute inset-0 bg-shopee-orange/15 flex items-center justify-center">
+                                    <div className="w-5 h-5 rounded-full bg-shopee-orange flex items-center justify-center shadow-lg">
+                                      <Check className="h-3 w-3 text-white" />
+                                    </div>
+                                  </div>
+                                )}
+                                <span className={`absolute top-1 left-1 text-[8px] font-bold px-1.5 py-0.5 rounded-md ${
+                                  asset.type === "video"
+                                    ? "bg-purple-500/80 text-white"
+                                    : "bg-black/60 text-white/80"
+                                }`}>
+                                  {asset.type === "video" ? "▶" : "⊞"}
+                                </span>
+                              </button>
+                            );
                           })}
-                          className={`relative aspect-square rounded-xl overflow-hidden border-2 transition-all hover:scale-[1.03] ${
-                            sel ? "border-shopee-orange shadow-[0_0_12px_rgba(238,77,45,0.3)]" : "border-dark-border/30 opacity-50 hover:opacity-90 hover:border-dark-border"
-                          }`}>
-                          {asset.type === "image"
-                            ? <img src={asset.src} alt="" className="w-full h-full object-cover" />
-                            : <video src={asset.src} muted className="w-full h-full object-cover" />
-                          }
-                          {sel && (
-                            <div className="absolute inset-0 bg-shopee-orange/15 flex items-center justify-center">
-                              <div className="w-5 h-5 rounded-full bg-shopee-orange flex items-center justify-center shadow-lg">
-                                <Check className="h-3 w-3 text-white" />
-                </div>
-              </div>
-            )}
-                          <span className={`absolute top-1 left-1 text-[8px] font-bold px-1.5 py-0.5 rounded-md ${
-                            asset.type === "video"
-                              ? "bg-purple-500/80 text-white"
-                              : "bg-black/60 text-white/80"
-                          }`}>
-                            {asset.type === "video" ? "▶" : "⊞"}
-                          </span>
-                      </button>
-                      );
-                    })}
-                  </div>
+                        </div>
+                        <PaginationControls page={shopeeMediaPage} totalPages={totalPages}
+                          onPrev={() => setShopeeMediaPage((p) => Math.max(0, p - 1))}
+                          onNext={() => setShopeeMediaPage((p) => Math.min(totalPages - 1, p + 1))} />
+                      </>
+                    );
+                  })()}
                 </div>
               )}
 
@@ -594,23 +685,39 @@ export default function VideoEditorPage() {
                   <p className="text-xs text-center max-w-[160px]">Selecione mídias na esquerda para visualizar aqui</p>
                 </div>
               ) : (
-                <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
-                  {selectedAssets.map((asset, i) => (
-                    <div key={i} className="relative aspect-square rounded-xl overflow-hidden border border-dark-border/30 group">
-                      {asset.type === "image"
-                        ? <img src={asset.src} alt="" className="w-full h-full object-cover" />
-                        : <video src={asset.src} muted className="w-full h-full object-cover" />
-                      }
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-                      <span className="absolute bottom-1.5 left-1.5 text-[10px] font-bold text-white/90 bg-black/60 px-1.5 py-0.5 rounded-md">
-                        {i + 1}
-                      </span>
-                      {asset.type === "video" && (
-                        <span className="absolute top-1.5 right-1.5 text-[9px] font-bold text-white bg-purple-600/80 px-1.5 py-0.5 rounded-md">▶</span>
-                      )}
-                    </div>
-                  ))}
-              </div>
+                (() => {
+                  const perPage = 8;
+                  const totalPages = Math.ceil(selectedAssets.length / perPage);
+                  const paged = selectedAssets.slice(selectedMediaPage * perPage, (selectedMediaPage + 1) * perPage);
+                  const pageOffset = selectedMediaPage * perPage;
+                  return (
+                    <>
+                      <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+                        {paged.map((asset, idx) => {
+                          const i = pageOffset + idx;
+                          return (
+                            <div key={i} className="relative aspect-square rounded-xl overflow-hidden border border-dark-border/30 group">
+                              {asset.type === "image"
+                                ? <img src={asset.src} alt="" className="w-full h-full object-cover" />
+                                : <video src={asset.src} muted className="w-full h-full object-cover" />
+                              }
+                              <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                              <span className="absolute bottom-1.5 left-1.5 text-[10px] font-bold text-white/90 bg-black/60 px-1.5 py-0.5 rounded-md">
+                                {i + 1}
+                              </span>
+                              {asset.type === "video" && (
+                                <span className="absolute top-1.5 right-1.5 text-[9px] font-bold text-white bg-purple-600/80 px-1.5 py-0.5 rounded-md">▶</span>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <PaginationControls page={selectedMediaPage} totalPages={totalPages}
+                        onPrev={() => setSelectedMediaPage((p) => Math.max(0, p - 1))}
+                        onNext={() => setSelectedMediaPage((p) => Math.min(totalPages - 1, p + 1))} />
+                    </>
+                  );
+                })()
             )}
 
               <button
@@ -817,7 +924,7 @@ export default function VideoEditorPage() {
                 {!selectedTrack && (
                   <div className="space-y-2">
                     <div className="flex gap-2">
-                      <select value={musicGenre} onChange={(e) => { setMusicGenre(e.target.value); fetchMusicTracks(e.target.value); }} className={`${selectCls} flex-1`}>
+                      <select value={musicGenre} onChange={(e) => { setMusicGenre(e.target.value); setMusicPage(0); fetchMusicTracks(e.target.value); }} className={`${selectCls} flex-1`}>
                         {MUSIC_GENRES.map((g) => <option key={g.value} value={g.value}>{g.label}</option>)}
                       </select>
                       <button type="button" onClick={() => fetchMusicTracks(musicGenre)} disabled={loadingMusic}
@@ -827,29 +934,41 @@ export default function VideoEditorPage() {
                     </div>
 
                     {/* Track list */}
-                    {musicTracks.length > 0 && (
-                      <div className="max-h-[180px] overflow-y-auto rounded-xl border border-dark-border/40 divide-y divide-dark-border/20 scrollbar-shopee">
-                        {musicTracks.map((track) => (
-                          <div key={track.id} className="flex items-center gap-2 px-3 py-2 hover:bg-white/3 transition-colors">
-                            <button type="button" onClick={() => handlePreviewTrack(track)}
-                              className="w-7 h-7 rounded-lg bg-dark-bg flex items-center justify-center shrink-0 hover:bg-shopee-orange/20 transition-colors">
-                              {previewingTrackId === track.id
-                                ? <div className="w-2.5 h-2.5 rounded-sm bg-shopee-orange" />
-                                : <Play className="h-3 w-3 text-text-secondary ml-0.5" />
-                              }
-                            </button>
-                            <div className="min-w-0 flex-1">
-                              <p className="text-xs font-medium text-text-primary truncate">{track.name}</p>
-                              <p className="text-[10px] text-text-secondary/50 truncate">{track.artist} · {Math.floor(track.duration / 60)}:{String(track.duration % 60).padStart(2, "0")}</p>
-                            </div>
-                            <button type="button" onClick={() => handleSelectTrack(track)}
-                              className="text-[10px] font-bold text-shopee-orange hover:text-shopee-orange/80 px-2 py-1 rounded-lg hover:bg-shopee-orange/10 transition-all shrink-0">
-                              Usar
-                            </button>
+                    {musicTracks.length > 0 && (() => {
+                      const perPage = 3;
+                      const totalMusicPages = Math.ceil(musicTracks.length / perPage);
+                      const pagedTracks = musicTracks.slice(musicPage * perPage, (musicPage + 1) * perPage);
+                      return (
+                        <>
+                          <div className="rounded-xl border border-dark-border/40 divide-y divide-dark-border/20">
+                            {pagedTracks.map((track) => (
+                              <div key={track.id} className="flex items-center gap-2 px-3 py-2 hover:bg-white/3 transition-colors">
+                                <button type="button" onClick={() => handlePreviewTrack(track)}
+                                  className="w-7 h-7 rounded-lg bg-dark-bg flex items-center justify-center shrink-0 hover:bg-shopee-orange/20 transition-colors">
+                                  {loadingTrackId === track.id
+                                    ? <Loader2 className="h-3 w-3 animate-spin text-shopee-orange" />
+                                    : previewingTrackId === track.id
+                                      ? <div className="w-2.5 h-2.5 rounded-sm bg-shopee-orange" />
+                                      : <Play className="h-3 w-3 text-text-secondary ml-0.5" />
+                                  }
+                                </button>
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-xs font-medium text-text-primary truncate">{track.name}</p>
+                                  <p className="text-[10px] text-text-secondary/50 truncate">{track.artist} · {Math.floor(track.duration / 60)}:{String(track.duration % 60).padStart(2, "0")}</p>
+                                </div>
+                                <button type="button" onClick={() => handleSelectTrack(track)}
+                                  className="text-[10px] font-bold text-shopee-orange hover:text-shopee-orange/80 px-2 py-1 rounded-lg hover:bg-shopee-orange/10 transition-all shrink-0">
+                                  Usar
+                                </button>
+                              </div>
+                            ))}
                           </div>
-                        ))}
-                      </div>
-                    )}
+                          <PaginationControls page={musicPage} totalPages={totalMusicPages}
+                            onPrev={() => setMusicPage((p) => Math.max(0, p - 1))}
+                            onNext={() => setMusicPage((p) => Math.min(totalMusicPages - 1, p + 1))} />
+                        </>
+                      );
+                    })()}
 
                     {!loadingMusic && musicTracks.length === 0 && (
                       <p className="text-[10px] text-text-secondary/40 text-center py-2">Selecione um gênero e clique em buscar</p>
@@ -932,17 +1051,30 @@ export default function VideoEditorPage() {
               </div>
             </div>
             <div className="p-5 flex flex-col gap-4 flex-1">
-              <div className="grid grid-cols-1 gap-2">
-                  {Object.entries(VIDEO_STYLES).map(([key, val]) => (
-                    <button key={key} type="button" onClick={() => setVideoStyle(key as VideoStyleId)}
-                      className={`text-left rounded-xl border p-3 transition-all ${
-                        videoStyle === key ? "border-shopee-orange bg-shopee-orange/8" : "border-dark-border/50 hover:border-dark-border"
-                      }`}>
-                      <p className={`text-sm font-semibold ${videoStyle === key ? "text-shopee-orange" : "text-text-primary"}`}>{val.label}</p>
-                      <p className="text-[11px] text-text-secondary/50 mt-0.5">{val.description}</p>
-                    </button>
+              {(() => {
+                const allStyles = Object.entries(VIDEO_STYLES);
+                const perPage = 4;
+                const totalPages = Math.ceil(allStyles.length / perPage);
+                const paged = allStyles.slice(videoStylePage * perPage, (videoStylePage + 1) * perPage);
+                return (
+                  <>
+                    <div className="grid grid-cols-1 gap-2">
+                      {paged.map(([key, val]) => (
+                        <button key={key} type="button" onClick={() => setVideoStyle(key as VideoStyleId)}
+                          className={`text-left rounded-xl border p-3 transition-all ${
+                            videoStyle === key ? "border-shopee-orange bg-shopee-orange/8" : "border-dark-border/50 hover:border-dark-border"
+                          }`}>
+                          <p className={`text-sm font-semibold ${videoStyle === key ? "text-shopee-orange" : "text-text-primary"}`}>{val.label}</p>
+                          <p className="text-[11px] text-text-secondary/50 mt-0.5">{val.description}</p>
+                        </button>
                       ))}
                     </div>
+                    <PaginationControls page={videoStylePage} totalPages={totalPages}
+                      onPrev={() => setVideoStylePage((p) => Math.max(0, p - 1))}
+                      onNext={() => setVideoStylePage((p) => Math.min(totalPages - 1, p + 1))} />
+                  </>
+                );
+              })()}
               <div>
                 <FieldLabel hint="Proporção do vídeo final. Stories 9:16, Feed 1:1, Paisagem 16:9.">Formato</FieldLabel>
                 <div className="flex gap-2">
@@ -981,23 +1113,36 @@ export default function VideoEditorPage() {
               </div>
           </div>
             <div className="p-5 flex flex-col gap-2 flex-1">
-              {Object.entries(SUBTITLE_THEMES).map(([key, theme]) => (
-                <button key={key} type="button" onClick={() => setSubtitleThemeKey(key)}
-                  className={`rounded-xl border p-3 flex items-center gap-3 transition-all ${
-                    subtitleThemeKey === key ? "border-shopee-orange bg-shopee-orange/8" : "border-dark-border/50 hover:border-dark-border"
-                  }`}>
-                  <div className="shrink-0 rounded-lg w-24 h-10 flex items-center justify-center"
-                    style={{ backgroundColor: theme.bgColor !== "transparent" ? theme.bgColor : "#1a1a1a" }}>
-                    <span style={{ fontFamily: theme.fontFamily, fontSize: 12, fontWeight: 900, color: theme.color,
-                      WebkitTextStroke: `${theme.strokeWidth * 0.25}px ${theme.strokeColor}`, paintOrder: "stroke fill", textTransform: "uppercase" }}>
-                      LEGENDA
-                    </span>
-                  </div>
-                  <span className={`text-xs font-semibold ${subtitleThemeKey === key ? "text-shopee-orange" : "text-text-primary"}`}>
-                    {key.charAt(0).toUpperCase() + key.slice(1).replace(/([A-Z])/g, " $1")}
-                  </span>
-                </button>
-              ))}
+              {(() => {
+                const allThemes = Object.entries(SUBTITLE_THEMES);
+                const perPage = 4;
+                const totalPages = Math.ceil(allThemes.length / perPage);
+                const paged = allThemes.slice(subtitlePage * perPage, (subtitlePage + 1) * perPage);
+                return (
+                  <>
+                    {paged.map(([key, theme]) => (
+                      <button key={key} type="button" onClick={() => setSubtitleThemeKey(key)}
+                        className={`rounded-xl border p-3 flex items-center gap-3 transition-all ${
+                          subtitleThemeKey === key ? "border-shopee-orange bg-shopee-orange/8" : "border-dark-border/50 hover:border-dark-border"
+                        }`}>
+                        <div className="shrink-0 rounded-lg w-24 h-10 flex items-center justify-center"
+                          style={{ backgroundColor: theme.bgColor !== "transparent" ? theme.bgColor : "#1a1a1a" }}>
+                          <span style={{ fontFamily: theme.fontFamily, fontSize: 12, fontWeight: 900, color: theme.color,
+                            WebkitTextStroke: `${theme.strokeWidth * 0.25}px ${theme.strokeColor}`, paintOrder: "stroke fill", textTransform: "uppercase" }}>
+                            LEGENDA
+                          </span>
+                        </div>
+                        <span className={`text-xs font-semibold ${subtitleThemeKey === key ? "text-shopee-orange" : "text-text-primary"}`}>
+                          {key.charAt(0).toUpperCase() + key.slice(1).replace(/([A-Z])/g, " $1")}
+                        </span>
+                      </button>
+                    ))}
+                    <PaginationControls page={subtitlePage} totalPages={totalPages}
+                      onPrev={() => setSubtitlePage((p) => Math.max(0, p - 1))}
+                      onNext={() => setSubtitlePage((p) => Math.min(totalPages - 1, p + 1))} />
+                  </>
+                );
+              })()}
               <div className="flex gap-2 mt-auto pt-2">
                 <button type="button" onClick={() => setStep(2)} className={btnSecondary}><ChevronLeft className="h-4 w-4" /> Voltar</button>
                 <button type="button" onClick={() => setStep(4)} className={`flex-1 ${btnPrimary}`}>Ver Preview <ChevronRight className="h-4 w-4" /></button>

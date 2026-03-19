@@ -15,7 +15,6 @@ const BlurReveal: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const blur = interpolate(frame, [0, revealFrames], [20, 0], { extrapolateRight: "clamp" });
   const brightness = interpolate(frame, [0, revealFrames], [0.3, 1], { extrapolateRight: "clamp" });
   const scale = interpolate(frame, [0, revealFrames], [1.2, 1], { extrapolateRight: "clamp" });
-
   return (
     <AbsoluteFill style={{ filter: `blur(${blur}px) brightness(${brightness})`, transform: `scale(${scale})` }}>
       {children}
@@ -29,36 +28,11 @@ const RevealFlash: React.FC = () => {
   const flashStart = Math.round(fps * 1);
   const flashEnd = flashStart + Math.round(fps * 0.3);
   const opacity = interpolate(frame, [flashStart, flashStart + 4, flashEnd], [0, 0.9, 0], {
-    extrapolateLeft: "clamp",
-    extrapolateRight: "clamp",
+    extrapolateLeft: "clamp", extrapolateRight: "clamp",
   });
-
   return <AbsoluteFill style={{ backgroundColor: "#FFF", opacity, pointerEvents: "none" }} />;
 };
 
-const MysteryText: React.FC = () => {
-  const frame = useCurrentFrame();
-  const { fps } = useVideoConfig();
-  const revealFrames = Math.round(fps * 1);
-  const opacity = interpolate(frame, [0, 10, revealFrames - 8, revealFrames], [0, 1, 1, 0], {
-    extrapolateLeft: "clamp",
-    extrapolateRight: "clamp",
-  });
-  const scale = spring({ fps, frame, config: { damping: 10, stiffness: 140 } });
-
-  return (
-    <AbsoluteFill style={{ justifyContent: "center", alignItems: "center", pointerEvents: "none", zIndex: 15 }}>
-      <div style={{
-        fontSize: 40, fontWeight: 900, color: "#FFF",
-        fontFamily: "Arial Black, sans-serif",
-        textShadow: "0 4px 24px rgba(0,0,0,0.8), 0 0 40px rgba(238,77,45,0.4)",
-        opacity, transform: `scale(${scale})`, letterSpacing: 4,
-      }}>
-        REVELANDO...
-      </div>
-    </AbsoluteFill>
-  );
-};
 
 export const UnboxingVideo: React.FC<VideoInputProps> = (props) => {
   const { media, voiceoverSrc, musicSrc, musicVolume, captions, subtitleTheme, ctaText, productName, durationInFrames } = props;
@@ -80,7 +54,6 @@ export const UnboxingVideo: React.FC<VideoInputProps> = (props) => {
               <BlurReveal>
                 <MediaScene asset={asset} effect="zoomIn" />
               </BlurReveal>
-              {i === 0 && <MysteryText />}
               <RevealFlash />
               <AbsoluteFill style={{
                 background: "radial-gradient(ellipse at center, transparent 40%, rgba(0,0,0,0.7) 100%)",

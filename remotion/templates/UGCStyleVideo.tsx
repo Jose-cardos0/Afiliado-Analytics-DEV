@@ -15,7 +15,6 @@ const HandheldShake: React.FC<{ children: React.ReactNode }> = ({ children }) =>
   const x = Math.sin(frame * 0.3) * 2.5 + Math.cos(frame * 0.7) * 1.5;
   const y = Math.cos(frame * 0.4) * 2 + Math.sin(frame * 0.6) * 1;
   const rotate = Math.sin(frame * 0.2) * 0.4;
-
   return (
     <AbsoluteFill style={{ transform: `translate(${x}px, ${y}px) rotate(${rotate}deg)` }}>
       {children}
@@ -28,8 +27,8 @@ const UGCFrame: React.FC<{ children: React.ReactNode }> = ({ children }) => (
     {children}
     <AbsoluteFill style={{ border: "8px solid rgba(255,255,255,0.15)", borderRadius: 28, pointerEvents: "none", boxSizing: "border-box" }} />
     <div style={{ position: "absolute", top: 16, left: 20, display: "flex", alignItems: "center", gap: 8, zIndex: 10, pointerEvents: "none" }}>
-      <div style={{ width: 10, height: 10, borderRadius: "50%", backgroundColor: "#ef4444", boxShadow: "0 0 8px rgba(239,68,68,0.6)" }} />
-      <span style={{ color: "#FFF", fontSize: 14, fontWeight: 700, fontFamily: "Arial, sans-serif", opacity: 0.8 }}>REC</span>
+      <div style={{ width: 14, height: 14, borderRadius: "50%", backgroundColor: "#ef4444", boxShadow: "0 0 12px rgba(239,68,68,0.7)" }} />
+      <span style={{ color: "#FFF", fontSize: 20, fontWeight: 800, fontFamily: "Impact, sans-serif", opacity: 0.9 }}>REC</span>
     </div>
   </AbsoluteFill>
 );

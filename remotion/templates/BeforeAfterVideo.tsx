@@ -12,46 +12,22 @@ const WipeReveal: React.FC<{
   children: [React.ReactNode, React.ReactNode];
 }> = ({ children }) => {
   const frame = useCurrentFrame();
-  const { durationInFrames, fps } = useVideoConfig();
+  const { fps } = useVideoConfig();
   const holdFirst = Math.round(fps * 1.2);
   const wipeFrames = Math.round(fps * 0.8);
   const progress = interpolate(frame, [holdFirst, holdFirst + wipeFrames], [0, 100], {
-    extrapolateLeft: "clamp",
-    extrapolateRight: "clamp",
+    extrapolateLeft: "clamp", extrapolateRight: "clamp",
   });
-
   return (
     <AbsoluteFill>
       <AbsoluteFill>{children[0]}</AbsoluteFill>
       <AbsoluteFill style={{ clipPath: `inset(0 0 0 ${progress}%)` }}>{children[1]}</AbsoluteFill>
-      <div
-        style={{
-          position: "absolute",
-          left: `${progress}%`,
-          top: 0,
-          bottom: 0,
-          width: 6,
-          backgroundColor: "#EE4D2D",
-          boxShadow: "0 0 20px rgba(238,77,45,0.6)",
-          transform: "translateX(-50%)",
-          zIndex: 10,
-          opacity: progress > 0 && progress < 100 ? 1 : 0,
-        }}
-      />
-      {frame < holdFirst + 4 && (
-        <AbsoluteFill style={{ justifyContent: "center", alignItems: "center", pointerEvents: "none" }}>
-          <div style={{ fontSize: 32, fontWeight: 900, color: "#FFF", fontFamily: "Arial Black, sans-serif", textShadow: "0 2px 16px rgba(0,0,0,0.7)", opacity: interpolate(frame, [0, 10, holdFirst - 4, holdFirst], [0, 1, 1, 0], { extrapolateRight: "clamp" }) }}>
-            ANTES
-          </div>
-        </AbsoluteFill>
-      )}
-      {progress > 50 && (
-        <AbsoluteFill style={{ justifyContent: "center", alignItems: "center", pointerEvents: "none" }}>
-          <div style={{ fontSize: 32, fontWeight: 900, color: "#EE4D2D", fontFamily: "Arial Black, sans-serif", textShadow: "0 2px 16px rgba(0,0,0,0.7)", opacity: interpolate(progress, [50, 80], [0, 1], { extrapolateRight: "clamp" }) }}>
-            DEPOIS
-          </div>
-        </AbsoluteFill>
-      )}
+      <div style={{
+        position: "absolute", left: `${progress}%`, top: 0, bottom: 0, width: 6,
+        backgroundColor: "#EE4D2D", boxShadow: "0 0 20px rgba(238,77,45,0.6)",
+        transform: "translateX(-50%)", zIndex: 10,
+        opacity: progress > 0 && progress < 100 ? 1 : 0,
+      }} />
     </AbsoluteFill>
   );
 };
