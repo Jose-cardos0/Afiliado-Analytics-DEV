@@ -10,6 +10,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { REMOTION_COMPOSITION_ID } from "../../../../../remotion/constants";
 import type { VideoInputProps } from "../../../../../remotion/types";
+import { formatUploadError } from "../../../../lib/remotion/format-upload-error";
 import {
   bundleRemotionProject,
   formatSSE,
@@ -19,6 +20,14 @@ import {
 
 export const maxDuration = 300;
 export const dynamic = "force-dynamic";
+
+/**
+ * Diretório base no filesystem do Sandbox onde o Remotion copia o bundle.
+ * Deve coincidir com `REMOTION_SANDBOX_BUNDLE_DIR` em `@remotion/vercel` (addBundleToSandbox).
+ * Sem criar este diretório antes, o primeiro `mkDir('remotion-bundle/public')` falha com
+ * "No such file or directory" (pai `remotion-bundle` inexistente).
+ */
+const REMOTION_SANDBOX_BUNDLE_DIR = "remotion-bundle";
 
 function assertBundleExists(): void {
   const abs = path.join(process.cwd(), REMOTION_BUNDLE_DIR);
@@ -82,6 +91,8 @@ export async function POST(req: Request) {
         assertBundleExists();
       }
 
+      await sandbox.mkDir(REMOTION_SANDBOX_BUNDLE_DIR);
+
       await addBundleToSandbox({
         sandbox,
         bundleDir: REMOTION_BUNDLE_DIR,
@@ -135,10 +146,10 @@ export async function POST(req: Request) {
 
       await send({ type: "done", url, size });
     } catch (err) {
-      console.error(err);
+      console.error("render-mp4", err);
       await send({
         type: "error",
-        message: err instanceof Error ? err.message : "Erro no render",
+        message: formatUploadError(err, "render-mp4"),
       });
     } finally {
       await sandbox.stop().catch(() => {});

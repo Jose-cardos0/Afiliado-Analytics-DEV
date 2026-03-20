@@ -150,3 +150,44 @@ Arquivos no Blob permanecem até você apagá-los.
 - [ ] (Opcional) Spend limits na Vercel  
 
 Se algo falhar, use os **Logs da função** na Vercel e a [documentação Remotion Vercel](https://www.remotion.dev/docs/vercel-sandbox).
+
+---
+
+## 11. Erro `file_error` / `cannot create directory '.../remotion-bundle/public'` (Sandbox)
+
+Se nos logs aparecer **`code":"file_error"`** e mensagem como **`cannot create directory '/vercel/sandbox/remotion-bundle/public': No such file or directory`**, o problema **não é o Blob**: o `@remotion/vercel` chama `mkDir` para subpastas do bundle (ex.: `public`) **sem** criar antes o diretório base `remotion-bundle`. O projeto corrige isso chamando `sandbox.mkDir('remotion-bundle')` **antes** de `addBundleToSandbox` em `src/app/api/remotion/render-mp4/route.ts`.
+
+---
+
+## 12. Erro `Status code 400 is not ok` (Blob)
+
+Essa mensagem costuma vir do **cliente HTTP do Vercel Blob** quando a API de upload devolve **400**. Não indica sozinha *por quê* — use os passos abaixo.
+
+### Onde pode falhar (duas etapas diferentes)
+
+| Etapa | O que acontece | Onde ver no app |
+|--------|----------------|------------------|
+| **A** | Subir voz/música/arquivos locais (`blob:`) antes do render | Mensagem começa com **`[Publicar mídia (blob→HTTPS)]`** ou log `publish-blob-for-render` |
+| **B** | Subir o **MP4** depois do render (`uploadToVercelBlob` no sandbox) | Mensagem começa com **`[render-mp4]`** |
+
+### Como investigar (ordem prática)
+
+1. **DevTools → Rede (Network)** no navegador, ao clicar em Exportar:
+   - Se **`POST /api/video-editor/publish-blob-for-render`** retornar **502** com JSON `error` → o problema é o **`put()`** do Blob nessa rota (token/store).
+   - Se **`POST /api/remotion/render-mp4`** abrir **stream (event-stream)** e depois aparecer erro na UI → leia o texto completo (agora com prefixo **`[render-mp4]`** se for na etapa B).
+
+2. **Vercel → Project → Logs** (ou **Runtime Logs**), filtre por:
+   - `publish-blob-for-render` ou `render-mp4`
+   - No mesmo instante do erro, veja o objeto logado (tamanho, pathname — sem expor o token).
+
+3. **Conferir o token e o store**
+   - **Storage → Blob** no projeto: store **público** e **conectado** a este projeto.
+   - **Settings → Environment Variables**: `BLOB_READ_WRITE_TOKEN` para **Production** (e Preview, se testar preview) — valor **sem aspas** e **sem espaço** no início/fim.
+   - Se você **criou um store novo** ou **reconectou** o Blob: **gere/copie o token de novo** e **redeploy** (env antiga pode apontar para outro store).
+
+4. **Limites**
+   - Upload pré-render de `blob:` tem teto ~**4 MB** por arquivo (`RENDER_PUBLISH_BLOB_MAX_BYTES`). Acima disso a API responde **400** com texto explícito sobre tamanho — não é o mesmo “400 is not ok” do SDK.
+
+5. **Teste mínimo**
+   - Exporte um vídeo **sem** mídia/voz/música só em `blob:` (só URLs já públicas, ex. Shopee). Se **A** sumir e **B** continuar → foque no token usado pelo **sandbox** (`render-mp4`).
+   - O contrário indica problema na rota **`publish-blob-for-render`**.

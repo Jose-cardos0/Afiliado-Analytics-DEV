@@ -1,5 +1,6 @@
 import { put } from "@vercel/blob";
 import { NextResponse } from "next/server";
+import { formatUploadError } from "../../../../lib/remotion/format-upload-error";
 import { RENDER_PUBLISH_BLOB_MAX_BYTES } from "../../../../lib/remotion/render-limits";
 
 export const maxDuration = 120;
@@ -51,15 +52,13 @@ export async function POST(req: Request) {
     });
     return NextResponse.json({ url: result.url });
   } catch (e) {
-    console.error("publish-blob-for-render", e);
-    return NextResponse.json(
-      {
-        error:
-          e instanceof Error
-            ? e.message
-            : "Falha ao enviar para o Blob (verifique o token e o plano).",
-      },
-      { status: 502 },
-    );
+    const message = formatUploadError(e, "publish-blob-for-render");
+    console.error("publish-blob-for-render", {
+      message,
+      pathname,
+      sizeBytes: buf.length,
+      nameHint,
+    });
+    return NextResponse.json({ error: message }, { status: 502 });
   }
 }

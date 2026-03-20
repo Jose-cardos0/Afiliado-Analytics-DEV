@@ -33,7 +33,12 @@ async function uploadBlobUrlToPublic(blobUrl: string): Promise<string> {
   }
 
   if (!up.ok || !json.url) {
-    throw new Error(json.error ?? `Upload falhou (${up.status})`);
+    const detail = json.error ?? (text ? text.slice(0, 500) : "");
+    throw new Error(
+      detail
+        ? `[Publicar mídia (blob→HTTPS)] ${detail}`
+        : `Upload falhou (${up.status})`,
+    );
   }
   return json.url;
 }
