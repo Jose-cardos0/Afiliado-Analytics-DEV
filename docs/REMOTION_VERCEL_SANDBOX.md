@@ -14,6 +14,7 @@ Documentação oficial Remotion: [Vercel Sandbox](https://www.remotion.dev/docs/
 | Root Remotion (bundle) | `remotion/Root.tsx` — registra `VideoComposition` + `calculateMetadata` |
 | Bundle de saída | `remotion/static-bundle/` (gerado pelo script; está no `.gitignore`) |
 | Script de bundle | `npm run remotion:bundle` |
+| Webpack (sem source maps no deploy) | `remotion.config.ts` → `devtool: false` (evita `ENOENT` em `bundle.js.map` no Sandbox) |
 | Build com bundle | `npm run build` roda **`remotion:bundle` antes** do `next build` |
 | API de render (SSE) | `src/app/api/remotion/render-mp4/route.ts` — stream de progresso + upload Blob |
 | Hook no front | `src/hooks/use-remotion-sandbox-render.ts` — consome SSE e mostra progresso |
@@ -153,13 +154,19 @@ Se algo falhar, use os **Logs da função** na Vercel e a [documentação Remoti
 
 ---
 
-## 11. Erro `file_error` / `cannot create directory '.../remotion-bundle/public'` (Sandbox)
+## 11. Erro `ENOENT` / `bundle.js.map` (Sandbox)
+
+Se aparecer **`open '/vercel/sandbox/remotion-bundle/bundle.js.map'`**, o `bundle.js` gerado pelo Webpack ainda referenciava o source map, mas o arquivo `.map` não estava presente no sandbox. O projeto usa **`remotion.config.ts`** com `devtool: false` para não emitir/referenciar source maps no bundle de deploy — rode `npm run remotion:bundle` e faça deploy de novo.
+
+---
+
+## 12. Erro `file_error` / `cannot create directory '.../remotion-bundle/public'` (Sandbox)
 
 Se nos logs aparecer **`code":"file_error"`** e mensagem como **`cannot create directory '/vercel/sandbox/remotion-bundle/public': No such file or directory`**, o problema **não é o Blob**: o `@remotion/vercel` chama `mkDir` para subpastas do bundle (ex.: `public`) **sem** criar antes o diretório base `remotion-bundle`. O projeto corrige isso chamando `sandbox.mkDir('remotion-bundle')` **antes** de `addBundleToSandbox` em `src/app/api/remotion/render-mp4/route.ts`.
 
 ---
 
-## 12. Erro `Status code 400 is not ok` (Blob)
+## 13. Erro `Status code 400 is not ok` (Blob)
 
 Essa mensagem costuma vir do **cliente HTTP do Vercel Blob** quando a API de upload devolve **400**. Não indica sozinha *por quê* — use os passos abaixo.
 
