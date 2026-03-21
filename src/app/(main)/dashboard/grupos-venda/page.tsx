@@ -1,34 +1,19 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import {
-  MessageCircle,
-  Loader2,
-  Trash2,
-  Send,
-  AlertCircle,
-  Search,
-  ShoppingBag,
-  Clock,
-  PlayCircle,
-  StopCircle,
-  List,
-  PlusCircle,
-  Info,
-  Package,
-  Zap,
-  Tag,
-  ChevronDown,
-  ChevronUp,
-  RefreshCw,
+  MessageCircle, Loader2, Trash2, Send, AlertCircle, Search,
+  Clock, PlusCircle, Info, Zap, Tag, ChevronDown, RefreshCw,
+  Play, Pause, Hash, Layers, X, ChevronLeft, ChevronRight,
+  List as ListIcon, User, Settings2, Smartphone, CheckCheck,
 } from "lucide-react";
 import BuscarGruposModal, {
   type BuscarGruposPayload,
   type EvolutionInstanceItem,
 } from "../gpl/BuscarGruposModal";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// ─── Types ─────────────────────────────────────────────────────────────────────
 type ListaGrupos = { id: string; instanceId: string; nomeLista: string; createdAt: string };
 type ContinuoItem = {
   id: string; listaId: string | null; listaNome: string;
@@ -41,7 +26,10 @@ type ContinuoItem = {
 type ListaOfertasItem = { id: string; nome: string; totalItens: number };
 type Instance = EvolutionInstanceItem & { id: string };
 
-// ─── Tooltip (portal) ─────────────────────────────────────────────────────────
+// ─── Utils ──────────────────────────────────────────────────────────────────────
+function cn(...classes: (string | false | undefined | null)[]): string { return classes.filter(Boolean).join(" "); }
+
+// ─── Tooltip (portal) ──────────────────────────────────────────────────────────
 function Tooltip({ text, children, wide }: { text: string; children?: React.ReactNode; wide?: boolean }) {
   const [visible, setVisible] = useState(false);
   const [coords, setCoords] = useState({ top: 0, left: 0 });
@@ -72,92 +60,156 @@ function Tooltip({ text, children, wide }: { text: string; children?: React.Reac
   );
 }
 
-// ─── Disparo card ─────────────────────────────────────────────────────────────
-function DisparoCard({
-  c, togglingId, onToggle, onRemove,
-}: {
-  c: ContinuoItem;
-  togglingId: string | null;
+// ─── FieldLabel ─────────────────────────────────────────────────────────────────
+function FieldLabel({ children }: { children: ReactNode }) {
+  return <label className="block text-[9px] font-bold text-[#d8d8d8] uppercase tracking-widest mb-1.5">{children}</label>;
+}
+
+// ─── WizardStepper ──────────────────────────────────────────────────────────────
+const WIZARD_STEPS = [
+  { id: 1, label: "Canal" },
+  { id: 2, label: "Lista Alvo" },
+  { id: 3, label: "Conteúdo" },
+  { id: 4, label: "Ativar" },
+];
+
+function WizardStepper({ currentStep, onClose }: { currentStep: number; onClose: () => void }) {
+  return (
+    <div className="flex items-start gap-3 px-4 sm:px-6 pt-4 sm:pt-5 pb-3 sm:pb-4 border-b border-[#2c2c32]">
+      <div className="flex-1 min-w-0">
+        <div className="grid grid-cols-4 gap-2 sm:hidden">
+          {WIZARD_STEPS.map((step) => {
+            const isDone = currentStep > step.id;
+            const isActive = currentStep === step.id;
+            return (
+              <div key={step.id} className="flex flex-col items-center gap-1 min-w-0">
+                <div className={cn("w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold transition-all border-2 shrink-0",
+                  isDone ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-400"
+                    : isActive ? "bg-[#e24c30] border-[#e24c30] text-white shadow-lg shadow-[#e24c30]/30"
+                    : "bg-[#222228] border-[#2c2c32] text-[#a0a0a0]")}>
+                  {isDone ? <CheckCheck className="w-3 h-3" /> : step.id}
+                </div>
+                <p className={cn("text-[6px] font-bold uppercase tracking-[0.14em] text-center leading-tight whitespace-normal break-words max-w-full",
+                  isActive ? "text-white" : isDone ? "text-emerald-400" : "text-[#a0a0a0]")}>
+                  {step.label}
+                </p>
+              </div>
+            );
+          })}
+        </div>
+        <div className="hidden sm:flex items-center">
+          {WIZARD_STEPS.map((step, index) => {
+            const isDone = currentStep > step.id;
+            const isActive = currentStep === step.id;
+            const isLast = index === WIZARD_STEPS.length - 1;
+            return (
+              <div key={step.id} className="flex items-center flex-1 last:flex-none">
+                <div className="flex flex-col items-center gap-1 shrink-0 min-w-[78px]">
+                  <div className={cn("w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold transition-all border-2",
+                    isDone ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-400"
+                      : isActive ? "bg-[#e24c30] border-[#e24c30] text-white shadow-lg shadow-[#e24c30]/30"
+                      : "bg-[#222228] border-[#2c2c32] text-[#a0a0a0]")}>
+                    {isDone ? <CheckCheck className="w-3.5 h-3.5" /> : step.id}
+                  </div>
+                  <p className={cn("text-[8px] font-bold uppercase tracking-widest whitespace-nowrap",
+                    isActive ? "text-white" : isDone ? "text-emerald-400" : "text-[#a0a0a0]")}>
+                    {step.label}
+                  </p>
+                </div>
+                {!isLast && (
+                  <div className={cn("flex-1 h-px mx-3 mb-4 transition-all", isDone ? "bg-emerald-500/35" : "bg-[#2c2c32]")} />
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      <button onClick={onClose} title="Cancelar e voltar ao painel"
+        className="text-[#a0a0a0] hover:text-white transition p-1.5 rounded-lg hover:bg-[#222228] shrink-0 mt-0.5">
+        <X className="w-4 h-4" />
+      </button>
+    </div>
+  );
+}
+
+// ─── DisparoCard ────────────────────────────────────────────────────────────────
+function DisparoCard({ c, togglingId, onToggle, onRemove }: {
+  c: ContinuoItem; togglingId: string | null;
   onToggle: (id: string, ativar: boolean) => void;
   onRemove: (id: string) => void;
 }) {
-  const subIds = [c.subId1, c.subId2, c.subId3].filter(Boolean);
+  const isActive = c.ativo;
   return (
-    <div className={`rounded-xl border p-4 transition-all ${c.ativo ? "border-emerald-500/30 bg-emerald-500/5" : "border-dark-border bg-dark-bg/60"}`}>
-      <div className="flex items-start justify-between gap-3 flex-wrap">
-        <div className="flex-1 min-w-0">
-          {/* Nome + badge status */}
-          <div className="flex items-center gap-2 flex-wrap mb-2">
-            <span className="font-semibold text-sm text-text-primary">{c.listaNome}</span>
-            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-              c.ativo ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30" : "bg-dark-card text-text-secondary border border-dark-border"
-            }`}>
-              {c.ativo ? <PlayCircle className="h-2.5 w-2.5" /> : <StopCircle className="h-2.5 w-2.5" />}
-              {c.ativo ? "Ativo" : "Parado"}
-            </span>
+    <div className={cn("bg-[#222228] border rounded-xl p-3 sm:p-3.5 flex flex-col gap-2.5 transition-all min-w-0",
+      isActive ? "border-emerald-500/20 shadow-sm shadow-emerald-500/5" : "border-[#2c2c32] hover:border-[#3e3e3e]")}>
+      <div className="flex items-start justify-between gap-1.5 min-w-0">
+        <h3 className="text-[10px] font-bold text-white uppercase tracking-wide leading-tight line-clamp-2 flex-1 min-w-0">{c.listaNome}</h3>
+        {isActive ? (
+          <span className="flex items-center gap-1 text-[8px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.5 rounded-full shrink-0">
+            <div className="w-1 h-1 rounded-full bg-emerald-400 animate-pulse" /> Ativo
+          </span>
+        ) : (
+          <span className="text-[8px] font-bold text-[#a0a0a0] bg-[#1c1c1f] border border-[#2c2c32] px-1.5 py-0.5 rounded-full shrink-0">Parado</span>
+        )}
+      </div>
+      <div className="flex flex-col gap-1 flex-1 min-w-0">
+        {c.keywords.length > 0 && (
+          <div className="flex items-start gap-1.5 text-[9px] text-[#a0a0a0] min-w-0">
+            <Hash className="w-2.5 h-2.5 text-[#e24c30] shrink-0 mt-0.5" />
+            <span className="line-clamp-2 break-words">{c.keywords.slice(0, 2).join(", ")}{c.keywords.length > 2 ? ` +${c.keywords.length - 2}` : ""}</span>
           </div>
-
-          {/* Detalhes */}
-          <div className="flex flex-wrap gap-x-4 gap-y-1">
-            {c.listaOfertasNome ? (
-              <span className="text-xs text-text-secondary flex items-center gap-1">
-                <Package className="h-3 w-3 text-shopee-orange/60" />
-                Lista: <span className="text-text-primary font-medium">{c.listaOfertasNome}</span>
-              </span>
-            ) : c.keywords.length > 0 ? (
-              <span className="text-xs text-text-secondary flex items-center gap-1">
-                <Search className="h-3 w-3 text-shopee-orange/60" />
-                <span className="text-text-primary font-medium">{c.keywords.slice(0, 2).join(", ")}{c.keywords.length > 2 ? ` +${c.keywords.length - 2}` : ""}</span>
-              </span>
-            ) : null}
-            {subIds.length > 0 && (
-              <span className="text-xs text-text-secondary flex items-center gap-1">
-                <Tag className="h-3 w-3 text-text-secondary/50" />
-                {subIds.map((s, i) => (
-                  <span key={i} className="bg-dark-card border border-dark-border px-1.5 py-px rounded text-[10px] text-text-primary">{s}</span>
-                ))}
-              </span>
-            )}
-            {(c.horarioInicio && c.horarioFim) && (
-              <span className="text-xs text-text-secondary flex items-center gap-1">
-                <Clock className="h-3 w-3 text-shopee-orange/60" />
-                <span className="text-text-primary font-medium">{c.horarioInicio} – {c.horarioFim}</span>
-                <span className="text-text-secondary/50">Brasília</span>
-              </span>
-            )}
-            {c.ultimoDisparoAt && (
-              <span className="text-xs text-text-secondary flex items-center gap-1">
-                <Clock className="h-3 w-3" />
-                {new Date(c.ultimoDisparoAt).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
-              </span>
-            )}
+        )}
+        {c.listaOfertasNome && (
+          <div className="flex items-center gap-1.5 text-[9px] text-[#a0a0a0] min-w-0">
+            <Layers className="w-2.5 h-2.5 text-[#e24c30] shrink-0" />
+            <span className="truncate">Lista: <span className="text-white">{c.listaOfertasNome}</span></span>
           </div>
-        </div>
-
-        {/* Ações */}
-        <div className="flex items-center gap-2 shrink-0">
-          {c.ativo ? (
-            <button type="button" onClick={() => onToggle(c.id, false)} disabled={togglingId === c.id}
-              className="px-3 py-1.5 rounded-lg text-xs font-medium border border-red-500/40 text-red-400 hover:bg-red-500/10 disabled:opacity-40 transition-all">
-              {togglingId === c.id ? <Loader2 className="h-3 w-3 animate-spin" /> : "Pausar"}
-            </button>
-          ) : (
-            <button type="button" onClick={() => onToggle(c.id, true)} disabled={togglingId === c.id}
-              className="px-3 py-1.5 rounded-lg text-xs font-medium bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-40 transition-all">
-              {togglingId === c.id ? <Loader2 className="h-3 w-3 animate-spin" /> : "Ativar"}
-            </button>
-          )}
-          <button type="button" onClick={() => onRemove(c.id)}
-            className="p-1.5 rounded-lg text-red-400/60 hover:text-red-400 hover:bg-red-500/10 transition-all" aria-label="Remover">
-            <Trash2 className="h-4 w-4" />
+        )}
+        {c.instanceId && (
+          <div className="flex items-center gap-1.5 text-[9px] text-[#a0a0a0] min-w-0">
+            <User className="w-2.5 h-2.5 text-[#e24c30] shrink-0" />
+            <span className="truncate">{c.instanceId}</span>
+          </div>
+        )}
+        {c.horarioInicio && c.horarioFim && (
+          <div className="flex items-center gap-1.5 text-[9px] min-w-0">
+            <Clock className="w-2.5 h-2.5 text-emerald-400 shrink-0" />
+            <span className="text-emerald-400 font-semibold break-words">{c.horarioInicio} – {c.horarioFim}</span>
+          </div>
+        )}
+        {c.ultimoDisparoAt && (
+          <div className="flex items-center gap-1.5 text-[9px] text-[#a0a0a0] min-w-0">
+            <Clock className="w-2.5 h-2.5 shrink-0" />
+            <span className="break-words">Próx: <span className="text-white font-semibold">{new Date(c.ultimoDisparoAt).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</span></span>
+          </div>
+        )}
+      </div>
+      <div className="flex items-center gap-1.5 pt-2 border-t border-[#2c2c32]">
+        {isActive ? (
+          <button onClick={() => onToggle(c.id, false)} disabled={togglingId === c.id}
+            className="flex-1 flex items-center justify-center gap-1 text-[9px] font-bold text-red-400 border border-red-400/15 bg-red-400/5 py-1.5 rounded-lg hover:bg-red-400/15 disabled:opacity-40 transition">
+            {togglingId === c.id ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <Pause className="w-2.5 h-2.5 fill-red-400" />}
+            Pausar
           </button>
-        </div>
+        ) : (
+          <button onClick={() => onToggle(c.id, true)} disabled={togglingId === c.id}
+            className="flex-1 flex items-center justify-center gap-1 text-[9px] font-bold text-emerald-400 border border-emerald-500/15 bg-emerald-500/5 py-1.5 rounded-lg hover:bg-emerald-500/15 disabled:opacity-40 transition">
+            {togglingId === c.id ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <Play className="w-2.5 h-2.5 fill-emerald-400" />}
+            Ativar
+          </button>
+        )}
+        <button onClick={() => onRemove(c.id)}
+          className="text-[#a0a0a0] hover:text-red-400 transition bg-[#1c1c1f] border border-[#2c2c32] p-1.5 rounded-lg hover:border-red-400/20 shrink-0">
+          <Trash2 className="w-3 h-3" />
+        </button>
       </div>
     </div>
   );
 }
 
-// ─── Page ─────────────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+// Page
+// ═══════════════════════════════════════════════════════════════════════════════
 export default function GruposVendaPage() {
   const [instances, setInstances] = useState<Instance[]>([]);
   const [selectedInstanceId, setSelectedInstanceId] = useState("");
@@ -182,28 +234,34 @@ export default function GruposVendaPage() {
   const [listasOfertas, setListasOfertas] = useState<ListaOfertasItem[]>([]);
   const [loadingListasOfertas, setLoadingListasOfertas] = useState(false);
   const [selectedListaOfertasId, setSelectedListaOfertasId] = useState("");
-  const [disparoOpen, setDisparoOpen] = useState(true);
   const [horaInicio, setHoraInicio] = useState("");
   const [horaFim, setHoraFim] = useState("");
 
+  // Wizard state
+  const [view, setView] = useState<"panel" | "wizard">("panel");
+  const [wizardStep, setWizardStep] = useState(1);
+  const [showStepInfo, setShowStepInfo] = useState(false);
+  const [listSearch, setListSearch] = useState("");
+  const [contentMode, setContentMode] = useState<"keywords" | "list">("keywords");
+  const [scheduleMode, setScheduleMode] = useState<"24h" | "window">("window");
+  const [panelSearch, setPanelSearch] = useState("");
+
+  // ─── API ────────────────────────────────────────────────────────────────────
   const loadInstances = useCallback(async () => {
     try {
       const res = await fetch("/api/evolution/instances");
       const data = await res.json();
       const list = Array.isArray(data.instances) ? data.instances : [];
-      setInstances(list.map((i: { id: string; nome_instancia: string; hash?: string | null }) => ({
-        id: i.id, nome_instancia: i.nome_instancia, hash: i.hash ?? null,
-      })));
-      if (list.length > 0 && !selectedInstanceId) setSelectedInstanceId(list[0].id);
+      const mapped = list.map((i: { id: string; nome_instancia: string; hash?: string | null }) => ({ id: i.id, nome_instancia: i.nome_instancia, hash: i.hash ?? null }));
+      setInstances(mapped);
+      if (mapped.length > 0 && !selectedInstanceId) setSelectedInstanceId(mapped[0].id);
     } catch { setInstances([]); }
   }, [selectedInstanceId]);
 
   const loadListas = useCallback(async () => {
     setLoadingListas(true);
     try {
-      const url = selectedInstanceId
-        ? `/api/grupos-venda/listas?instanceId=${encodeURIComponent(selectedInstanceId)}`
-        : "/api/grupos-venda/listas";
+      const url = selectedInstanceId ? `/api/grupos-venda/listas?instanceId=${encodeURIComponent(selectedInstanceId)}` : "/api/grupos-venda/listas";
       const res = await fetch(url);
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error ?? "Erro ao carregar listas");
@@ -285,8 +343,7 @@ export default function GruposVendaPage() {
       const errList = data.errors ?? [];
       setFeedback(`${sent} oferta(s) enviada(s).${errList.length > 0 ? ` ${errList.length} erro(s).` : ""}`);
       setTimeout(() => setFeedback(""), 8000);
-      if (errList.length > 0)
-        setError(errList.map((e: { keyword: string; error: string }) => `${e.keyword}: ${e.error}`).join("; "));
+      if (errList.length > 0) setError(errList.map((e: { keyword: string; error: string }) => `${e.keyword}: ${e.error}`).join("; "));
     } catch (e) { setError(e instanceof Error ? e.message : "Erro ao disparar"); }
     finally { setDisparando(false); }
   }, [selectedListaId, keywords, subId1, subId2, subId3]);
@@ -295,20 +352,14 @@ export default function GruposVendaPage() {
     setContinuoTogglingId(configId); setError(null);
     try {
       if (!ativar) {
-        const res = await fetch("/api/grupos-venda/continuo", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id: configId, ativo: false }),
-        });
+        const res = await fetch("/api/grupos-venda/continuo", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: configId, ativo: false }) });
         const data = await res.json();
         if (!res.ok) throw new Error(data?.error ?? "Erro");
         setFeedback("Disparo 24h pausado.");
       } else {
         const c = continuoList.find((x) => x.id === configId);
         if (!c?.listaId) throw new Error("Config sem lista");
-        const res = await fetch("/api/grupos-venda/continuo", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id: configId, listaId: c.listaId, listaOfertasId: c.listaOfertasId || undefined, keywords: c.keywords, subId1: c.subId1, subId2: c.subId2, subId3: c.subId3, horarioInicio: c.horarioInicio || undefined, horarioFim: c.horarioFim || undefined, ativo: true }),
-        });
+        const res = await fetch("/api/grupos-venda/continuo", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: configId, listaId: c.listaId, listaOfertasId: c.listaOfertasId || undefined, keywords: c.keywords, subId1: c.subId1, subId2: c.subId2, subId3: c.subId3, horarioInicio: c.horarioInicio || undefined, horarioFim: c.horarioFim || undefined, ativo: true }) });
         const data = await res.json();
         if (!res.ok) throw new Error(data?.error ?? "Erro ao ativar");
         setFeedback("Disparo 24h ativado.");
@@ -323,29 +374,20 @@ export default function GruposVendaPage() {
     if (!selectedListaId) { setError("Selecione uma lista de grupos."); return; }
     const useListaOfertas = !!selectedListaOfertasId;
     const kwList = keywords.split(/[\n,;]+/).map((s) => s.trim()).filter(Boolean);
-    if (!useListaOfertas && kwList.length === 0) {
-      setError("Digite ao menos uma keyword ou selecione uma lista de ofertas."); return;
-    }
+    if (!useListaOfertas && kwList.length === 0) { setError("Digite ao menos uma keyword ou selecione uma lista de ofertas."); return; }
     setContinuoTogglingId("new"); setError(null);
     try {
       const res = await fetch("/api/grupos-venda/continuo", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          listaId: selectedListaId,
-          listaOfertasId: useListaOfertas ? selectedListaOfertasId : undefined,
-          keywords: useListaOfertas ? [] : kwList,
-          subId1, subId2, subId3,
-          horarioInicio: horaInicio || undefined,
-          horarioFim: horaFim || undefined,
-          ativo: true,
-        }),
+        body: JSON.stringify({ listaId: selectedListaId, listaOfertasId: useListaOfertas ? selectedListaOfertasId : undefined, keywords: useListaOfertas ? [] : kwList, subId1, subId2, subId3, horarioInicio: horaInicio || undefined, horarioFim: horaFim || undefined, ativo: true }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error ?? "Erro");
-      const horarioMsg = horaInicio && horaFim ? ` Ativo das ${horaInicio} às ${horaFim} (Brasília).` : "";
-      setFeedback(useListaOfertas ? `Disparo 24h por lista de ofertas adicionado.${horarioMsg}` : `Disparo 24h adicionado. 1 produto a cada 2 min em loop.${horarioMsg}`);
+      const horarioMsg = horaInicio && horaFim ? ` Ativo das ${horaInicio} às ${horaFim}.` : "";
+      setFeedback(useListaOfertas ? `Disparo 24h por lista de ofertas adicionado.${horarioMsg}` : `Disparo 24h adicionado.${horarioMsg}`);
       setTimeout(() => setFeedback(""), 5000);
       setSelectedListaId(""); setKeywords(""); setSelectedListaOfertasId(""); setSubId1(""); setSubId2(""); setSubId3(""); setHoraInicio(""); setHoraFim("");
+      setView("panel");
       await loadContinuo();
     } catch (e) { setError(e instanceof Error ? e.message : "Erro ao adicionar disparo 24h"); }
     finally { setContinuoTogglingId(null); }
@@ -375,342 +417,458 @@ export default function GruposVendaPage() {
     finally { setCronTestLoading(false); }
   }, [loadContinuo]);
 
-  const ativos = continuoList.filter((c) => c.ativo).length;
+  const activeCount = continuoList.filter((c) => c.ativo).length;
+  const keywordCount = keywords.split("\n").filter((k) => k.trim()).length;
+  const selectedList = listas.find((l) => l.id === selectedListaId);
+  const filteredLists = listas.filter((l) => l.nomeLista.toLowerCase().includes(listSearch.toLowerCase()));
+  const filteredDisparos = continuoList.filter((d) =>
+    d.listaNome.toLowerCase().includes(panelSearch.toLowerCase()) ||
+    d.instanceId?.toLowerCase().includes(panelSearch.toLowerCase())
+  );
+
+  function openWizard() { setWizardStep(1); setShowStepInfo(false); setView("wizard"); }
+  function closeWizard() { setShowStepInfo(false); setView("panel"); }
+  function handleNext() { setShowStepInfo(false); if (wizardStep < 4) setWizardStep((s) => s + 1); }
+  function handleBack() { setShowStepInfo(false); if (wizardStep > 1) setWizardStep((s) => s - 1); }
+  function handleFinish() {
+    if (wizardStep === 4) {
+      if (scheduleMode === "24h") { handleAddContinuo(); }
+      else { handleDisparar(); closeWizard(); }
+    } else { closeWizard(); }
+  }
+
+  const stepMeta: Record<number, { title: string; description: ReactNode }> = {
+    1: { title: "Selecionar Canal WhatsApp", description: "Selecione o número do WhatsApp que será usado para disparar mensagens nos grupos. Apenas instâncias conectadas estão disponíveis." },
+    2: { title: "Definir Lista de Grupos Alvo", description: (<>Selecione uma lista já salva ou crie uma nova buscando os grupos da instância <span className="text-white font-semibold">{instances.find((i) => i.id === selectedInstanceId)?.nome_instancia ?? selectedInstanceId}</span>.</>) },
+    3: { title: "Configurar Conteúdo e Rastreamento", description: "Defina o que será enviado nos grupos e configure os Sub IDs para rastreamento de vendas por canal." },
+    4: { title: "Definir Horário e Ativar Disparo", description: "Defina a janela de funcionamento e escolha como ativar. A automação aparecerá no Painel de Controle após confirmação." },
+  };
 
   return (
-    <div className="max-w-6xl mx-auto space-y-5 pb-10">
+    <div className="flex flex-col w-full text-[#f0f0f2] bg-[#121214] min-h-screen rounded-lg p-3 sm:p-6 gap-4 sm:gap-5">
+      <style jsx>{`
+        .scrollbar-thin::-webkit-scrollbar { width: 4px; height: 4px; }
+        .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+        .scrollbar-thin::-webkit-scrollbar-thumb { background: #3e3e3e; border-radius: 10px; }
+        .scrollbar-thin::-webkit-scrollbar-thumb:hover { background: #e24c30; }
+      `}</style>
 
-      {/* ── Header ── */}
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div>
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-shopee-orange/15 border border-shopee-orange/30 flex items-center justify-center shrink-0">
-              <MessageCircle className="h-5 w-5 text-shopee-orange" />
-            </div>
-            <h1 className="text-xl font-bold text-text-primary">Grupos de Venda</h1>
+      {/* Header */}
+      <header>
+        <h1 className="text-lg sm:text-xl font-bold flex items-center gap-2.5 text-white">
+          <div className="p-1.5 bg-[#e24c30]/10 rounded-lg border border-[#e24c30]/20 shrink-0">
+            <MessageCircle className="w-4 h-4 text-[#e24c30]" />
           </div>
-          <p className="text-text-secondary text-xs mt-1.5 ml-12">
-            Crie listas de grupos WhatsApp e dispare ofertas automaticamente — uma vez ou 24h em loop.
-          </p>
-        </div>
-        {continuoList.length > 0 && (
-          <div className="flex items-center gap-2 shrink-0">
-            <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border ${
-              ativos > 0 ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400" : "bg-dark-card border-dark-border text-text-secondary"
-            }`}>
-              <Zap className="h-3 w-3" />
-              {ativos} ativo{ativos !== 1 ? "s" : ""} de {continuoList.length} disparo{continuoList.length !== 1 ? "s" : ""}
-            </span>
-          </div>
-        )}
-      </div>
+          Grupos de Venda
+        </h1>
+        <p className="text-[11px] text-[#a0a0a0] mt-1 leading-relaxed">
+          Dispare ofertas automaticamente em grupos do WhatsApp — uma vez ou em loop 24h.
+        </p>
+      </header>
 
-      {/* ── Feedback / Error ── */}
+      {/* Feedback / Error */}
       {feedback && (
         <div className="p-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 flex items-center gap-2">
-          <PlayCircle className="h-4 w-4 text-emerald-400 shrink-0" />
+          <CheckCheck className="h-4 w-4 text-emerald-400 shrink-0" />
           <p className="text-sm text-emerald-400">{feedback}</p>
         </div>
       )}
       {error && (
         <div className="p-3 rounded-xl border border-red-500/40 bg-red-500/10 flex items-start gap-2">
           <AlertCircle className="h-4 w-4 text-red-400 shrink-0 mt-0.5" />
-          <p className="text-sm text-red-300">{error}</p>
+          <p className="text-sm text-red-300 flex-1">{error}</p>
           <button type="button" onClick={() => setError(null)} className="ml-auto text-red-400/60 hover:text-red-400 text-xs shrink-0">✕</button>
         </div>
       )}
 
-      {/* ── Grid principal ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-
-        {/* ── Col esquerda: Listas de grupos ── */}
-        <div className="bg-dark-card rounded-xl border border-dark-border p-5 flex flex-col gap-4">
-          <div className="flex items-center gap-2">
-            <List className="h-4 w-4 text-shopee-orange" />
-            <h2 className="text-sm font-semibold text-text-primary uppercase tracking-wide">Listas de grupos</h2>
-            <Tooltip text="Agrupe seus grupos WhatsApp em listas nomeadas. Cada lista pode ser usada para disparar ofertas uma vez ou em loop 24h." wide />
-          </div>
-
-          {/* Instância — botões */}
-          <div>
-            <div className="flex items-center gap-1.5 mb-2">
-              <span className="text-xs text-text-secondary font-medium">Instância</span>
-              <Tooltip text="Selecione a instância WhatsApp cujos grupos você quer usar." />
-            </div>
-            {instances.length === 0 ? (
-              <p className="text-xs text-text-secondary">Nenhuma instância encontrada.</p>
-            ) : (
-              <div className="flex flex-wrap gap-2">
-                {instances.map((inst) => (
-                  <button key={inst.id} type="button"
-                    onClick={() => setSelectedInstanceId(inst.id)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
-                      selectedInstanceId === inst.id
-                        ? "bg-shopee-orange border-shopee-orange text-white shadow-[0_0_10px_rgba(238,77,45,0.25)]"
-                        : "bg-dark-bg border-dark-border text-text-secondary hover:border-shopee-orange/50 hover:text-text-primary"
-                    }`}>
-                    {inst.nome_instancia}
-                  </button>
-                ))}
+      {/* Panel view */}
+      {view === "panel" && (
+        <>
+          {/* Criar Nova Automação */}
+          <button onClick={openWizard}
+            className="w-full flex items-center justify-between bg-[#1c1c1f] border border-[#2c2c32] hover:border-[#e24c30]/40 rounded-xl px-4 sm:px-5 py-3.5 sm:py-4 transition-all group gap-3 text-left">
+            <div className="flex items-start sm:items-center gap-3 min-w-0 flex-1">
+              <div className="w-10 h-10 sm:w-9 sm:h-9 rounded-xl bg-[#e24c30]/10 border border-[#e24c30]/20 flex items-center justify-center shrink-0 group-hover:bg-[#e24c30]/20 group-hover:shadow-lg group-hover:shadow-[#e24c30]/15 transition-all">
+                <PlusCircle className="w-4 h-4 text-[#e24c30]" />
               </div>
-            )}
-          </div>
-
-          {/* Botão buscar grupos */}
-          <button type="button" onClick={() => setModalOpen(true)}
-            className="inline-flex items-center justify-center gap-2 w-full px-4 py-2.5 rounded-xl bg-shopee-orange text-white font-semibold text-sm hover:opacity-90 transition-opacity shadow-[0_2px_12px_rgba(238,77,45,0.25)]">
-            <Search className="h-4 w-4" />
-            Buscar grupos e criar lista
+              <div className="min-w-0 flex-1">
+                <p className="text-[11px] sm:text-[12px] font-bold text-white leading-tight">Criar Nova Automação</p>
+                <p className="text-[9px] sm:text-[10px] text-[#a0a0a0] mt-1 leading-relaxed line-clamp-2 sm:line-clamp-none">Configure instância, lista de grupos, conteúdo e horário passo a passo.</p>
+              </div>
+            </div>
+            <div className="w-8 h-8 rounded-lg bg-[#222228] border border-[#2c2c32] flex items-center justify-center shrink-0 group-hover:bg-[#e24c30]/10 group-hover:border-[#e24c30]/25 transition-all">
+              <ChevronRight className="w-4 h-4 text-[#a0a0a0] group-hover:text-[#e24c30] transition-colors" />
+            </div>
           </button>
 
-          {/* Lista de grupos salvas */}
-          <div className="flex-1">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs text-text-secondary font-medium">
-                {listas.length > 0 ? `${listas.length} lista${listas.length !== 1 ? "s" : ""} salva${listas.length !== 1 ? "s" : ""}` : "Listas salvas"}
-              </span>
-              <button type="button" onClick={loadListas} disabled={loadingListas}
-                className="text-text-secondary hover:text-text-primary disabled:opacity-40 transition-colors">
-                <RefreshCw className={`h-3.5 w-3.5 ${loadingListas ? "animate-spin" : ""}`} />
+          {/* Painel de Controle */}
+          <section className="bg-[#1c1c1f] border border-[#2c2c32] rounded-xl overflow-hidden">
+            <div className="px-4 sm:px-5 py-3.5 border-b border-[#2c2c32]">
+              <div className="flex flex-col gap-3">
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <h2 className="text-[10px] font-bold text-white uppercase tracking-widest flex items-center gap-2">
+                    <Settings2 className="w-3.5 h-3.5 text-[#e24c30]" /> Painel de Controle
+                  </h2>
+                  <span className="text-[9px] font-bold text-[#a0a0a0] bg-[#222228] border border-[#2c2c32] px-2 py-0.5 rounded-md">{continuoList.length} disparos</span>
+                  <span className="text-[9px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/15 px-2 py-0.5 rounded-full">{activeCount} ativos</span>
+                </div>
+                <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                  <div className="relative flex-1 min-w-0">
+                    <Search className="w-3 h-3 text-[#a0a0a0] absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    <input type="text" value={panelSearch} onChange={(e) => setPanelSearch(e.target.value)} placeholder="Buscar disparo..."
+                      className="w-full bg-[#222228] border border-[#3e3e3e] rounded-lg pl-7 pr-7 py-2 sm:py-1.5 text-[10px] text-white placeholder:text-[#868686] focus:border-[#e24c30] outline-none transition" />
+                    {panelSearch && (
+                      <button onClick={() => setPanelSearch("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-[#a0a0a0] hover:text-white transition">
+                        <X className="w-2.5 h-2.5" />
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button onClick={handleTestCron} disabled={cronTestLoading}
+                      className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 text-amber-400 border border-amber-400/25 bg-amber-400/5 px-3 py-2 sm:py-1.5 rounded-lg text-[9px] font-bold hover:bg-amber-400/10 disabled:opacity-40 transition">
+                      {cronTestLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Zap className="w-3 h-3 fill-amber-400" />}
+                      <span className="sm:hidden">Testar</span><span className="hidden sm:inline">Testar agora</span>
+                    </button>
+                    <button onClick={loadContinuo} disabled={continuoLoading}
+                      className="text-[#a0a0a0] hover:text-white transition p-2 sm:p-1.5 rounded-lg hover:bg-[#222228] shrink-0 disabled:opacity-40">
+                      <RefreshCw className={cn("w-3.5 h-3.5", continuoLoading && "animate-spin")} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {cronTestResult && (
+              <div className="mx-4 mt-3 p-3 rounded-xl bg-dark-bg border border-dark-border text-xs text-text-primary leading-relaxed">
+                {cronTestResult}
+              </div>
+            )}
+
+            <div className="p-4 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-2.5 max-h-[380px] overflow-y-auto scrollbar-thin">
+              {continuoLoading ? (
+                <div className="col-span-full flex items-center justify-center gap-2 py-10 text-[#a0a0a0] text-sm">
+                  <Loader2 className="w-4 h-4 animate-spin" /> Carregando...
+                </div>
+              ) : filteredDisparos.length > 0 ? (
+                filteredDisparos.map((item) => (
+                  <DisparoCard key={item.id} c={item} togglingId={continuoTogglingId} onToggle={handleContinuoToggle} onRemove={handleRemoveContinuo} />
+                ))
+              ) : (
+                <div className="col-span-full flex flex-col items-center justify-center gap-2 py-10 text-center">
+                  <Search className="w-7 h-7 text-[#2c2c32]" />
+                  <p className="text-[11px] font-semibold text-[#a0a0a0]">
+                    {continuoList.length === 0 ? "Nenhum disparo configurado" : "Nenhum disparo encontrado"}
+                  </p>
+                  <p className="text-[9px] text-[#a0a0a0]/60">
+                    {continuoList.length === 0 ? "Clique em \"Criar Nova Automação\" para começar." : "Tente outro título ou instância."}
+                  </p>
+                </div>
+              )}
+            </div>
+          </section>
+        </>
+      )}
+
+      {/* Wizard view */}
+      {view === "wizard" && (
+        <div className="bg-[#1c1c1f] border border-[#2c2c32] rounded-xl sm:rounded-2xl overflow-hidden flex flex-col min-w-0">
+          <WizardStepper currentStep={wizardStep} onClose={closeWizard} />
+
+          <div className="px-4 sm:px-6 py-4 border-b border-[#2c2c32]">
+            <div className="flex items-start justify-between gap-3">
+              <h2 className="text-sm font-bold text-white leading-snug">{stepMeta[wizardStep].title}</h2>
+              <button type="button" onClick={() => setShowStepInfo((v) => !v)}
+                className="sm:hidden w-7 h-7 rounded-full border border-[#2c2c32] bg-[#222228] text-[#a0a0a0] hover:text-white hover:border-[#3e3e3e] transition shrink-0">
+                ⓘ
               </button>
             </div>
-            {loadingListas ? (
-              <div className="flex items-center gap-2 text-text-secondary text-xs py-3">
-                <Loader2 className="h-4 w-4 animate-spin" /> Carregando...
+            <p className="hidden sm:block text-[11px] text-[#a0a0a0] leading-relaxed mt-1">{stepMeta[wizardStep].description}</p>
+            {showStepInfo && (
+              <div className="sm:hidden mt-3 rounded-xl border border-[#2c2c32] bg-[#222228] px-3 py-2.5 text-[10px] text-[#a0a0a0] leading-relaxed">
+                {stepMeta[wizardStep].description}
               </div>
-            ) : listas.length === 0 ? (
-              <div className="py-6 flex flex-col items-center gap-2 text-center border border-dashed border-dark-border rounded-xl">
-                <List className="h-7 w-7 text-text-secondary/30" />
-                <p className="text-xs text-text-secondary/60">Nenhuma lista ainda.<br />Busque grupos e crie sua primeira lista.</p>
+            )}
+          </div>
+
+          <div className="flex-1 p-4 sm:p-6 min-w-0">
+            {/* Step 1: Selecionar instância */}
+            {wizardStep === 1 && (
+              <div className="grid grid-cols-1 md:grid-cols-[260px_1fr] gap-4 sm:gap-6">
+                <div className="bg-[#222228] border border-[#2c2c32] rounded-xl p-4 flex flex-col gap-2 h-fit">
+                  <p className="text-[9px] font-bold text-[#d8d8d8] uppercase tracking-widest">💡 Sobre Instâncias</p>
+                  <p className="text-[10px] text-[#a0a0a0] leading-relaxed">Cada instância representa um número de WhatsApp conectado à plataforma. Múltiplas instâncias permitem separar campanhas por conta.</p>
+                </div>
+                <div className="flex flex-col gap-2.5 min-w-0">
+                  {instances.length === 0 ? (
+                    <div className="flex items-center gap-2 py-4 text-[#a0a0a0] text-xs"><Loader2 className="w-4 h-4 animate-spin" /> Carregando instâncias...</div>
+                  ) : instances.map((inst) => {
+                    const isSelected = selectedInstanceId === inst.id;
+                    return (
+                      <button key={inst.id} onClick={() => setSelectedInstanceId(inst.id)}
+                        className={cn("flex items-start sm:items-center gap-4 p-4 rounded-xl border-2 text-left transition-all min-w-0",
+                          isSelected ? "border-[#e24c30] bg-[#e24c30]/5 shadow-lg shadow-[#e24c30]/10"
+                            : "border-[#2c2c32] bg-[#222228] hover:border-[#3e3e3e]")}>
+                        <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border transition-all",
+                          isSelected ? "bg-[#e24c30]/10 border-[#e24c30]/30" : "bg-[#1c1c1f] border-[#2c2c32]")}>
+                          <Smartphone className={cn("w-4 h-4", isSelected ? "text-[#e24c30]" : "text-[#a0a0a0]")} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className={cn("text-[12px] font-bold truncate", isSelected ? "text-white" : "text-[#d8d8d8]")}>{inst.nome_instancia}</p>
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                            <span className="text-[9px] text-emerald-400 font-semibold">Conectada</span>
+                          </div>
+                        </div>
+                        {isSelected && (
+                          <div className="w-5 h-5 rounded-full bg-[#e24c30] flex items-center justify-center shrink-0">
+                            <CheckCheck className="w-3 h-3 text-white" />
+                          </div>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-            ) : (
-              <ul className="space-y-1.5 max-h-52 overflow-y-auto scrollbar-shopee pr-1">
-                {listas.map((l) => (
-                  <li key={l.id}
-                    className="flex items-center justify-between gap-2 py-2 px-3 rounded-xl border border-dark-border bg-dark-bg/60 hover:border-dark-border/80 transition-colors">
-                    <div className="flex-1 min-w-0">
-                      <span className="text-sm text-text-primary font-medium truncate block">{l.nomeLista}</span>
-                      <span className="text-[10px] text-text-secondary">
-                        {instances.find((i) => i.id === l.instanceId)?.nome_instancia ?? l.instanceId.slice(0, 8)}
-                      </span>
+            )}
+
+            {/* Step 2: Selecionar lista */}
+            {wizardStep === 2 && (
+              <div className="flex flex-col gap-3">
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                  <div className="relative flex-1 min-w-0">
+                    <Search className="w-3.5 h-3.5 text-[#a0a0a0] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    <input type="text" value={listSearch} onChange={(e) => setListSearch(e.target.value)} placeholder="Buscar lista por nome..."
+                      className="w-full bg-[#222228] border border-[#3e3e3e] rounded-lg pl-8 pr-8 py-2.5 sm:py-2 text-[10px] text-white placeholder:text-[#868686] focus:border-[#e24c30] outline-none transition" />
+                    {listSearch && <button onClick={() => setListSearch("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#a0a0a0] hover:text-white transition"><X className="w-3 h-3" /></button>}
+                  </div>
+                  <button onClick={() => setModalOpen(true)}
+                    className="w-full sm:w-auto flex items-center justify-center gap-2 shrink-0 bg-[#e24c30]/5 border border-[#e24c30]/25 hover:bg-[#e24c30]/10 hover:border-[#e24c30]/45 rounded-lg px-3.5 py-2.5 sm:py-2 transition-all group">
+                    <div className="w-5 h-5 rounded-md bg-[#e24c30]/10 border border-[#e24c30]/20 flex items-center justify-center shrink-0 group-hover:bg-[#e24c30]/20 transition-all">
+                      <PlusCircle className="w-3 h-3 text-[#e24c30]" />
                     </div>
-                    <button type="button" onClick={() => handleDeleteLista(l.id)} disabled={deletingListaId === l.id}
-                      className="p-1.5 rounded-lg text-red-400/50 hover:text-red-400 hover:bg-red-500/10 transition-all disabled:opacity-40" aria-label="Excluir">
-                      {deletingListaId === l.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-
-          {saving && (
-            <p className="text-xs text-text-secondary flex items-center gap-1.5">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" /> Salvando lista...
-            </p>
-          )}
-
-          {/* Lista de ofertas */}
-          <div className="border-t border-dark-border/50 pt-4">
-            <div className="flex items-center gap-1.5 mb-2">
-              <Package className="h-3.5 w-3.5 text-shopee-orange/70" />
-              <span className="text-xs text-text-secondary font-medium">Lista de ofertas</span>
-              <Tooltip text="Opcional: use uma lista de ofertas salva no Gerador de Links para o disparo 24h rodar em loop pelos produtos automaticamente." wide />
-            </div>
-            {loadingListasOfertas ? (
-              <div className="flex items-center gap-2 text-text-secondary text-xs">
-                <Loader2 className="h-3.5 w-3.5 animate-spin" /> Carregando listas...
-              </div>
-            ) : (
-              <select value={selectedListaOfertasId} onChange={(e) => setSelectedListaOfertasId(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl border border-dark-border bg-dark-bg text-text-primary text-sm focus:outline-none focus:border-shopee-orange transition-colors">
-                <option value="">Sem lista de ofertas (usa keywords)</option>
-                {listasOfertas.map((l) => (
-                  <option key={l.id} value={l.id}>{l.nome} ({l.totalItens} itens)</option>
-                ))}
-              </select>
-            )}
-          </div>
-        </div>
-
-        {/* ── Col direita: Configurar disparo ── */}
-        <div className="bg-dark-card rounded-xl border border-dark-border p-5 flex flex-col gap-4">
-          {/* Header colapsável */}
-          <button type="button" onClick={() => setDisparoOpen((v) => !v)}
-            className="flex items-center gap-2 w-full text-left">
-            <ShoppingBag className="h-4 w-4 text-shopee-orange" />
-            <h2 className="text-sm font-semibold text-text-primary uppercase tracking-wide flex-1">Configurar disparo</h2>
-            {disparoOpen ? <ChevronUp className="h-4 w-4 text-text-secondary" /> : <ChevronDown className="h-4 w-4 text-text-secondary" />}
-          </button>
-
-          {disparoOpen && (
-            <>
-              {/* Lista de grupos */}
-              <div>
-                <div className="flex items-center gap-1.5 mb-1.5">
-                  <span className="text-xs text-text-secondary font-medium">Lista de grupos</span>
-                  <Tooltip text="Escolha qual lista de grupos WhatsApp receberá as ofertas." />
+                    <span className="text-[10px] font-bold text-[#e24c30]">Criar nova lista</span>
+                  </button>
                 </div>
-                <select value={selectedListaId} onChange={(e) => setSelectedListaId(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border border-dark-border bg-dark-bg text-text-primary text-sm focus:outline-none focus:border-shopee-orange transition-colors">
-                  <option value="">Selecione uma lista</option>
-                  {listas.map((l) => <option key={l.id} value={l.id}>{l.nomeLista}</option>)}
-                </select>
-              </div>
 
-              {/* Sub IDs */}
-              <div>
-                <div className="flex items-center gap-1.5 mb-1.5">
-                  <Tag className="h-3.5 w-3.5 text-text-secondary/60" />
-                  <span className="text-xs text-text-secondary font-medium">Sub IDs de rastreamento</span>
-                  <Tooltip text="Identificadores para rastrear de onde veio cada clique no relatório da Shopee. Ex: Sub ID 1 = canal, Sub ID 2 = lista, Sub ID 3 = campanha." wide />
-                </div>
-                <div className="grid grid-cols-3 gap-2">
-                  {[
-                    { val: subId1, set: setSubId1, ph: "canal" },
-                    { val: subId2, set: setSubId2, ph: "lista" },
-                    { val: subId3, set: setSubId3, ph: "campanha" },
-                  ].map((f, i) => (
-                    <input key={i} type="text" value={f.val} onChange={(e) => f.set(e.target.value)}
-                      placeholder={`Sub ID ${i + 1} (${f.ph})`}
-                      className="w-full px-2.5 py-2 rounded-xl border border-dark-border bg-dark-bg text-text-primary text-xs placeholder-text-secondary/50 focus:outline-none focus:border-shopee-orange transition-colors" />
-                  ))}
-                </div>
-              </div>
+                {loadingListas ? (
+                  <div className="flex items-center gap-2 py-4 text-[#a0a0a0] text-xs"><Loader2 className="w-4 h-4 animate-spin" /> Carregando listas...</div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-1.5 max-h-[192px] overflow-y-auto scrollbar-thin pr-1">
+                    {filteredLists.length > 0 ? filteredLists.map((list) => {
+                      const isSelected = selectedListaId === list.id;
+                      return (
+                        <button key={list.id} onClick={() => setSelectedListaId(isSelected ? "" : list.id)}
+                          className={cn("flex items-center gap-3 p-2.5 rounded-xl border-2 text-left transition-all min-w-0",
+                            isSelected ? "border-[#e24c30] bg-[#e24c30]/5" : "border-[#2c2c32] bg-[#222228] hover:border-[#3e3e3e]")}>
+                          <div className={cn("w-7 h-7 rounded-lg flex items-center justify-center shrink-0 border",
+                            isSelected ? "bg-[#e24c30]/10 border-[#e24c30]/30" : "bg-[#1c1c1f] border-[#2c2c32]")}>
+                            <ListIcon className={cn("w-3.5 h-3.5", isSelected ? "text-[#e24c30]" : "text-[#a0a0a0]")} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className={cn("text-[11px] font-bold truncate", isSelected ? "text-white" : "text-[#d8d8d8]")}>{list.nomeLista}</p>
+                            <p className="text-[9px] text-[#a0a0a0] mt-0.5 truncate">{instances.find((i) => i.id === list.instanceId)?.nome_instancia ?? list.instanceId.slice(0, 8)}</p>
+                          </div>
+                          {isSelected && <CheckCheck className="w-3.5 h-3.5 text-[#e24c30] shrink-0" />}
+                        </button>
+                      );
+                    }) : (
+                      <div className="col-span-full flex flex-col items-center justify-center gap-2 py-8 text-center">
+                        <Search className="w-6 h-6 text-[#2c2c32]" />
+                        <p className="text-[11px] font-semibold text-[#a0a0a0]">Nenhuma lista encontrada</p>
+                        <p className="text-[9px] text-[#a0a0a0]/60">Tente um nome diferente ou crie uma nova lista.</p>
+                      </div>
+                    )}
+                  </div>
+                )}
 
-              {/* Keywords */}
-              <div>
-                <div className="flex items-center gap-1.5 mb-1.5">
-                  <span className="text-xs text-text-secondary font-medium">Keywords</span>
-                  <Tooltip text="Uma keyword por linha ou separadas por vírgula. Cada keyword busca os melhores produtos na Shopee e envia um para cada grupo. Se usar lista de ofertas acima, deixe em branco." wide />
-                </div>
-                <textarea value={keywords} onChange={(e) => setKeywords(e.target.value)}
-                  placeholder={"camisa masculina\ntenis corrida\nfone bluetooth"}
-                  rows={4}
-                  className="w-full px-3 py-2.5 rounded-xl border border-dark-border bg-dark-bg text-text-primary text-sm placeholder-text-secondary/50 focus:outline-none focus:border-shopee-orange resize-y transition-colors" />
-                {selectedListaOfertasId && (
-                  <p className="text-[11px] text-amber-400/80 mt-1 flex items-center gap-1">
-                    <Info className="h-3 w-3" /> Lista de ofertas selecionada — keywords serão ignoradas no disparo 24h.
-                  </p>
+                {saving && <p className="text-xs text-text-secondary flex items-center gap-1.5"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Salvando lista...</p>}
+
+                {selectedList && (
+                  <div className="flex items-start sm:items-center gap-2.5 bg-[#e24c30]/5 border border-[#e24c30]/20 rounded-lg px-4 py-2.5">
+                    <CheckCheck className="w-3.5 h-3.5 text-[#e24c30] shrink-0 mt-0.5 sm:mt-0" />
+                    <p className="text-[10px] font-semibold text-white leading-relaxed">
+                      <span className="text-[#e24c30]">{selectedList.nomeLista}</span> selecionada
+                    </p>
+                  </div>
                 )}
               </div>
+            )}
 
-              {/* Horário de funcionamento */}
-              <div className="border border-dark-border/60 rounded-xl p-3 bg-dark-bg/40">
-                <div className="flex items-center gap-1.5 mb-2.5">
-                  <Clock className="h-3.5 w-3.5 text-shopee-orange/70" />
-                  <span className="text-xs text-text-secondary font-medium">Horário de funcionamento</span>
-                  <Tooltip text="Opcional. Define em que período do dia o disparo 24h pode rodar (horário de Brasília, UTC-3). Fora desse intervalo, o cron pulará este disparo. Deixe em branco para rodar o dia todo." wide />
-                  {(horaInicio || horaFim) && (
-                    <button type="button" onClick={() => { setHoraInicio(""); setHoraFim(""); }}
-                      className="ml-auto text-[10px] text-text-secondary/50 hover:text-red-400 transition-colors">
-                      limpar
+            {/* Step 3: Conteúdo + Sub IDs */}
+            {wizardStep === 3 && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
+                <div className="flex flex-col gap-3 min-w-0">
+                  <FieldLabel>Tipo de Conteúdo</FieldLabel>
+                  <div className="flex flex-col sm:flex-row rounded-xl overflow-hidden border border-[#2c2c32]">
+                    <button onClick={() => setContentMode("keywords")}
+                      className={cn("flex-1 flex items-center justify-start sm:justify-center gap-2 px-3 py-2.5 text-[10px] font-bold transition-all sm:border-r border-[#2c2c32]",
+                        contentMode === "keywords" ? "bg-[#e24c30]/15 text-[#e24c30]" : "bg-[#222228] text-[#a0a0a0] hover:text-white")}>
+                      <Hash className="w-3 h-3" /> Keywords
                     </button>
+                    <button onClick={() => setContentMode("list")}
+                      className={cn("flex-1 flex items-center justify-start sm:justify-center gap-2 px-3 py-2.5 text-[10px] font-bold transition-all border-t sm:border-t-0 border-[#2c2c32]",
+                        contentMode === "list" ? "bg-[#e24c30]/15 text-[#e24c30]" : "bg-[#222228] text-[#a0a0a0] hover:text-white")}>
+                      <Layers className="w-3 h-3" /> Lista de Ofertas
+                    </button>
+                  </div>
+
+                  {contentMode === "keywords" ? (
+                    <div className="flex flex-col gap-1.5 min-w-0">
+                      <FieldLabel>Keywords (uma por linha)</FieldLabel>
+                      <textarea value={keywords} onChange={(e) => setKeywords(e.target.value)}
+                        placeholder={"camisa masculina\ntenis corrida\nfone bluetooth"}
+                        className="w-full h-[140px] bg-[#222228] border border-[#3e3e3e] rounded-xl p-3.5 text-[11px] text-[#f0f0f2] placeholder:text-[#868686] focus:border-[#e24c30] outline-none resize-none scrollbar-thin leading-relaxed transition" />
+                      <p className="text-[9px] text-[#a0a0a0] leading-relaxed">{keywordCount} keyword{keywordCount !== 1 ? "s" : ""} · 1 produto por keyword por grupo.</p>
+                    </div>
+                  ) : (
+                    <div className="min-w-0">
+                      <FieldLabel>Lista de Ofertas</FieldLabel>
+                      {loadingListasOfertas ? (
+                        <div className="flex items-center gap-2 text-[#a0a0a0] text-xs"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Carregando...</div>
+                      ) : (
+                        <div className="relative">
+                          <select value={selectedListaOfertasId} onChange={(e) => setSelectedListaOfertasId(e.target.value)}
+                            className="appearance-none w-full bg-[#222228] border border-[#3e3e3e] pl-4 pr-8 py-2.5 rounded-xl text-[11px] font-semibold text-[#f0f0f2] focus:border-[#e24c30] focus:outline-none transition cursor-pointer">
+                            <option value="">Sem lista de ofertas (usa keywords)</option>
+                            {listasOfertas.map((l) => <option key={l.id} value={l.id}>{l.nome} ({l.totalItens} itens)</option>)}
+                          </select>
+                          <ChevronDown className="w-3.5 h-3.5 text-[#a0a0a0] absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                        </div>
+                      )}
+                      <p className="text-[9px] text-[#a0a0a0] mt-2 leading-relaxed">A lista de ofertas substitui as keywords e envia produtos fixos em rotação.</p>
+                    </div>
                   )}
                 </div>
-                <div className="flex items-center gap-2">
-                  <div className="flex-1">
-                    <label className="block text-[10px] text-text-secondary/60 mb-1">Início</label>
-                    <input type="time" value={horaInicio} onChange={(e) => setHoraInicio(e.target.value)}
-                      className="w-full px-2.5 py-2 rounded-lg border border-dark-border bg-dark-bg text-text-primary text-sm focus:outline-none focus:border-shopee-orange transition-colors" />
-                  </div>
-                  <span className="text-text-secondary/40 mt-4 shrink-0">→</span>
-                  <div className="flex-1">
-                    <label className="block text-[10px] text-text-secondary/60 mb-1">Fim</label>
-                    <input type="time" value={horaFim} onChange={(e) => setHoraFim(e.target.value)}
-                      className="w-full px-2.5 py-2 rounded-lg border border-dark-border bg-dark-bg text-text-primary text-sm focus:outline-none focus:border-shopee-orange transition-colors" />
+
+                <div className="flex flex-col gap-3 min-w-0">
+                  <FieldLabel>
+                    <span className="inline-flex items-center gap-1 flex-wrap">
+                      <Tag className="w-2.5 h-2.5" /> Sub IDs de Rastreamento
+                      <span className="text-[8px] normal-case tracking-normal font-normal text-[#a0a0a0] ml-1">(opcional)</span>
+                    </span>
+                  </FieldLabel>
+                  <div className="flex flex-col gap-2">
+                    {[
+                      { label: "Canal", value: subId1, setter: setSubId1, ph: "Ex: whatsapp" },
+                      { label: "Lista", value: subId2, setter: setSubId2, ph: "Ex: natal" },
+                      { label: "Campanha", value: subId3, setter: setSubId3, ph: "Ex: black25" },
+                    ].map(({ label, value, setter, ph }) => (
+                      <div key={label} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-1.5 sm:gap-3">
+                        <span className="text-[8px] text-[#a0a0a0] uppercase tracking-widest font-bold w-full sm:w-16 shrink-0">{label}</span>
+                        <input type="text" value={value} onChange={(e) => setter(e.target.value)} placeholder={ph}
+                          className="w-full flex-1 bg-[#222228] border border-[#3e3e3e] rounded-lg px-3 py-2.5 sm:py-2 text-[10px] text-white placeholder:text-[#868686] focus:border-[#e24c30] outline-none transition" />
+                      </div>
+                    ))}
                   </div>
                 </div>
-                {horaInicio && horaFim && (
-                  <p className="text-[11px] text-emerald-400/80 mt-2 flex items-center gap-1">
-                    <Clock className="h-3 w-3" />
-                    Ativo das {horaInicio} às {horaFim} (horário de Brasília)
-                  </p>
-                )}
-                {(!horaInicio && !horaFim) && (
-                  <p className="text-[11px] text-text-secondary/40 mt-2">Sem restrição de horário — dispara o dia todo.</p>
-                )}
               </div>
+            )}
 
-              {/* Botões de ação */}
-              <div className="flex flex-col sm:flex-row gap-2 pt-1">
-                <button type="button" onClick={handleDisparar}
-                  disabled={disparando || !selectedListaId || !keywords.trim()}
-                  className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-shopee-orange text-white font-semibold text-sm hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-[0_2px_12px_rgba(238,77,45,0.2)]">
-                  {disparando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                  Disparar uma vez
-                </button>
-                <button type="button" onClick={handleAddContinuo}
-                  disabled={continuoTogglingId === "new" || !selectedListaId || (!keywords.trim() && !selectedListaOfertasId)}
-                  className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 text-white font-semibold text-sm hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed transition-all">
-                  {continuoTogglingId === "new" ? <Loader2 className="h-4 w-4 animate-spin" /> : (horaInicio && horaFim) ? <Clock className="h-4 w-4" /> : <PlusCircle className="h-4 w-4" />}
-                  {(horaInicio && horaFim) ? "Agendar disparo" : "Adicionar disparo 24h"}
-                </button>
+            {/* Step 4: Horário + Resumo */}
+            {wizardStep === 4 && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
+                <div className="bg-[#222228] border border-[#2c2c32] rounded-xl p-4 min-w-0">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+                    <label className="flex items-center gap-1.5 text-[9px] font-bold text-[#d8d8d8] uppercase tracking-widest leading-relaxed">
+                      <Clock className="w-2.5 h-2.5 text-[#e24c30] shrink-0" /> Horário de Funcionamento
+                    </label>
+                    <div className="flex rounded-lg overflow-hidden border border-[#2c2c32] text-[9px] font-bold self-start sm:self-auto">
+                      <button onClick={() => setScheduleMode("window")}
+                        className={cn("px-3 py-1.5 transition-all", scheduleMode === "window" ? "bg-[#e24c30]/20 text-[#e24c30]" : "bg-transparent text-[#a0a0a0] hover:text-white")}>
+                        JANELA
+                      </button>
+                      <button onClick={() => setScheduleMode("24h")}
+                        className={cn("px-3 py-1.5 border-l border-[#2c2c32] transition-all", scheduleMode === "24h" ? "bg-[#e24c30]/20 text-[#e24c30]" : "bg-transparent text-[#a0a0a0] hover:text-white")}>
+                        24H
+                      </button>
+                    </div>
+                  </div>
+                  {scheduleMode === "24h" ? (
+                    <p className="text-[10px] text-[#a0a0a0] leading-relaxed"><span className="text-emerald-400 font-semibold">✓ Sem restrição</span> — o disparo funciona o dia todo, sem interrupções.</p>
+                  ) : (
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                      <div className="flex-1">
+                        <p className="text-[8px] text-[#a0a0a0] mb-1.5 uppercase tracking-widest font-bold">Início</p>
+                        <input type="time" value={horaInicio} onChange={(e) => setHoraInicio(e.target.value)}
+                          className="w-full bg-[#1c1c1f] border border-[#3e3e3e] rounded-lg px-3 py-2.5 text-xs text-white focus:border-[#e24c30] outline-none text-center transition" />
+                      </div>
+                      <span className="hidden sm:block text-[#a0a0a0] mt-4">→</span>
+                      <div className="flex-1">
+                        <p className="text-[8px] text-[#a0a0a0] mb-1.5 uppercase tracking-widest font-bold">Fim</p>
+                        <input type="time" value={horaFim} onChange={(e) => setHoraFim(e.target.value)}
+                          className="w-full bg-[#1c1c1f] border border-[#3e3e3e] rounded-lg px-3 py-2.5 text-xs text-white focus:border-[#e24c30] outline-none text-center transition" />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="bg-[#222228] border border-[#2c2c32] rounded-xl p-4 min-w-0">
+                  <p className="text-[9px] font-bold text-[#d8d8d8] uppercase tracking-widest mb-4">Resumo da Automação</p>
+                  <div className="flex flex-col gap-3">
+                    {[
+                      { icon: <Smartphone className="w-3.5 h-3.5 text-[#e24c30] shrink-0" />, label: "Canal", value: instances.find((i) => i.id === selectedInstanceId)?.nome_instancia ?? "Não selecionado", warn: !selectedInstanceId },
+                      { icon: <ListIcon className="w-3.5 h-3.5 text-[#e24c30] shrink-0" />, label: "Lista", value: selectedList?.nomeLista ?? null, warn: !selectedList },
+                      { icon: <Hash className="w-3.5 h-3.5 text-[#e24c30] shrink-0" />, label: "Conteúdo", value: contentMode === "keywords" ? `${keywordCount} keyword${keywordCount !== 1 ? "s" : ""}` : "Lista de ofertas", warn: false },
+                      { icon: <Clock className="w-3.5 h-3.5 text-[#e24c30] shrink-0" />, label: "Horário", value: scheduleMode === "24h" ? "24h — sem restrição" : (horaInicio && horaFim ? `${horaInicio} – ${horaFim}` : "Janela configurada"), warn: false },
+                    ].map(({ icon, label, value, warn }) => (
+                      <div key={label} className="flex items-start gap-3 py-2 border-b border-[#2c2c32] last:border-0 min-w-0">
+                        <div className="w-6 h-6 rounded-lg bg-[#1c1c1f] border border-[#2c2c32] flex items-center justify-center shrink-0">{icon}</div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[8px] text-[#a0a0a0] uppercase tracking-widest font-bold">{label}</p>
+                          {warn ? (
+                            <p className="text-[10px] text-amber-400 font-semibold mt-0.5">Nenhuma selecionada</p>
+                          ) : (
+                            <p className="text-[10px] text-white font-semibold mt-0.5 break-words">{value}</p>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
-
-              <p className="text-[11px] text-text-secondary/60 leading-relaxed">
-                <strong className="text-text-secondary">Uma vez:</strong> dispara imediatamente 1 produto por grupo para cada keyword.{" "}
-                <strong className="text-text-secondary">24h:</strong> roda em loop, 1 produto a cada 2 min.
-              </p>
-            </>
-          )}
-        </div>
-      </div>
-
-      {/* ── Resumo dos disparos 24h ── */}
-      <div className="bg-dark-card rounded-xl border border-dark-border p-5">
-        <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
-          <div className="flex items-center gap-2">
-            <Clock className="h-4 w-4 text-shopee-orange" />
-            <h2 className="text-sm font-semibold text-text-primary uppercase tracking-wide">Disparos 24h</h2>
-            <Tooltip text="Cada card é um disparo automático configurado. Ative, pause ou remova individualmente. O cron roda a cada 2 min na Vercel." wide />
-            {continuoList.length > 0 && (
-              <span className="text-[10px] bg-dark-bg border border-dark-border px-2 py-0.5 rounded-full text-text-secondary">
-                {continuoList.length} configura{continuoList.length !== 1 ? "ções" : "ção"}
-              </span>
             )}
           </div>
-          <div className="flex items-center gap-2">
-            <button type="button" onClick={handleTestCron} disabled={cronTestLoading}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-amber-500/40 text-amber-400 text-xs font-medium hover:bg-amber-500/10 disabled:opacity-40 transition-all"
-              title="Simula o cron da Vercel (dispara um ciclo agora). Útil para testar em desenvolvimento.">
-              {cronTestLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}
-              Testar agora
-            </button>
-            <button type="button" onClick={loadContinuo} disabled={continuoLoading}
-              className="p-1.5 rounded-lg text-text-secondary hover:text-text-primary disabled:opacity-40 transition-colors">
-              <RefreshCw className={`h-3.5 w-3.5 ${continuoLoading ? "animate-spin" : ""}`} />
-            </button>
-          </div>
-        </div>
 
-        {cronTestResult && (
-          <div className="mb-4 p-3 rounded-xl bg-dark-bg border border-dark-border text-xs text-text-primary leading-relaxed">
-            {cronTestResult}
-          </div>
-        )}
-
-        {continuoLoading ? (
-          <div className="flex items-center gap-2 text-text-secondary text-sm py-4">
-            <Loader2 className="h-4 w-4 animate-spin" /> Carregando...
-          </div>
-        ) : continuoList.length === 0 ? (
-          <div className="py-10 flex flex-col items-center gap-3 text-center border border-dashed border-dark-border rounded-xl">
-            <Clock className="h-9 w-9 text-text-secondary/20" />
-            <div>
-              <p className="text-sm text-text-secondary/60 font-medium">Nenhum disparo 24h configurado</p>
-              <p className="text-xs text-text-secondary/40 mt-1">Configure um disparo no painel acima e clique em &ldquo;Adicionar disparo 24h&rdquo;.</p>
+          {/* Footer wizard */}
+          <div className="px-4 sm:px-6 py-4 border-t border-[#2c2c32] bg-[#191920] flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-3 rounded-b-xl sm:rounded-b-2xl">
+            <button onClick={handleBack} disabled={wizardStep === 1}
+              className={cn("w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-[11px] font-bold transition-all border",
+                wizardStep === 1 ? "text-[#a0a0a0]/30 border-[#2c2c32]/30 cursor-not-allowed"
+                  : "text-[#a0a0a0] border-[#2c2c32] hover:text-white hover:border-[#3e3e3e] bg-[#222228]")}>
+              <ChevronLeft className="w-3.5 h-3.5" /> Voltar
+            </button>
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
+              <div className="hidden sm:flex items-center gap-1.5 mr-2">
+                {WIZARD_STEPS.map((s) => (
+                  <div key={s.id} className={cn("rounded-full transition-all",
+                    s.id === wizardStep ? "w-4 h-1.5 bg-[#e24c30]"
+                      : s.id < wizardStep ? "w-1.5 h-1.5 bg-emerald-500/50"
+                      : "w-1.5 h-1.5 bg-[#2c2c32]")} />
+                ))}
+              </div>
+              {wizardStep < 4 ? (
+                <button onClick={handleNext}
+                  className="w-full sm:w-auto flex items-center justify-center gap-2 bg-[#e24c30] hover:bg-[#c94028] text-white px-5 py-2.5 rounded-xl text-[11px] font-bold transition-all shadow-lg shadow-[#e24c30]/20">
+                  Avançar <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              ) : (
+                <button onClick={handleFinish} disabled={continuoTogglingId === "new" || disparando}
+                  className={cn("w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-[11px] font-bold transition-all shadow-lg group disabled:opacity-40",
+                    scheduleMode === "24h"
+                      ? "bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20 shadow-emerald-500/5"
+                      : "bg-[#e24c30]/10 border border-[#e24c30]/25 text-[#e24c30] hover:bg-[#e24c30] hover:text-white shadow-[#e24c30]/5")}>
+                  {continuoTogglingId === "new" || disparando ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    : scheduleMode === "24h" ? <PlusCircle className="w-3.5 h-3.5 group-hover:rotate-90 transition-transform duration-300" />
+                    : <Send className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />}
+                  {scheduleMode === "24h" ? "Disparo 24h" : "Disparar"}
+                </button>
+              )}
             </div>
           </div>
-        ) : (
-          <div className="space-y-2">
-            {continuoList.map((c) => (
-              <DisparoCard key={c.id} c={c} togglingId={continuoTogglingId} onToggle={handleContinuoToggle} onRemove={handleRemoveContinuo} />
-            ))}
-          </div>
-        )}
-      </div>
+        </div>
+      )}
 
+      {/* Modal buscar grupos */}
       <BuscarGruposModal
         isOpen={modalOpen}
         onClose={() => setModalOpen(false)}
