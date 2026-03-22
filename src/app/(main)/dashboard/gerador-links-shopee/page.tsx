@@ -12,6 +12,7 @@ import {
   Plus, Info, Loader2, AlertCircle, ImageIcon, Check,
 } from "lucide-react";
 import Link from "next/link";
+import { GeradorPaginationBar } from "@/app/components/shopee/GeradorPaginationBar";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 type ProductOffer = {
@@ -840,17 +841,13 @@ export default function GeradorLinksShopeePage() {
                 <MostSoldCard key={p.itemId} product={p} onClick={() => handleSelectProduct(p)} compact={false} selected={selectedProduct?.itemId === p.itemId} />
               ))}
               {searchTotalPages > 1 && (
-                <div className="flex items-center justify-between pt-2 px-1 gap-2 flex-wrap">
-                  <button onClick={() => setSearchResultsPage((p) => Math.max(1, p - 1))} disabled={searchResultsPage === 1}
-                    className="flex items-center gap-1 text-[11px] text-[#a0a0a0] hover:text-[#f0f0f2] disabled:opacity-30 transition min-h-[36px]">
-                    <ChevronLeft className="w-3.5 h-3.5" /> Anterior
-                  </button>
-                  <span className="text-[11px] font-semibold text-[#f0f0f2] bg-[#1c1c1f] px-3 py-1 rounded-lg border border-[#2c2c32]">{searchResultsPage} / {searchTotalPages}</span>
-                  <button onClick={() => setSearchResultsPage((p) => Math.min(searchTotalPages, p + 1))} disabled={searchResultsPage >= searchTotalPages}
-                    className="flex items-center gap-1 text-[11px] text-[#a0a0a0] hover:text-[#f0f0f2] disabled:opacity-30 transition min-h-[36px]">
-                    Próxima <ChevronRight className="w-3.5 h-3.5" />
-                  </button>
-                </div>
+                <GeradorPaginationBar
+                  className="pt-2 px-1 border-t border-[#2c2c32] mt-1"
+                  page={searchResultsPage}
+                  totalPages={searchTotalPages}
+                  onPrev={() => setSearchResultsPage((p) => Math.max(1, p - 1))}
+                  onNext={() => setSearchResultsPage((p) => Math.min(searchTotalPages, p + 1))}
+                />
             )}
           </div>
           )}
@@ -864,17 +861,13 @@ export default function GeradorLinksShopeePage() {
                 <MostSoldCard key={p.itemId} product={p} onClick={() => handleSelectProduct(p)} compact={false} selected={selectedProduct?.itemId === p.itemId} />
               ))}
               {totalPages > 1 && (
-                <div className="flex items-center justify-between pt-2 px-1 gap-2 flex-wrap">
-                  <button onClick={() => setBestSellerPage((p) => Math.max(1, p - 1))} disabled={bestSellerPage === 1}
-                    className="flex items-center gap-1 text-[11px] text-[#a0a0a0] hover:text-[#f0f0f2] disabled:opacity-30 transition min-h-[36px]">
-                    <ChevronLeft className="w-3.5 h-3.5" /> Anterior
-                  </button>
-                  <span className="text-[11px] font-semibold text-[#f0f0f2] bg-[#1c1c1f] px-3 py-1 rounded-lg border border-[#2c2c32]">{bestSellerPage} / {totalPages}</span>
-                  <button onClick={() => setBestSellerPage((p) => Math.min(totalPages, p + 1))} disabled={bestSellerPage >= totalPages}
-                    className="flex items-center gap-1 text-[11px] text-[#a0a0a0] hover:text-[#f0f0f2] disabled:opacity-30 transition min-h-[36px]">
-                    Próxima <ChevronRight className="w-3.5 h-3.5" />
-                  </button>
-              </div>
+                <GeradorPaginationBar
+                  className="pt-2 px-1 border-t border-[#2c2c32] mt-1"
+                  page={bestSellerPage}
+                  totalPages={totalPages}
+                  onPrev={() => setBestSellerPage((p) => Math.max(1, p - 1))}
+                  onNext={() => setBestSellerPage((p) => Math.min(totalPages, p + 1))}
+                />
               )}
             </div>
           )}
@@ -910,19 +903,13 @@ export default function GeradorLinksShopeePage() {
                       <MostSoldCard key={`sim-${p.itemId}`} product={p} onClick={() => handleSelectProduct(p)} compact />
                     ))}
                     {goldenSimilarTotalPages > 1 && (
-                      <div className="flex items-center justify-between pt-2 mt-1 border-t border-[#2c2c32] gap-2 flex-wrap">
-                        <button type="button" onClick={() => setGoldenSimilarPage((p) => Math.max(1, p - 1))} disabled={goldenSimilarPage === 1}
-                          className="flex items-center gap-1 text-[11px] text-[#a0a0a0] hover:text-[#f0f0f2] disabled:opacity-30 transition min-h-[36px]">
-                          <ChevronLeft className="w-3.5 h-3.5" /> Anterior
-                        </button>
-                        <span className="text-[11px] font-semibold text-[#f0f0f2] bg-[#1c1c1f] px-3 py-1 rounded-lg border border-[#2c2c32]">
-                          {goldenSimilarPage} / {goldenSimilarTotalPages}
-                            </span>
-                        <button type="button" onClick={() => setGoldenSimilarPage((p) => Math.min(goldenSimilarTotalPages, p + 1))} disabled={goldenSimilarPage >= goldenSimilarTotalPages}
-                          className="flex items-center gap-1 text-[11px] text-[#a0a0a0] hover:text-[#f0f0f2] disabled:opacity-30 transition min-h-[36px]">
-                          Próxima <ChevronRight className="w-3.5 h-3.5" />
-                          </button>
-                  </div>
+                      <GeradorPaginationBar
+                        className="pt-2 mt-1 border-t border-[#2c2c32]"
+                        page={goldenSimilarPage}
+                        totalPages={goldenSimilarTotalPages}
+                        onPrev={() => setGoldenSimilarPage((p) => Math.max(1, p - 1))}
+                        onNext={() => setGoldenSimilarPage((p) => Math.min(goldenSimilarTotalPages, p + 1))}
+                      />
                 )}
               </div>
               </div>
@@ -1121,49 +1108,18 @@ export default function GeradorLinksShopeePage() {
           )}
         </div>
 
-        <div className="px-3 sm:px-5 py-3.5 border-t border-[#2c2c32] bg-[#1c1c1f] flex flex-col items-center justify-center gap-3">
-          <p className="text-[8px] sm:text-[8.8px] text-[#6b6b73] text-center w-full">
-            Mostrando {history.length} de {historyTotal} links
-          </p>
-          <div className="flex items-center justify-center gap-5 sm:gap-8 w-full max-w-sm mx-auto">
-            <button
-              type="button"
-              onClick={() => setHistoryPage((p) => Math.max(1, p - 1))}
-              disabled={historyPage <= 1 || historyLoading}
-              className={cn(
-                "flex items-center gap-0.5 text-[9.6px] sm:text-[10.4px] font-medium transition shrink-0",
-                historyPage <= 1 || historyLoading
-                  ? "text-[#4a4a52] cursor-not-allowed"
-                  : "text-[#8b8b96] hover:text-[#d4d4d8]",
-              )}
-              aria-label="Página anterior"
-            >
-              <ChevronLeft className="w-4 h-4 sm:w-[18px] sm:h-[18px] shrink-0 -mr-0.5" />
-              Anterior
-            </button>
-            <span
-              className="tabular-nums text-[10.4px] sm:text-[11.2px] font-bold text-white bg-[#121214] border border-[#2a2a30] rounded-xl px-4 py-2 min-w-[4.75rem] text-center shadow-inner shadow-black/20"
-              aria-live="polite"
-            >
-              {historyPage} / {Math.max(1, historyTotalPages)}
-            </span>
-            <button
-              type="button"
-              onClick={() => setHistoryPage((p) => Math.min(historyTotalPages, p + 1))}
-              disabled={historyPage >= historyTotalPages || historyLoading}
-              className={cn(
-                "flex items-center gap-0.5 text-[9.6px] sm:text-[10.4px] font-medium transition shrink-0",
-                historyPage >= historyTotalPages || historyLoading
-                  ? "text-[#4a4a52] cursor-not-allowed"
-                  : "text-[#e8e8ec] hover:text-white",
-              )}
-              aria-label="Próxima página"
-            >
-              Próxima
-              <ChevronRight className="w-4 h-4 sm:w-[18px] sm:h-[18px] shrink-0 -ml-0.5" />
-            </button>
+        {(historyTotal > 0 || historyLoading) && (
+          <div className="px-3 sm:px-5 py-3.5 border-t border-[#2c2c32] bg-[#1c1c1f]">
+            <GeradorPaginationBar
+              page={historyPage}
+              totalPages={historyTotalPages}
+              loading={historyLoading}
+              summary={`Mostrando ${history.length} de ${historyTotal} links`}
+              onPrev={() => setHistoryPage((p) => Math.max(1, p - 1))}
+              onNext={() => setHistoryPage((p) => Math.min(historyTotalPages, p + 1))}
+            />
           </div>
-        </div>
+        )}
       </section>
 
       {/* Modal Adicionar à Lista */}

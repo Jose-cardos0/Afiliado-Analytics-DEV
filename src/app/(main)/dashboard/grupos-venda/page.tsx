@@ -13,6 +13,7 @@ import BuscarGruposModal, {
   type EvolutionInstanceItem,
 } from "../gpl/BuscarGruposModal";
 import MetaSearchablePicker from "@/app/components/meta/MetaSearchablePicker";
+import { GeradorPaginationBar } from "@/app/components/shopee/GeradorPaginationBar";
 import { janelaDuracaoMinutos, mensagemErroJanela, MAX_JANELA_MINUTOS } from "@/lib/grupos-venda-janela";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -723,55 +724,15 @@ export default function GruposVendaPage() {
               </div>
 
               {!continuoLoading && filteredDisparos.length > 0 && (
-                <div className="mt-4 pt-4 pb-1 border-t border-[#2c2c32] flex flex-col items-center gap-4 lg:mt-3 lg:pt-3 lg:gap-2 px-2 sm:px-4">
-                  <p className="text-[11px] lg:text-[9px] text-[#a0a0a0] text-center leading-relaxed lg:leading-snug max-w-md">
-                    Mostrando {(safePanelPage - 1) * panelPerPage + 1}–
-                    {Math.min(safePanelPage * panelPerPage, filteredDisparos.length)} de {filteredDisparos.length} disparo
-                    {filteredDisparos.length !== 1 ? "s" : ""}
-                    <span className="text-[#686868]"> · Página {safePanelPage} de {panelTotalPages}</span>
-                  </p>
-                  <div
-                    className="flex items-center justify-center gap-2.5 sm:gap-3 lg:gap-1.5 flex-wrap w-full max-w-md mx-auto"
-                    role="navigation"
-                    aria-label="Paginação do painel"
-                  >
-                    <button
-                      type="button"
-                      onClick={() => setPanelPage((p) => Math.max(1, p - 1))}
-                      disabled={safePanelPage <= 1}
-                      className="w-9 h-9 sm:w-10 sm:h-10 lg:w-7 lg:h-7 rounded-xl lg:rounded-lg bg-[#1c1c1f] border border-[#2c2c32] flex items-center justify-center text-[#a0a0a0] hover:text-[#f0f0f2] hover:border-[#3e3e3e] disabled:opacity-30 transition shrink-0"
-                      aria-label="Página anterior"
-                    >
-                      <ChevronLeft className="w-4 h-4 lg:w-3 lg:h-3" />
-                    </button>
-                    {Array.from({ length: panelTotalPages }, (_, i) => i + 1)
-                      .slice(Math.max(0, safePanelPage - 3), Math.min(panelTotalPages, safePanelPage + 2))
-                      .map((p) => (
-                        <button
-                          key={p}
-                          type="button"
-                          onClick={() => setPanelPage(p)}
-                          className={cn(
-                            "min-w-[2.25rem] h-9 sm:min-w-10 sm:h-10 lg:min-w-[1.625rem] lg:h-7 px-2 lg:px-1 rounded-xl lg:rounded-lg text-[11px] sm:text-xs lg:text-[10px] font-semibold transition shrink-0",
-                            p === safePanelPage
-                              ? "bg-[#e24c30] text-white shadow-md shadow-[#e24c30]/25 scale-105 lg:scale-100 lg:shadow-sm"
-                              : "bg-[#121214] border border-[#2c2c32] text-[#a0a0a0] hover:text-[#f0f0f2] hover:border-[#3e3e3e]",
-                          )}
-                        >
-                          {p}
-                        </button>
-                      ))}
-                    <button
-                      type="button"
-                      onClick={() => setPanelPage((p) => Math.min(panelTotalPages, p + 1))}
-                      disabled={safePanelPage >= panelTotalPages}
-                      className="w-9 h-9 sm:w-10 sm:h-10 lg:w-7 lg:h-7 rounded-xl lg:rounded-lg bg-[#121214] border border-[#2c2c32] flex items-center justify-center text-[#a0a0a0] hover:text-[#f0f0f2] hover:border-[#3e3e3e] disabled:opacity-30 transition shrink-0"
-                      aria-label="Próxima página"
-                    >
-                      <ChevronRight className="w-4 h-4 lg:w-3 lg:h-3" />
-                    </button>
-                  </div>
-                </div>
+                <nav className="mt-4 pt-4 pb-1 border-t border-[#2c2c32] lg:mt-3 lg:pt-3 px-2 sm:px-4" aria-label="Paginação do painel">
+                  <GeradorPaginationBar
+                    page={safePanelPage}
+                    totalPages={panelTotalPages}
+                    summary={`Mostrando ${(safePanelPage - 1) * panelPerPage + 1}–${Math.min(safePanelPage * panelPerPage, filteredDisparos.length)} de ${filteredDisparos.length} disparo${filteredDisparos.length !== 1 ? "s" : ""}`}
+                    onPrev={() => setPanelPage((p) => Math.max(1, p - 1))}
+                    onNext={() => setPanelPage((p) => Math.min(panelTotalPages, p + 1))}
+                  />
+                </nav>
               )}
             </div>
           </section>

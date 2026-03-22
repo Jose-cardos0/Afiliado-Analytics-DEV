@@ -2,7 +2,10 @@
 
 import { useState, useEffect, useMemo, useId, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
-import { X, Search, Loader2, Check } from "lucide-react";
+import { X, Search, Loader2, Check, RefreshCw } from "lucide-react";
+
+/** Cache em memória (sessão da aba): evita novo GET ao reabrir o modal / criar outra lista na mesma instância. */
+const gruposPorInstanciaCache = new Map<string, WhatsAppGroupItem[]>();
 
 function cn(...c: (string | false | undefined | null)[]) {
   return c.filter(Boolean).join(" ");
@@ -86,13 +89,19 @@ export default function BuscarGruposModal({ isOpen, onClose, onConfirm, criarLis
 
   useEffect(() => {
     if (!isOpen) return;
-    setGroups([]);
     setGroupsError(null);
     setGroupFilter("");
     setSelectedGroupIds(new Set());
     setNomeLista("");
-    setLastFetchedInstanceId("");
-    setSelectedInstanceId(initialInstanceId ?? "");
+    const presetId = (initialInstanceId ?? "").trim();
+    setSelectedInstanceId(presetId);
+    if (presetId && gruposPorInstanciaCache.has(presetId)) {
+      setGroups(gruposPorInstanciaCache.get(presetId)!);
+      setLastFetchedInstanceId(presetId);
+    } else {
+      setGroups([]);
+      setLastFetchedInstanceId("");
+    }
     fetch("/api/evolution/instances")
       .then((r) => r.json())
       .then((data) => {
@@ -155,10 +164,15 @@ export default function BuscarGruposModal({ isOpen, onClose, onConfirm, criarLis
 
   const handleInstanceChange = (id: string) => {
     setSelectedInstanceId(id);
-    setGroups([]);
     setGroupsError(null);
     setSelectedGroupIds(new Set());
-    setLastFetchedInstanceId("");
+    if (id && gruposPorInstanciaCache.has(id)) {
+      setGroups(gruposPorInstanciaCache.get(id)!);
+      setLastFetchedInstanceId(id);
+    } else {
+      setGroups([]);
+      setLastFetchedInstanceId("");
+    }
   };
 
   const handleBuscarGrupos = async () => {
@@ -197,12 +211,14 @@ export default function BuscarGruposModal({ isOpen, onClose, onConfirm, criarLis
         })
       );
       if (selectedInstanceIdRef.current !== instanceIdWhenFetching) return;
+      gruposPorInstanciaCache.set(instanceIdWhenFetching, normalized);
       setGroups(normalized);
       setGroupFilter("");
       setLastFetchedInstanceId(instanceIdWhenFetching);
     } catch (e) {
       if (selectedInstanceIdRef.current !== instanceIdWhenFetching) return;
-      setGroups([]);
+      const cached = gruposPorInstanciaCache.get(instanceIdWhenFetching);
+      setGroups(cached ?? []);
       setGroupsError(e instanceof Error ? e.message : "Erro ao buscar grupos");
     } finally {
       setGroupsLoading(false);
@@ -262,8 +278,8 @@ export default function BuscarGruposModal({ isOpen, onClose, onConfirm, criarLis
     ? selectedGroupIds.size > 0 && nomeLista.trim().length > 0
     : selectedGroupIds.size > 0;
 
-  const showBuscarGruposButton =
-    groupsLoading || !selectedInstanceId || lastFetchedInstanceId !== selectedInstanceId;
+  const jaCarregouNestaInstancia =
+    !!selectedInstanceId && lastFetchedInstanceId === selectedInstanceId;
 
   const allFilteredIds = filteredGroups.map((g) => g.id);
   const allFilteredSelected =
@@ -357,17 +373,22 @@ export default function BuscarGruposModal({ isOpen, onClose, onConfirm, criarLis
             )}
           </div>
 
-          {showBuscarGruposButton && (
+          {selectedInstanceId && (
             <button
               type="button"
               onClick={handleBuscarGrupos}
-              disabled={!selectedInstanceId || groupsLoading}
+              disabled={groupsLoading}
               className="mt-3 w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl border border-shopee-orange/45 bg-shopee-orange/10 px-4 py-2.5 text-sm font-semibold text-shopee-orange hover:bg-shopee-orange/18 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
               {groupsLoading ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin shrink-0" />
-                  Buscando grupos…
+                  {jaCarregouNestaInstancia ? "Atualizando…" : "Buscando grupos…"}
+                </>
+              ) : jaCarregouNestaInstancia ? (
+                <>
+                  <RefreshCw className="h-4 w-4 shrink-0" />
+                  Atualizar grupos
                 </>
               ) : (
                 <>
@@ -406,7 +427,8 @@ export default function BuscarGruposModal({ isOpen, onClose, onConfirm, criarLis
           {selectedInstanceId && !groupsLoading && groups.length === 0 && !groupsError && lastFetchedInstanceId !== selectedInstanceId && (
             <div className="flex-1 flex items-center justify-center p-6">
               <p className="text-[12px] text-[#a0a0a0] text-center max-w-xs leading-relaxed border border-dashed border-[#2c2c32] rounded-2xl px-4 py-8 bg-[#17171a]">
-                Toque em <strong className="text-[#f0f0f2]">Buscar grupos na instância</strong> para carregar a lista.
+                Use o botão <strong className="text-[#f0f0f2]">Buscar grupos na instância</strong> acima. Depois da primeira busca, o mesmo botão vira{" "}
+                <strong className="text-[#f0f0f2]">Atualizar grupos</strong> (lista fica em cache nesta aba).
               </p>
             </div>
           )}

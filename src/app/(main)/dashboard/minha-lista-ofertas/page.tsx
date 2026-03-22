@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
+import { GeradorPaginationBar } from "@/app/components/shopee/GeradorPaginationBar";
 import {
   ShoppingBag,
   ArrowLeft,
@@ -62,6 +63,18 @@ export default function MinhaListaOfertasPage() {
   } | null>(null);
   const [confirmLoading, setConfirmLoading] = useState(false);
   const ITEMS_PER_PAGE = 5;
+  const LISTAS_PER_PAGE = 4;
+  const [listasPage, setListasPage] = useState(1);
+
+  const totalListasPages = Math.max(1, Math.ceil(listas.length / LISTAS_PER_PAGE));
+  const pagedListas = useMemo(() => {
+    const from = (listasPage - 1) * LISTAS_PER_PAGE;
+    return listas.slice(from, from + LISTAS_PER_PAGE);
+  }, [listas, listasPage]);
+
+  useEffect(() => {
+    setListasPage((p) => Math.min(Math.max(1, p), totalListasPages));
+  }, [listas.length, totalListasPages]);
 
   const loadListas = useCallback(async () => {
     try {
@@ -217,9 +230,7 @@ export default function MinhaListaOfertasPage() {
           <h1 className="text-xl font-semibold">Minha Lista de Ofertas</h1>
         </div>
 
-        <p className="text-sm text-text-secondary mb-6">
-          Crie listas e adicione produtos pelo Gerador de Links Shopee. Preços vêm da Shopee (Preço = antes, Por = promoção).
-        </p>
+   
 
         {error && (
           <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">
@@ -246,8 +257,9 @@ export default function MinhaListaOfertasPage() {
             </Link>
           </div>
         ) : (
+          <div className="space-y-4">
           <ul className="space-y-3">
-            {listas.map((lista) => {
+            {pagedListas.map((lista) => {
               const isExpanded = expandedListas.has(lista.id);
               const { slice, totalPages, page, total } = getFilteredAndPaginatedItems(lista.id);
               return (
@@ -371,29 +383,14 @@ export default function MinhaListaOfertasPage() {
                             ))}
                           </ul>
                           {totalPages > 1 && (
-                            <div className="mt-4 flex items-center justify-between border-t border-dark-border pt-3">
-                              <span className="text-xs text-text-secondary">
-                                Página {page} de {totalPages} · {total} produto(s)
-                              </span>
-                              <div className="flex gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() => setListaPage(lista.id, Math.max(1, page - 1))}
-                                  disabled={page <= 1}
-                                  className="px-3 py-1.5 rounded-lg border border-dark-border text-text-secondary text-sm hover:bg-dark-bg disabled:opacity-40"
-                                >
-                                  Anterior
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setListaPage(lista.id, Math.min(totalPages, page + 1))}
-                                  disabled={page >= totalPages}
-                                  className="px-3 py-1.5 rounded-lg border border-dark-border text-text-secondary text-sm hover:bg-dark-bg disabled:opacity-40"
-                                >
-                                  Próxima
-                                </button>
-                              </div>
-                            </div>
+                            <GeradorPaginationBar
+                              className="mt-4 border-t border-dark-border pt-3"
+                              page={page}
+                              totalPages={totalPages}
+                              summary={`Mostrando ${slice.length} de ${total} produto(s)`}
+                              onPrev={() => setListaPage(lista.id, Math.max(1, page - 1))}
+                              onNext={() => setListaPage(lista.id, Math.min(totalPages, page + 1))}
+                            />
                           )}
                         </>
                       )}
@@ -403,6 +400,19 @@ export default function MinhaListaOfertasPage() {
               );
             })}
           </ul>
+
+          {listas.length > 0 && (
+            <div className="rounded-xl border border-dark-border bg-dark-card px-3 sm:px-5 py-3.5">
+              <GeradorPaginationBar
+                page={listasPage}
+                totalPages={totalListasPages}
+                summary={`Mostrando ${pagedListas.length} de ${listas.length} lista(s)`}
+                onPrev={() => setListasPage((p) => Math.max(1, p - 1))}
+                onNext={() => setListasPage((p) => Math.min(totalListasPages, p + 1))}
+              />
+            </div>
+          )}
+          </div>
         )}
 
         {confirmState && (
