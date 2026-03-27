@@ -186,7 +186,7 @@ export default function HomePage() {
       {showWhatsApp && (
         <div className="fixed bottom-6 right-6 z-50">
           <a
-            href="https://wa.me/5579999407366"
+            href="https://wa.me/5579999144028"
             target="_blank"
             rel="noopener noreferrer"
             aria-label="Fale conosco no WhatsApp"
