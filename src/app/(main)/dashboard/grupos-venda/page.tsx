@@ -15,6 +15,7 @@ import BuscarGruposModal, {
 import MetaSearchablePicker from "@/app/components/meta/MetaSearchablePicker";
 import { GeradorPaginationBar } from "@/app/components/shopee/GeradorPaginationBar";
 import { janelaDuracaoMinutos, mensagemErroJanela, MAX_JANELA_MINUTOS } from "@/lib/grupos-venda-janela";
+import { createClient as createBrowserSupabase } from "utils/supabase/client";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 type ListaGrupos = { id: string; instanceId: string; nomeLista: string; createdAt: string };
@@ -451,14 +452,34 @@ export default function GruposVendaPage() {
   const handleTestCron = useCallback(async () => {
     setCronTestLoading(true); setCronTestResult(null); setError(null);
     try {
-      const res = await fetch("/api/grupos-venda/cron-disparo");
+      const supabase = createBrowserSupabase();
+      const { data: { session } } = await supabase.auth.getSession();
+      const headers: HeadersInit = {};
+      if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`;
+
+      const res = await fetch("/api/grupos-venda/cron-disparo", {
+        method: "POST",
+        credentials: "include",
+        headers,
+      });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) { setCronTestResult(`Erro ${res.status}: ${data?.error ?? res.statusText}`); return; }
       const processed = data.processed ?? 0;
       const results = data.results ?? [];
-      const okCount = results.filter((r: { ok?: boolean }) => r.ok).length;
-      const errCount = results.filter((r: { ok?: boolean }) => !r.ok).length;
-      setCronTestResult(`Processados: ${processed}. OK: ${okCount}${errCount > 0 ? `, erros: ${errCount}` : ""}. ${results.length ? results.map((r: { keyword?: string; ok?: boolean; error?: string }) => (r.ok ? `"${r.keyword}" enviado` : `"${r.keyword}": ${r.error}`)).join("; ") : "Nenhum disparo ativo."}`);
+      type CronRow = { keyword?: string; ok?: boolean; error?: string };
+      const enviados = results.filter((r: CronRow) => r.ok && !r.error).length;
+      const ignorados = results.filter((r: CronRow) => r.ok && !!r.error).length;
+      const falhas = results.filter((r: CronRow) => !r.ok).length;
+      const partesResumo = [`Processados: ${processed}`, `enviados: ${enviados}`];
+      if (ignorados > 0) partesResumo.push(`ignorados: ${ignorados}`);
+      if (falhas > 0) partesResumo.push(`falhas: ${falhas}`);
+      const linhas = (results as CronRow[]).map((r) => {
+        if (!r.ok) return `"${r.keyword ?? "—"}": ${r.error ?? "erro"}`;
+        if (r.error) return r.error;
+        const rotulo = r.keyword?.trim() || "Oferta";
+        return `"${rotulo}" enviado`;
+      });
+      setCronTestResult(`${partesResumo.join(" · ")}. ${results.length ? linhas.join("; ") : "Nenhum disparo ativo."}`);
       if (processed > 0) loadContinuo();
     } catch (e) { setCronTestResult(`Falha: ${e instanceof Error ? e.message : "Erro ao chamar cron"}`); }
     finally { setCronTestLoading(false); }
