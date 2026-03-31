@@ -20,11 +20,13 @@ import {
   Hash,
   ScrollText,
   Info,
+  ShieldCheck,
 } from "lucide-react";
 import BuscarGruposModal, {
   type BuscarGruposPayload,
   type EvolutionInstanceItem,
 } from "../gpl/BuscarGruposModal";
+import { usePlanEntitlements } from "../PlanEntitlementsContext";
 
 type Instance = EvolutionInstanceItem & { id: string };
 
@@ -54,6 +56,10 @@ type PayloadRow = {
   created_at: string;
 };
 
+type GrupoVendaRow = {
+  groupId: string;
+};
+
 function cn(...c: (string | false | undefined | null)[]) {
   return c.filter(Boolean).join(" ");
 }
@@ -69,35 +75,47 @@ const inputCls =
 
 /** Card de uma config salva — mesmo ritmo visual que DisparoCard em Grupos de Venda */
 function EspelhamentoCard({
-  c,
-  togglingId,
-  onToggle,
-  onRemove,
+  group,
+  pendingIds,
+  onToggleBatch,
+  onOpenDetails,
 }: {
-  c: ConfigRow;
-  togglingId: string | null;
-  onToggle: (id: string, ativar: boolean) => void;
-  onRemove: (id: string) => void;
+  group: {
+    key: string;
+    nomeInstancia: string;
+    grupoOrigemNome: string | null;
+    grupoOrigemJid: string;
+    subId1: string;
+    subId2: string;
+    subId3: string;
+    destinos: ConfigRow[];
+  };
+  pendingIds: string[];
+  onToggleBatch: (ids: string[], ativar: boolean) => void;
+  onOpenDetails: (groupKey: string) => void;
 }) {
-  const isActive = c.ativo;
+  const total = group.destinos.length;
+  const active = group.destinos.filter((d) => d.ativo).length;
+  const isAllActive = active === total && total > 0;
+  const ids = group.destinos.map((d) => d.id);
   return (
     <div
       className={cn(
         "bg-[#1c1c1f] border rounded-xl p-3 sm:p-3.5 flex flex-col gap-2.5 transition-all min-w-0",
-        isActive ? "border-emerald-500/20 shadow-sm shadow-emerald-500/5" : "border-[#2c2c32] hover:border-[#3e3e3e]"
+        isAllActive ? "border-emerald-500/20 shadow-sm shadow-emerald-500/5" : "border-[#2c2c32] hover:border-[#3e3e3e]"
       )}
     >
       <div className="flex items-start justify-between gap-1.5 min-w-0">
         <h3 className="text-[10px] font-bold text-white uppercase tracking-wide leading-tight line-clamp-2 flex-1 min-w-0">
-          {c.nomeInstancia}
+          {group.nomeInstancia}
         </h3>
-        {isActive ? (
+        {isAllActive ? (
           <span className="flex items-center gap-1 text-[8px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.5 rounded-full shrink-0">
-            <div className="w-1 h-1 rounded-full bg-emerald-400 animate-pulse" /> Ativo
+            <div className="w-1 h-1 rounded-full bg-emerald-400 animate-pulse" /> Todos ativos
           </span>
         ) : (
           <span className="text-[8px] font-bold text-[#a0a0a0] bg-[#121214] border border-[#2c2c32] px-1.5 py-0.5 rounded-full shrink-0">
-            Parado
+            {active}/{total} ativos
           </span>
         )}
       </div>
@@ -106,62 +124,42 @@ function EspelhamentoCard({
           <Download className="w-2.5 h-2.5 text-emerald-400 shrink-0 mt-0.5" />
           <span className="line-clamp-2 break-words">
             <span className="text-emerald-400/90 font-semibold">Origem · </span>
-            {c.grupoOrigemNome ?? c.grupoOrigemJid}
+            {group.grupoOrigemNome ?? group.grupoOrigemJid}
           </span>
         </div>
         <div className="flex items-start gap-1.5 min-w-0">
           <Upload className="w-2.5 h-2.5 text-[#e24c30] shrink-0 mt-0.5" />
           <span className="line-clamp-2 break-words">
-            <span className="text-[#e24c30]/90 font-semibold">Destino · </span>
-            {c.grupoDestinoNome ?? c.grupoDestinoJid}
+            <span className="text-[#e24c30]/90 font-semibold">Destinos · </span>
+            {total} grupo{total !== 1 ? "s" : ""}
           </span>
         </div>
-        {(c.subId1 || c.subId2 || c.subId3) && (
+        {(group.subId1 || group.subId2 || group.subId3) && (
           <div className="flex items-start gap-1.5 min-w-0">
             <Hash className="w-2.5 h-2.5 text-[#e24c30] shrink-0 mt-0.5" />
             <span className="line-clamp-1 break-all opacity-90">
-              Sub IDs: {[c.subId1, c.subId2, c.subId3].filter(Boolean).join(" · ") || "—"}
+              Sub IDs: {[group.subId1, group.subId2, group.subId3].filter(Boolean).join(" · ") || "—"}
             </span>
           </div>
         )}
       </div>
-      <div className="flex items-center gap-1.5 pt-2 border-t border-[#2c2c32]">
-        {isActive ? (
-          <button
-            type="button"
-            onClick={() => onToggle(c.id, false)}
-            disabled={togglingId === c.id}
-            className="flex-1 flex items-center justify-center gap-1 text-[9px] font-bold text-red-400 border border-red-400/15 bg-red-400/5 py-1.5 rounded-lg hover:bg-red-400/15 disabled:opacity-40 transition"
-          >
-            {togglingId === c.id ? (
-              <Loader2 className="w-2.5 h-2.5 animate-spin" />
-            ) : (
-              <Pause className="w-2.5 h-2.5 fill-red-400" />
-            )}
-            Pausar
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={() => onToggle(c.id, true)}
-            disabled={togglingId === c.id}
-            className="flex-1 flex items-center justify-center gap-1 text-[9px] font-bold text-emerald-400 border border-emerald-500/15 bg-emerald-500/5 py-1.5 rounded-lg hover:bg-emerald-500/15 disabled:opacity-40 transition"
-          >
-            {togglingId === c.id ? (
-              <Loader2 className="w-2.5 h-2.5 animate-spin" />
-            ) : (
-              <Play className="w-2.5 h-2.5 fill-emerald-400" />
-            )}
-            Ativar
-          </button>
-        )}
+      <div className="grid grid-cols-2 gap-1.5 pt-2 border-t border-[#2c2c32]">
         <button
           type="button"
-          onClick={() => onRemove(c.id)}
-          className="text-[#a0a0a0] hover:text-red-400 transition bg-[#121214] border border-[#2c2c32] p-1.5 rounded-lg hover:border-red-400/20 shrink-0"
-          title="Remover"
+          onClick={() => onToggleBatch(ids, true)}
+          disabled={ids.some((id) => pendingIds.includes(id))}
+          className="w-full flex items-center justify-center gap-1 text-[9px] font-bold text-emerald-400 border border-emerald-500/15 bg-emerald-500/5 py-1.5 rounded-lg hover:bg-emerald-500/15 disabled:opacity-40 transition"
         >
-          <Trash2 className="w-3 h-3" />
+          <Play className="w-2.5 h-2.5 fill-emerald-400" />
+          Ativar todos
+        </button>
+        <button
+          type="button"
+          onClick={() => onOpenDetails(group.key)}
+          className="w-full flex items-center justify-center gap-1 text-[9px] font-bold text-[#a0a0a0] hover:text-white transition bg-[#121214] border border-[#2c2c32] p-1.5 rounded-lg hover:border-[#3e3e3e]"
+          title="Ver mais"
+        >
+          <ChevronRight className="w-3 h-3" /> Ver mais
         </button>
       </div>
     </div>
@@ -169,11 +167,13 @@ function EspelhamentoCard({
 }
 
 export default function EspelhamentoGruposPage() {
+  const { entitlements } = usePlanEntitlements();
   const [instances, setInstances] = useState<Instance[]>([]);
   const [instanceStatusMap, setInstanceStatusMap] = useState<Record<string, "open" | "close" | null>>({});
   const [statusLoading, setStatusLoading] = useState(false);
   const [configs, setConfigs] = useState<ConfigRow[]>([]);
   const [payloads, setPayloads] = useState<PayloadRow[]>([]);
+  const [gruposVendaIds, setGruposVendaIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -181,6 +181,8 @@ export default function EspelhamentoGruposPage() {
   const [feedback, setFeedback] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [pendingActionIds, setPendingActionIds] = useState<string[]>([]);
+  const [batchLoading, setBatchLoading] = useState<"ativar" | "pausar" | null>(null);
 
   const [selectedInstanceId, setSelectedInstanceId] = useState("");
   const [subId1, setSubId1] = useState("");
@@ -188,22 +190,77 @@ export default function EspelhamentoGruposPage() {
   const [subId3, setSubId3] = useState("");
 
   const [origem, setOrigem] = useState<{ jid: string; nome: string } | null>(null);
-  const [destino, setDestino] = useState<{ jid: string; nome: string } | null>(null);
+  const [destinos, setDestinos] = useState<{ jid: string; nome: string }[]>([]);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [modalTarget, setModalTarget] = useState<"origem" | "destino">("origem");
+  const [detailsGroupKey, setDetailsGroupKey] = useState<string | null>(null);
 
   const activeCount = useMemo(() => configs.filter((c) => c.ativo).length, [configs]);
   const configById = useMemo(() => new Map(configs.map((c) => [c.id, c])), [configs]);
+  const groupedConfigs = useMemo(() => {
+    const map = new Map<
+      string,
+      {
+        key: string;
+        nomeInstancia: string;
+        grupoOrigemNome: string | null;
+        grupoOrigemJid: string;
+        subId1: string;
+        subId2: string;
+        subId3: string;
+        destinos: ConfigRow[];
+      }
+    >();
+    for (const c of configs) {
+      const key = [c.instanceId, c.grupoOrigemJid, c.subId1, c.subId2, c.subId3].join("::");
+      const current = map.get(key);
+      if (current) {
+        current.destinos.push(c);
+      } else {
+        map.set(key, {
+          key,
+          nomeInstancia: c.nomeInstancia,
+          grupoOrigemNome: c.grupoOrigemNome,
+          grupoOrigemJid: c.grupoOrigemJid,
+          subId1: c.subId1,
+          subId2: c.subId2,
+          subId3: c.subId3,
+          destinos: [c],
+        });
+      }
+    }
+    return [...map.values()];
+  }, [configs]);
+  const detailsGroup = useMemo(
+    () => groupedConfigs.find((g) => g.key === detailsGroupKey) ?? null,
+    [groupedConfigs, detailsGroupKey]
+  );
+  const sharedGroupsUsed = useMemo(() => {
+    const set = new Set<string>();
+    for (const gid of gruposVendaIds) {
+      const n = gid.trim().toLowerCase();
+      if (n) set.add(n);
+    }
+    for (const c of configs) {
+      const n = c.grupoDestinoJid.trim().toLowerCase();
+      if (n) set.add(n);
+    }
+    return set.size;
+  }, [configs, gruposVendaIds]);
+  const maxSharedGroups = entitlements?.gruposVenda.maxGroupsTotal ?? 0;
+  const sharedGroupsRemaining = Math.max(0, maxSharedGroups - sharedGroupsUsed);
+  const sharedUsagePercent = maxSharedGroups > 0 ? Math.min(100, Math.round((sharedGroupsUsed / maxSharedGroups) * 100)) : 0;
 
   const load = useCallback(async (opts?: { soft?: boolean }) => {
     if (opts?.soft) setRefreshing(true);
     else setError(null);
     try {
-      const [ir, cr, pr] = await Promise.all([
+      const [ir, cr, pr, gr] = await Promise.all([
         fetch("/api/evolution/instances").then((r) => r.json()),
         fetch("/api/espelhamento/config").then((r) => r.json()),
         fetch("/api/espelhamento/payloads?limit=25").then((r) => r.json()),
+        fetch("/api/grupos-venda/groups").then((r) => r.json()),
       ]);
       if (Array.isArray(ir.instances)) {
         setInstances(ir.instances as Instance[]);
@@ -214,6 +271,14 @@ export default function EspelhamentoGruposPage() {
       }
       if (cr.data) setConfigs(cr.data as ConfigRow[]);
       if (pr.data) setPayloads(pr.data as PayloadRow[]);
+      if (Array.isArray(gr?.data)) {
+        const ids = (gr.data as GrupoVendaRow[])
+          .map((g) => String(g.groupId ?? "").trim())
+          .filter(Boolean);
+        setGruposVendaIds(ids);
+      } else {
+        setGruposVendaIds([]);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erro ao carregar");
     } finally {
@@ -269,39 +334,55 @@ export default function EspelhamentoGruposPage() {
     const g = p.grupos[0];
     if (!g) return;
     if (modalTarget === "origem") setOrigem({ jid: g.id, nome: g.nome });
-    else setDestino({ jid: g.id, nome: g.nome });
+    else {
+      const next = p.grupos.map((item) => ({ jid: item.id, nome: item.nome }));
+      setDestinos(next);
+    }
   };
 
   const salvarNovo = async () => {
-    if (!selectedInstanceId || !origem || !destino) {
-      setError("Escolha instância, grupo origem e grupo destino.");
+    if (!selectedInstanceId || !origem || destinos.length === 0) {
+      setError("Escolha instância, grupo origem e ao menos um grupo destino.");
       return;
     }
     setSaving(true);
     setError(null);
     setFeedback(null);
     try {
-      const res = await fetch("/api/espelhamento/config", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          instanceId: selectedInstanceId,
-          grupoOrigemJid: origem.jid,
-          grupoDestinoJid: destino.jid,
-          grupoOrigemNome: origem.nome,
-          grupoDestinoNome: destino.nome,
-          subId1,
-          subId2,
-          subId3,
-          ativo: false,
-        }),
-      });
-      const j = await res.json();
-      if (!res.ok) throw new Error(j?.error ?? "Erro ao salvar");
+      const results = await Promise.all(
+        destinos.map(async (destino) => {
+          const res = await fetch("/api/espelhamento/config", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              instanceId: selectedInstanceId,
+              grupoOrigemJid: origem.jid,
+              grupoDestinoJid: destino.jid,
+              grupoOrigemNome: origem.nome,
+              grupoDestinoNome: destino.nome,
+              subId1,
+              subId2,
+              subId3,
+              ativo: false,
+            }),
+          });
+          const j = await res.json().catch(() => ({}));
+          return { ok: res.ok, error: j?.error as string | undefined };
+        })
+      );
+      const okCount = results.filter((r) => r.ok).length;
+      const fail = results.find((r) => !r.ok);
+      if (okCount === 0) throw new Error(fail?.error ?? "Erro ao salvar");
       setOrigem(null);
-      setDestino(null);
+      setDestinos([]);
       setShowForm(false);
-      setFeedback("Configuração salva (inativa). Ative no painel abaixo quando estiver pronto.");
+      if (okCount === destinos.length) {
+        setFeedback(`${okCount} configuração(ões) criada(s) (inativas). Ative no painel abaixo quando estiver pronto.`);
+      } else {
+        setFeedback(
+          `${okCount} de ${destinos.length} configuração(ões) criada(s). Algumas falharam: ${fail?.error ?? "erro desconhecido"}.`
+        );
+      }
       await load({ soft: true });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erro");
@@ -312,6 +393,7 @@ export default function EspelhamentoGruposPage() {
 
   const handleToggle = async (id: string, ativar: boolean) => {
     setTogglingId(id);
+    setPendingActionIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
     setError(null);
     try {
       const res = await fetch("/api/espelhamento/config", {
@@ -325,6 +407,37 @@ export default function EspelhamentoGruposPage() {
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erro");
     } finally {
+      setPendingActionIds((prev) => prev.filter((x) => x !== id));
+      setTogglingId(null);
+    }
+  };
+
+  const handleToggleBatch = async (ids: string[], ativar: boolean) => {
+    if (ids.length === 0) return;
+    setError(null);
+    setBatchLoading(ativar ? "ativar" : "pausar");
+    setPendingActionIds((prev) => [...new Set([...prev, ...ids])]);
+    try {
+      await Promise.all(
+        ids.map(async (id) => {
+          const res = await fetch("/api/espelhamento/config", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id, ativo: ativar }),
+          });
+          const j = await res.json();
+          if (!res.ok) throw new Error(j?.error ?? "Erro");
+        })
+      );
+      setFeedback(
+        ativar ? "Todos os destinos deste card foram ativados." : "Todos os destinos deste card foram pausados."
+      );
+      await load({ soft: true });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erro");
+    } finally {
+      setPendingActionIds((prev) => prev.filter((x) => !ids.includes(x)));
+      setBatchLoading(null);
       setTogglingId(null);
     }
   };
@@ -346,6 +459,8 @@ export default function EspelhamentoGruposPage() {
   const closeForm = () => {
     setShowForm(false);
     setError(null);
+    setOrigem(null);
+    setDestinos([]);
   };
 
   if (loading) {
@@ -571,7 +686,7 @@ export default function EspelhamentoGruposPage() {
                   </button>
                 </div>
 
-                {(origem || destino) && (
+                {(origem || destinos.length > 0) && (
                   <div className="rounded-xl border border-[#2c2c32] bg-[#121214]/80 p-3 space-y-2 text-[10px]">
                     {origem && (
                       <p className="text-[#a0a0a0]">
@@ -580,12 +695,17 @@ export default function EspelhamentoGruposPage() {
                         <span className="font-mono text-[9px] opacity-70 break-all">({origem.jid})</span>
                       </p>
                     )}
-                    {destino && (
-                      <p className="text-[#a0a0a0]">
-                        <span className="text-[#e24c30] font-bold">Destino · </span>
-                        {destino.nome}{" "}
-                        <span className="font-mono text-[9px] opacity-70 break-all">({destino.jid})</span>
-                      </p>
+                    {destinos.length > 0 && (
+                      <div className="space-y-1">
+                        <p className="text-[#e24c30] font-bold">Destinos selecionados · {destinos.length}</p>
+                        <div className="max-h-24 overflow-y-auto scrollbar-thin space-y-1 pr-1">
+                          {destinos.map((d) => (
+                            <p key={d.jid} className="text-[#a0a0a0]">
+                              {d.nome} <span className="font-mono text-[9px] opacity-70 break-all">({d.jid})</span>
+                            </p>
+                          ))}
+                        </div>
+                      </div>
                     )}
                   </div>
                 )}
@@ -593,7 +713,7 @@ export default function EspelhamentoGruposPage() {
                 <div className="flex flex-wrap gap-2 pt-1">
                   <button
                     type="button"
-                    disabled={saving || !selectedInstanceId || !origem || !destino}
+                    disabled={saving || !selectedInstanceId || !origem || destinos.length === 0}
                     onClick={salvarNovo}
                     className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#e24c30] px-5 py-2.5 text-[11px] font-bold text-white hover:opacity-90 disabled:opacity-40 shadow-lg shadow-[#e24c30]/20 transition"
                   >
@@ -642,6 +762,41 @@ export default function EspelhamentoGruposPage() {
         </div>
 
         <div className="p-4">
+          <div className="mb-4 rounded-xl border border-[#2c2c32] bg-[#1c1c1f] p-3.5">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-[10px] font-bold text-white uppercase tracking-widest flex items-center gap-1.5">
+                  <ShieldCheck className="w-3.5 h-3.5 text-[#e24c30]" />
+                  Saldo compartilhado de grupos
+                </p>
+                <p className="text-[10px] text-[#a0a0a0] mt-1">
+                  Soma de destinos do Espelhamento + grupos do Grupos de Venda.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-bold text-white bg-[#222228] border border-[#2c2c32] px-2 py-1 rounded-md">
+                  {sharedGroupsUsed}/{maxSharedGroups || "—"}
+                </span>
+                <span className="text-[9px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-1 rounded-md">
+                  {sharedGroupsRemaining} livres
+                </span>
+              </div>
+            </div>
+
+            <div className="mt-3 h-2 rounded-full bg-[#121214] border border-[#2c2c32] overflow-hidden">
+              <div
+                className={cn(
+                  "h-full transition-all",
+                  sharedUsagePercent >= 90 ? "bg-red-500/80" : sharedUsagePercent >= 70 ? "bg-amber-500/80" : "bg-emerald-500/80"
+                )}
+                style={{ width: `${sharedUsagePercent}%` }}
+              />
+            </div>
+            <p className="text-[9px] text-[#868686] mt-1.5">
+              Uso atual: {sharedUsagePercent}% do limite do seu plano.
+            </p>
+          </div>
+
           {configs.length === 0 ? (
             <div className="flex flex-col items-center justify-center gap-2 py-12 text-center">
               <ArrowLeftRight className="w-8 h-8 text-[#2c2c32]" />
@@ -652,13 +807,13 @@ export default function EspelhamentoGruposPage() {
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-              {configs.map((c) => (
+              {groupedConfigs.map((group) => (
                 <EspelhamentoCard
-                  key={c.id}
-                  c={c}
-                  togglingId={togglingId}
-                  onToggle={handleToggle}
-                  onRemove={remover}
+                  key={group.key}
+                  group={group}
+                  pendingIds={pendingActionIds}
+                  onToggleBatch={handleToggleBatch}
+                  onOpenDetails={setDetailsGroupKey}
                 />
               ))}
             </div>
@@ -731,6 +886,106 @@ export default function EspelhamentoGruposPage() {
         onConfirm={onModalConfirm}
         initialInstanceId={selectedInstanceId || undefined}
       />
+
+      {detailsGroup && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-[2px] flex items-center justify-center p-4">
+          <div className="w-full max-w-2xl bg-[#1b1b1e] border border-[#2c2c32] rounded-2xl overflow-hidden">
+            <div className="px-4 py-3 border-b border-[#2c2c32] flex items-center justify-between gap-3">
+              <div>
+                <p className="text-[11px] font-bold text-white uppercase tracking-wide">
+                  Destinos do espelhamento
+                </p>
+                <p className="text-[10px] text-[#a0a0a0]">
+                  {detailsGroup.grupoOrigemNome ?? detailsGroup.grupoOrigemJid}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDetailsGroupKey(null)}
+                className="text-[#a0a0a0] hover:text-white transition p-1.5 rounded-lg hover:bg-[#222228]"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <button
+                  type="button"
+                  onClick={() => handleToggleBatch(detailsGroup.destinos.map((d) => d.id), true)}
+                  disabled={batchLoading !== null}
+                  className="inline-flex items-center gap-1 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 py-1.5 text-[10px] font-bold text-emerald-400 disabled:opacity-50"
+                >
+                  {batchLoading === "ativar" ? <Loader2 className="w-3 h-3 animate-spin" /> : <Play className="w-3 h-3 fill-emerald-400" />}{" "}
+                  Ativar todos
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleToggleBatch(detailsGroup.destinos.map((d) => d.id), false)}
+                  disabled={batchLoading !== null}
+                  className="inline-flex items-center gap-1 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-1.5 text-[10px] font-bold text-red-400 disabled:opacity-50"
+                >
+                  {batchLoading === "pausar" ? <Loader2 className="w-3 h-3 animate-spin" /> : <Pause className="w-3 h-3 fill-red-400" />}{" "}
+                  Pausar todos
+                </button>
+              </div>
+              <div className="max-h-[45vh] overflow-y-auto scrollbar-thin space-y-2">
+                {detailsGroup.destinos.map((d) => (
+                  <div key={d.id} className="rounded-lg border border-[#2c2c32] bg-[#121214] p-2.5">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <div className="min-w-0">
+                        <p className="text-[10px] text-white font-semibold">
+                          {d.grupoDestinoNome ?? d.grupoDestinoJid}
+                        </p>
+                        <p className="text-[9px] text-[#868686] font-mono mt-1 break-all">{d.grupoDestinoJid}</p>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <span
+                          className={cn(
+                            "text-[8px] font-bold px-1.5 py-0.5 rounded-md border",
+                            d.ativo
+                              ? "text-emerald-400 border-emerald-500/30 bg-emerald-500/10"
+                              : "text-[#a0a0a0] border-[#2c2c32] bg-[#1c1c1f]"
+                          )}
+                        >
+                          {d.ativo ? "Ativo" : "Parado"}
+                        </span>
+                        {d.ativo ? (
+                          <button
+                            type="button"
+                            onClick={() => handleToggle(d.id, false)}
+                            disabled={pendingActionIds.includes(d.id)}
+                            className="inline-flex items-center gap-1 rounded-md border border-red-500/20 bg-red-500/10 px-2 py-1 text-[9px] font-bold text-red-400 hover:bg-red-500/15 disabled:opacity-50"
+                          >
+                            {pendingActionIds.includes(d.id) ? <Loader2 className="w-3 h-3 animate-spin" /> : <Pause className="w-3 h-3 fill-red-400" />}{" "}
+                            Pausar
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleToggle(d.id, true)}
+                            disabled={pendingActionIds.includes(d.id)}
+                            className="inline-flex items-center gap-1 rounded-md border border-emerald-500/20 bg-emerald-500/10 px-2 py-1 text-[9px] font-bold text-emerald-400 hover:bg-emerald-500/15 disabled:opacity-50"
+                          >
+                            {pendingActionIds.includes(d.id) ? <Loader2 className="w-3 h-3 animate-spin" /> : <Play className="w-3 h-3 fill-emerald-400" />}{" "}
+                            Ativar
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => remover(d.id)}
+                          className="inline-flex items-center gap-1 rounded-md border border-red-500/20 bg-red-500/5 px-2 py-1 text-[9px] font-bold text-red-300 hover:bg-red-500/10"
+                        >
+                          <Trash2 className="w-3 h-3" /> Excluir
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

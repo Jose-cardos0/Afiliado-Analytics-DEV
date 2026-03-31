@@ -7,7 +7,7 @@
 
 import { NextResponse } from "next/server";
 import { createClient } from "../../../../../utils/supabase/server";
-import { getEntitlementsForUser, getUsageSnapshot } from "@/lib/plan-server";
+import { assertSharedGroupsPoolSlot } from "@/lib/espelhamento-limits";
 
 export const dynamic = "force-dynamic";
 
@@ -81,14 +81,12 @@ export async function POST(req: Request) {
 
     if (toInsert.length === 0) return NextResponse.json({ error: "Nenhum grupo válido." }, { status: 400 });
 
-    const ent = await getEntitlementsForUser(supabase, user.id);
-    const usage = await getUsageSnapshot(supabase, user.id);
-    if (usage.gruposVendaGroupsTotal + toInsert.length > ent.gruposVenda.maxGroupsTotal) {
-      return NextResponse.json(
-        { error: `Limite de ${ent.gruposVenda.maxGroupsTotal} grupo(s) total atingido. Faça upgrade para adicionar mais.` },
-        { status: 403 }
-      );
-    }
+    const pool = await assertSharedGroupsPoolSlot(
+      supabase,
+      user.id,
+      toInsert.map((g) => g.group_id)
+    );
+    if (!pool.ok) return NextResponse.json({ error: pool.message }, { status: 403 });
 
     const { data: inserted, error } = await supabase
       .from("grupos_venda")

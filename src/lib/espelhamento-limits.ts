@@ -68,3 +68,48 @@ export async function assertEspelhamentoAutomationSlot(
   }
   return { ok: true };
 }
+
+/**
+ * Limite compartilhado de grupos do plano:
+ * - grupos_venda.group_id
+ * - espelhamento_config.grupo_destino_jid
+ */
+export async function assertSharedGroupsPoolSlot(
+  supabase: SupabaseClient,
+  userId: string,
+  candidateGroups: string[],
+  opts?: { excludeEspelhamentoConfigId?: string }
+): Promise<{ ok: true } | { ok: false; message: string }> {
+  const ent = await getEntitlementsForUser(supabase, userId);
+  const maxGroups = ent.gruposVenda.maxGroupsTotal;
+
+  const [gvRes, espRes] = await Promise.all([
+    supabase.from("grupos_venda").select("group_id").eq("user_id", userId),
+    (() => {
+      let q = supabase
+        .from("espelhamento_config")
+        .select("id, grupo_destino_jid")
+        .eq("user_id", userId);
+      if (opts?.excludeEspelhamentoConfigId) q = q.neq("id", opts.excludeEspelhamentoConfigId);
+      return q;
+    })(),
+  ]);
+
+  const gvRows = gvRes.data ?? [];
+  const espRows = espRes.data ?? [];
+
+  const shared = new Set<string>();
+  for (const r of gvRows) shared.add(normalizeGroupJid((r as { group_id: string }).group_id));
+  for (const r of espRows) shared.add(normalizeGroupJid((r as { grupo_destino_jid: string }).grupo_destino_jid));
+  for (const g of candidateGroups) {
+    if (g?.trim()) shared.add(normalizeGroupJid(g));
+  }
+
+  if (shared.size > maxGroups) {
+    return {
+      ok: false,
+      message: `Limite de ${maxGroups} grupo(s) total (Grupos de Venda + destinos do Espelhamento) atingido. Remova grupos para continuar.`,
+    };
+  }
+  return { ok: true };
+}

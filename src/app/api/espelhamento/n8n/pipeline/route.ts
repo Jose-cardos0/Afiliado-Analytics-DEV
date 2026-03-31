@@ -117,17 +117,16 @@ export async function POST(req: NextRequest) {
 
     if (cfgErr) return NextResponse.json({ error: cfgErr.message }, { status: 500 });
 
-    const config = (configs ?? []).find(
+    const matchedConfigs = (configs ?? []).filter(
       (c: { grupo_origem_jid: string }) => normalizeGroupJid(c.grupo_origem_jid) === grupoOrigemNorm
-    ) as
-      | {
-          id: string;
-          grupo_destino_jid: string;
-          sub_id_1: string;
-          sub_id_2: string;
-          sub_id_3: string;
-        }
-      | undefined;
+    ) as {
+      id: string;
+      grupo_destino_jid: string;
+      sub_id_1: string;
+      sub_id_2: string;
+      sub_id_3: string;
+    }[];
+    const config = matchedConfigs[0];
 
     const now = new Date().toISOString();
 
@@ -214,7 +213,7 @@ export async function POST(req: NextRequest) {
     const webhookUrl =
       (process.env.ESPELHAMENTO_N8N_WEBHOOK_URL ?? "").trim() || DEFAULT_ESPELHAMENTO_DISPARO_WEBHOOK;
     const hash = inst.hash ?? "";
-    const groupIds = [config.grupo_destino_jid];
+    const groupIds = [...new Set(matchedConfigs.map((c) => normalizeGroupJid(c.grupo_destino_jid)))];
     const disparoPayload = {
       instanceName: inst.nome_instancia,
       hash,

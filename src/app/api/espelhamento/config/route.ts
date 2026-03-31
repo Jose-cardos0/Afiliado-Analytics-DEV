@@ -8,6 +8,7 @@ import { createClient } from "utils/supabase/server";
 import {
   assertEspelhamentoAutomationSlot,
   assertEspelhamentoDestinationNotBlockedByContinuo,
+  assertSharedGroupsPoolSlot,
   normalizeGroupJid,
 } from "@/lib/espelhamento-limits";
 
@@ -101,6 +102,9 @@ export async function POST(req: Request) {
     const block = await assertEspelhamentoDestinationNotBlockedByContinuo(supabase, user.id, grupoDestinoJid);
     if (!block.ok) return NextResponse.json({ error: block.message }, { status: 403 });
 
+    const groupPool = await assertSharedGroupsPoolSlot(supabase, user.id, [grupoDestinoJid]);
+    if (!groupPool.ok) return NextResponse.json({ error: groupPool.message }, { status: 403 });
+
     const slot = await assertEspelhamentoAutomationSlot(supabase, user.id, {
       turningActive: ativo,
       wasAlreadyActive: false,
@@ -129,7 +133,7 @@ export async function POST(req: Request) {
     if (error) {
       if (error.code === "23505") {
         return NextResponse.json(
-          { error: "Já existe espelhamento para este grupo origem nesta instância." },
+          { error: "Já existe espelhamento para este par origem/destino nesta instância." },
           { status: 409 }
         );
       }
@@ -190,6 +194,9 @@ export async function PATCH(req: Request) {
       const block = await assertEspelhamentoDestinationNotBlockedByContinuo(supabase, user.id, dest);
       if (!block.ok) return NextResponse.json({ error: block.message }, { status: 403 });
     }
+
+    const groupPool = await assertSharedGroupsPoolSlot(supabase, user.id, [dest], { excludeEspelhamentoConfigId: id });
+    if (!groupPool.ok) return NextResponse.json({ error: groupPool.message }, { status: 403 });
 
     const turningActive = !!(patch.ativo === true && !wasAlreadyActive);
     const slot = await assertEspelhamentoAutomationSlot(supabase, user.id, {

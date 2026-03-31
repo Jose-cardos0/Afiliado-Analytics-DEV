@@ -8,6 +8,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "../../../../../utils/supabase/server";
 import { getEntitlementsForUser, getUsageSnapshot } from "@/lib/plan-server";
+import { assertSharedGroupsPoolSlot } from "@/lib/espelhamento-limits";
 
 export const dynamic = "force-dynamic";
 
@@ -84,12 +85,12 @@ export async function POST(req: Request) {
         { status: 403 }
       );
     }
-    if (usage.gruposVendaGroupsTotal + toInsert.length > ent.gruposVenda.maxGroupsTotal) {
-      return NextResponse.json(
-        { error: `Limite de ${ent.gruposVenda.maxGroupsTotal} grupo(s) total atingido. Faça upgrade para adicionar mais.` },
-        { status: 403 }
-      );
-    }
+    const pool = await assertSharedGroupsPoolSlot(
+      supabase,
+      user.id,
+      toInsert.map((g) => g.group_id)
+    );
+    if (!pool.ok) return NextResponse.json({ error: pool.message }, { status: 403 });
 
     const { data: lista, error: errLista } = await supabase
       .from("listas_grupos_venda")
