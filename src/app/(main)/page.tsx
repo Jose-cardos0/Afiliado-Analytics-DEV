@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Testimonials from "../components/home/Testimonials";
 import Faq from "../components/home/Faq";
 import Pricing from "../components/home/Pricing";
@@ -22,6 +22,7 @@ export default function HomePage() {
   const [showWhatsApp, setShowWhatsApp] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
+  const vturbContainerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -40,6 +41,22 @@ export default function HomePage() {
       window.removeEventListener("scroll", handleScroll);
       mediaQuery.removeEventListener("change", handleChange);
     };
+  }, []);
+
+  useEffect(() => {
+    const scriptSrc =
+      "https://scripts.converteai.net/1a08de6e-5582-4e59-9343-8ad1f2dfcbb5/players/69cbd3db50cfd93acabf9083/v4/player.js";
+    const container = vturbContainerRef.current;
+    if (container && !container.querySelector("vturb-smartplayer")) {
+      container.innerHTML =
+        '<vturb-smartplayer id="vid-69cbd3db50cfd93acabf9083" style="display:block;margin:0 auto;width:100%;height:100%;"></vturb-smartplayer>';
+    }
+    const alreadyLoaded = document.querySelector(`script[src="${scriptSrc}"]`);
+    if (alreadyLoaded) return;
+    const s = document.createElement("script");
+    s.src = scriptSrc;
+    s.async = true;
+    document.head.appendChild(s);
   }, []);
 
   const scrollToSection = (sectionId: string) => {
@@ -103,9 +120,11 @@ export default function HomePage() {
             className="mx-auto mb-[44px] max-w-[560px] font-['Inter'] text-[clamp(1rem,2.5vw,1.2rem)] font-normal leading-[1.75] text-white/65"
           >
             O único ecossistema com{" "}
-            <strong className="font-bold text-white">10 ferramentas poderosas</strong>{" "}
+            <strong className="font-bold text-white">11 ferramentas poderosas</strong>{" "}
             que os super afiliados usam para faturar mais, trabalhar menos e{" "}
-            <strong className="font-bold text-[#ff7a54]">dominar qualquer nicho.</strong>
+            <strong className="font-bold text-[#ff7a54]">dominar qualquer nicho.</strong>{" "}
+            Agora com <strong className="font-semibold text-white/90">Espelhamento de Grupos</strong>, que
+            espelha ofertas de outros grupos para os seus grupos.
           </motion.p>
 
           {/* Botões - ANIMADOS */}
@@ -179,8 +198,8 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ══════ SEÇÃO DEMO ══════ */}
-      {/* <section id="demo" className="relative overflow-hidden py-15 sm:py-20">
+     
+       <section id="demo" className="relative overflow-hidden py-15 sm:py-20">
         
         <div className="pointer-events-none absolute left-1/2 top-1/2 -z-0 h-[800px] w-[800px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(circle,rgba(226,76,48,0.07)_0%,transparent_65%)]" />
 
@@ -204,8 +223,9 @@ export default function HomePage() {
               </h2>
 
               <p className="mx-auto max-w-[640px] font-['Inter'] text-[17px] leading-[1.75] text-white/60">
-                Uma demo completa mostrando como as 10 ferramentas trabalham
-                juntas para multiplicar seus resultados.
+                Uma demo completa mostrando como as 11 ferramentas trabalham
+                juntas para multiplicar seus resultados — incluindo Espelhamento de Grupos, para replicar
+                ofertas de grupos de origem nos seus grupos de destino.
               </p>
             </motion.div>
 
@@ -219,25 +239,15 @@ export default function HomePage() {
             >
               <div className="group relative overflow-hidden rounded-[24px] border border-white/12 shadow-[0_0_80px_rgba(226,76,48,0.22),0_40px_80px_rgba(0,0,0,0.5)] transition-all duration-300 hover:-translate-y-[6px] hover:border-[#e24c30]/35 hover:shadow-[0_0_100px_rgba(226,76,48,0.28),0_40px_90px_rgba(0,0,0,0.55)]">
                 
-               
-                <div className="pointer-events-none absolute inset-0 z-10 bg-[radial-gradient(ellipse_at_50%_40%,rgba(226,76,48,0.16)_0%,rgba(124,58,237,0.10)_45%,transparent_72%)]" />
-                <div className="pointer-events-none absolute inset-0 z-10 bg-[linear-gradient(180deg,rgba(255,255,255,0.05)_0%,transparent_14%,transparent_86%,rgba(0,0,0,0.12)_100%)]" />
-
+              
                 <div className="relative z-0 w-full pb-[56.25%]">
-                  <iframe
-                    className="absolute left-0 top-0 h-full w-full"
-                    src="https://www.youtube.com/embed/xGeHHUcIi64"
-                    title="Demonstração Afiliado Analytics"
-                    frameBorder="0"
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                    allowFullScreen
-                  />
+                  <div ref={vturbContainerRef} className="absolute left-0 top-0 h-full w-full" />
                 </div>
               </div>
             </motion.div>
           </div>
         </div>
-      </section> */}
+      </section> 
 
       <FeaturesSection />
       <Mockup />

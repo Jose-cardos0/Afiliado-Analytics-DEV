@@ -8,7 +8,7 @@ import { motion } from "framer-motion";
 import {
   BarChart2, MousePointerClick, Link2, TrendingUp,
   LayoutTemplate, ShoppingBag, Bell, Calculator,
-  Zap, ChevronLeft, ChevronRight, ArrowRight,
+  Zap, ChevronLeft, ChevronRight, ArrowRight, ArrowLeftRight,
 } from "lucide-react";
 
 const features = [
@@ -32,6 +32,13 @@ const features = [
     title: "Grupos de venda",
     description:
       "Gerencie listas de transmissão e dispare ofertas automaticamente para seus grupos de WhatsApp.",
+  },
+  {
+    icon: ArrowLeftRight,
+    tag: "Espelhamento",
+    title: "Espelhamento de Grupos",
+    description:
+      "Espelhe ofertas de outros grupos para os seus: o conteúdo chega nos seus grupos com seu link de afiliado e mídia preservada.",
   },
   {
     icon: Calculator,
@@ -200,7 +207,7 @@ export default function FeaturesGridPunchy() {
           </span>
 
           <h2 className="mb-5 font-[var(--font-space-grotesk)] text-[clamp(2rem,5vw,3.1rem)] font-black leading-[1.08] tracking-[-1.5px] text-white">
-            10 ferramentas{" "}
+            11 ferramentas{" "}
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#ff6b35] via-[#e24c30] to-[#ff9a6c]">
               poderosas
             </span>

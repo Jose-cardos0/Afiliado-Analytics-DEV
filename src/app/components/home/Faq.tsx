@@ -22,7 +22,7 @@ const FAQS = [
   },
   {
     q: 'Qual é o tempo de garantia da plataforma?',
-    a: 'Você tem 7 dias de garantia incondicional. Você pode assinar, testar todas as 10 ferramentas (inclusive subir campanhas Meta direto do nosso painel) e, se achar que não ajudou a otimizar seus resultados, basta solicitar o cancelamento e devolvemos 100% do seu dinheiro, sem burocracia.',
+    a: 'Você tem 7 dias de garantia incondicional. Você pode assinar, testar todas as 11 ferramentas (inclusive subir campanhas Meta direto do nosso painel e Espelhamento de Grupos) e, se achar que não ajudou a otimizar seus resultados, basta solicitar o cancelamento e devolvemos 100% do seu dinheiro, sem burocracia.',
   },
 ]
 
