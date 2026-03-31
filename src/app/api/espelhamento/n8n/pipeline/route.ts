@@ -18,6 +18,10 @@ import { extractShopeeUrlsFromText, replaceShopeeUrlsWithAffiliateLinks } from "
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
+/** Webhook n8n só para disparo WhatsApp do espelhamento (Grupos de Venda usa outro URL). Sobrescreva com ESPELHAMENTO_N8N_WEBHOOK_URL se precisar. */
+const DEFAULT_ESPELHAMENTO_DISPARO_WEBHOOK =
+  "https://n8n.codenxtdesenvolvimento.online/webhook/Disparo-de-espelhamento";
+
 function getServiceSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -179,7 +183,8 @@ export async function POST(req: NextRequest) {
     const outUrls = extractShopeeUrlsFromText(textoSaida);
     const linkOut = outUrls[0] ?? "";
 
-    const webhookUrl = (process.env.ESPELHAMENTO_N8N_WEBHOOK_URL ?? "").trim();
+    const webhookUrl =
+      (process.env.ESPELHAMENTO_N8N_WEBHOOK_URL ?? "").trim() || DEFAULT_ESPELHAMENTO_DISPARO_WEBHOOK;
     const hash = inst.hash ?? "";
     const groupIds = [config.grupo_destino_jid];
     const disparoPayload = {
