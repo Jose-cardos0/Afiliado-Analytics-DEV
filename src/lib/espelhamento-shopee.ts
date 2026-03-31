@@ -6,6 +6,31 @@ import { shopeeGenerateShortLink } from "./shopee-affiliate-server";
 
 const URL_IN_TEXT = /https?:\/\/[^\s<>"'()[\]]+/gi;
 
+/**
+ * Mescla sub_id_1/2/3 de todas as linhas de config com a mesma origem (vários destinos).
+ * Sem isso, `matchedConfigs[0]` pode ser uma linha antiga sem sub_ids e o link sai sem tracking (utm_content vazio).
+ */
+export function mergeEspelhamentoSubIds(
+  rows: Array<{
+    sub_id_1: string | null | undefined;
+    sub_id_2: string | null | undefined;
+    sub_id_3: string | null | undefined;
+  }>
+): string[] {
+  let s1 = "";
+  let s2 = "";
+  let s3 = "";
+  for (const r of rows) {
+    const a = (r.sub_id_1 ?? "").trim();
+    const b = (r.sub_id_2 ?? "").trim();
+    const c = (r.sub_id_3 ?? "").trim();
+    if (a && !s1) s1 = a;
+    if (b && !s2) s2 = b;
+    if (c && !s3) s3 = c;
+  }
+  return [s1, s2, s3].filter((s) => s.length > 0);
+}
+
 function stripTrailingPunct(url: string): string {
   return url.replace(/[,;.:)]+$/g, "");
 }
@@ -44,7 +69,7 @@ export function extractShopeeUrlsFromText(text: string): string[] {
 }
 
 /**
- * Substitui cada URL Shopee pelo short link do afiliado (mais longas primeiro para não cortar substring).
+ * Substitui cada URL Shopee pelo short link de afiliado da conta (App ID + Secret do perfil), com subIds para tracking.
  */
 export async function replaceShopeeUrlsWithAffiliateLinks(
   text: string,

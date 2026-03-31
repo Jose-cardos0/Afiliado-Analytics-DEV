@@ -160,14 +160,31 @@ export async function PATCH(req: Request) {
 
     const { data: row, error: fetchErr } = await supabase
       .from("espelhamento_config")
-      .select("ativo, grupo_destino_jid")
+      .select("ativo, grupo_destino_jid, instance_id, grupo_origem_jid, sub_id_1, sub_id_2, sub_id_3")
       .eq("id", id)
       .eq("user_id", user.id)
       .maybeSingle();
     if (fetchErr || !row) return NextResponse.json({ error: "Config não encontrada." }, { status: 404 });
 
-    const wasAlreadyActive = !!(row as { ativo: boolean }).ativo;
+    type RowFull = {
+      ativo: boolean;
+      grupo_destino_jid: string;
+      instance_id: string;
+      grupo_origem_jid: string;
+      sub_id_1: string | null;
+      sub_id_2: string | null;
+      sub_id_3: string | null;
+    };
+    const r = row as RowFull;
+
+    const wasAlreadyActive = !!r.ativo;
     const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+
+    const subIdsChanging = body.subId1 != null || body.subId2 != null || body.subId3 != null;
+    const origChanging = body.grupoOrigemJid != null;
+    const mergedSub1 = body.subId1 != null ? String(body.subId1).trim() : String(r.sub_id_1 ?? "").trim();
+    const mergedSub2 = body.subId2 != null ? String(body.subId2).trim() : String(r.sub_id_2 ?? "").trim();
+    const mergedSub3 = body.subId3 != null ? String(body.subId3).trim() : String(r.sub_id_3 ?? "").trim();
 
     if (body.grupoDestinoJid != null) {
       patch.grupo_destino_jid = normalizeGroupJid(String(body.grupoDestinoJid));
@@ -182,8 +199,7 @@ export async function PATCH(req: Request) {
     if (body.subId3 != null) patch.sub_id_3 = String(body.subId3).trim();
     if (body.ativo != null) patch.ativo = body.ativo === true || body.ativo === "true";
 
-    const dest =
-      (patch.grupo_destino_jid as string) ?? (row as { grupo_destino_jid: string }).grupo_destino_jid;
+    const dest = (patch.grupo_destino_jid as string) ?? r.grupo_destino_jid;
     const orig = (patch.grupo_origem_jid as string) ?? undefined;
     if (orig && dest && orig === dest) {
       return NextResponse.json({ error: "Grupo origem e destino não podem ser o mesmo." }, { status: 400 });
@@ -205,8 +221,30 @@ export async function PATCH(req: Request) {
     });
     if (!slot.ok) return NextResponse.json({ error: slot.message }, { status: 403 });
 
-    const { error } = await supabase.from("espelhamento_config").update(patch).eq("id", id).eq("user_id", user.id);
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    /** Mesmo Sub ID em todas as linhas da mesma origem (1 ou N destinos), para o pipeline sempre achar os subIds. */
+    if (subIdsChanging && !origChanging) {
+      const { error: syncErr } = await supabase
+        .from("espelhamento_config")
+        .update({
+          sub_id_1: mergedSub1,
+          sub_id_2: mergedSub2,
+          sub_id_3: mergedSub3,
+          updated_at: patch.updated_at,
+        })
+        .eq("user_id", user.id)
+        .eq("instance_id", r.instance_id)
+        .eq("grupo_origem_jid", normalizeGroupJid(r.grupo_origem_jid));
+      if (syncErr) return NextResponse.json({ error: syncErr.message }, { status: 500 });
+      delete patch.sub_id_1;
+      delete patch.sub_id_2;
+      delete patch.sub_id_3;
+    }
+
+    const patchKeys = Object.keys(patch).filter((k) => k !== "updated_at");
+    if (patchKeys.length > 0) {
+      const { error } = await supabase.from("espelhamento_config").update(patch).eq("id", id).eq("user_id", user.id);
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    }
 
     return NextResponse.json({ success: true });
   } catch (e) {

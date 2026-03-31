@@ -13,7 +13,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { normalizeGroupJid } from "@/lib/espelhamento-limits";
-import { extractShopeeUrlsFromText, replaceShopeeUrlsWithAffiliateLinks } from "@/lib/espelhamento-shopee";
+import {
+  extractShopeeUrlsFromText,
+  mergeEspelhamentoSubIds,
+  replaceShopeeUrlsWithAffiliateLinks,
+} from "@/lib/espelhamento-shopee";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -113,7 +117,8 @@ export async function POST(req: NextRequest) {
       )
       .eq("user_id", userId)
       .eq("instance_id", inst.id)
-      .eq("ativo", true);
+      .eq("ativo", true)
+      .order("created_at", { ascending: true });
 
     if (cfgErr) return NextResponse.json({ error: cfgErr.message }, { status: 500 });
 
@@ -165,6 +170,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ action: "skip", reason: "no_shopee_links" }, { status: 200 });
     }
 
+    /** Credenciais do afiliado (sua conta): generateShortLink só gera link com sua comissão. */
     const { data: profile } = await supabase
       .from("profiles")
       .select("shopee_app_id, shopee_api_key")
@@ -185,7 +191,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ action: "error", reason: "shopee_not_configured" }, { status: 200 });
     }
 
-    const subIds = [config.sub_id_1, config.sub_id_2, config.sub_id_3].filter(Boolean) as string[];
+    /** Sub IDs da configuração (iguais para todos os destinos da origem); merge cobre 1 ou N grupos. */
+    const subIds = mergeEspelhamentoSubIds(matchedConfigs);
     const replaced = await replaceShopeeUrlsWithAffiliateLinks(textoBruto, appId, secret, subIds);
     if ("error" in replaced) {
       await insertPayload({
