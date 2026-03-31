@@ -88,7 +88,7 @@ export async function POST(req: Request) {
     const pool = await assertSharedGroupsPoolSlot(
       supabase,
       user.id,
-      toInsert.map((g) => g.group_id)
+      toInsert.map((g: { group_id: string }) => g.group_id)
     );
     if (!pool.ok) return NextResponse.json({ error: pool.message }, { status: 403 });
 
