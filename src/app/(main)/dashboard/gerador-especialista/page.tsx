@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import Image, { type StaticImageData } from "next/image";
 import type { LucideIcon } from "lucide-react";
 import {
   Upload,
@@ -35,6 +36,11 @@ import {
 } from "@/lib/expert-generator/build-prompt";
 import { compressImageFileToMaxBytes } from "@/lib/compress-image-client";
 import { humanizeLargeRequestError } from "@/lib/humanize-fetch-error";
+import camilleCardImg from "@/lib/expert-generator/expert/camille/card.png";
+
+const PRESET_THUMB_BY_ID: Partial<Record<string, StaticImageData>> = {
+  camille: camilleCardImg,
+};
 
 /** Alinhado ao Gerador de Criativos (`video-editor/page.tsx`). */
 const inputCls =
@@ -859,9 +865,19 @@ function ExpertGeneratorInner() {
                                 : "border-dark-border hover:border-shopee-orange/30"
                             }`}
                           >
-                            <span className="w-14 h-14 rounded-full bg-gradient-to-br from-shopee-orange/35 to-dark-bg border border-dark-border flex items-center justify-center text-sm font-bold text-shopee-orange">
-                              {p.name.slice(0, 1)}
-                            </span>
+                            {PRESET_THUMB_BY_ID[p.id] ? (
+                              <Image
+                                src={PRESET_THUMB_BY_ID[p.id]!}
+                                alt={p.name}
+                                width={56}
+                                height={56}
+                                className="h-14 w-14 shrink-0 rounded-full border border-dark-border object-cover"
+                              />
+                            ) : (
+                              <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full border border-dark-border bg-gradient-to-br from-shopee-orange/35 to-dark-bg text-sm font-bold text-shopee-orange">
+                                {p.name.slice(0, 1)}
+                              </span>
+                            )}
                             <span className="text-[11px] text-text-secondary max-w-[72px] truncate">
                               {p.name}
                             </span>

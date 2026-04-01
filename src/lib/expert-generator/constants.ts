@@ -1,4 +1,13 @@
-export type PresetModel = { id: string; name: string; promptEn: string };
+export type PresetModel = {
+  id: string;
+  name: string;
+  promptEn: string;
+  /**
+   * Pasta `src/lib/expert-generator/expert/<referencePackId>/` com PNG/JPEG/WebP
+   * enviados ao Nano Banana como referência facial (mesma pessoa).
+   */
+  referencePackId?: string;
+};
 
 export const FEMALE_PRESETS: PresetModel[] = [
   { id: "brenda", name: "Brenda", promptEn: "Adult Brazilian woman, natural beauty, warm expression, relatable everyday look." },
@@ -9,6 +18,13 @@ export const FEMALE_PRESETS: PresetModel[] = [
   { id: "marina", name: "Marina", promptEn: "Adult Brazilian woman, beach-city casual, sun-kissed natural skin." },
   { id: "melody", name: "Melody", promptEn: "Adult Brazilian woman, youthful adult, trendy but not influencer-perfect." },
   { id: "sofia", name: "Sofia", promptEn: "Adult Brazilian woman, straight dark hair, soft lighting on face, genuine." },
+  {
+    id: "camille",
+    name: "Camille",
+    referencePackId: "camille",
+    promptEn:
+      "Adult woman — same facial identity as the reference face photos: long wavy dark brown hair with soft curtain bangs, light-to-medium skin with natural freckles on nose and cheeks, brown eyes, subtle winged eyeliner, full lips natural pink-nude tone, calm confident expression. Often wears black high-neck top with black blazer; small gold hoop earrings and thin gold necklace with small round pendant. Photoreal UGC, not catalog beauty.",
+  },
 ];
 
 export const MALE_PRESETS: PresetModel[] = [

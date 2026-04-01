@@ -19,6 +19,10 @@ Do NOT output this reference as the full final picture — create a NEW photorea
 
 `;
 
+const MODEL_FACE_REF_INTRO = `The images immediately below are reference photos of the SAME woman (facial identity, hair, skin tone, age). Your output must show this same person. They are NOT product photos — use them only for her appearance. Keep her identity consistent; pose, outfit, lighting, and scene follow the text instructions after the separator.
+
+`;
+
 export type NanoBananaImageResult =
   | { ok: true; imageBase64: string; mimeType: string; modelUsed: string }
   | { ok: false; error: string; detail?: string; modelTried?: string };
@@ -100,13 +104,36 @@ function normalizeAspectRatio(ar: string): string {
   return "9:16";
 }
 
+export type NanoBananaRefImage = { mimeType: string; base64: string };
+
 function buildBody(
   promptText: string,
   aspectRatio: string,
   productImageBase64: string | null,
-  productMimeType: string
+  productMimeType: string,
+  modelReferenceImages: NanoBananaRefImage[]
 ) {
   const parts: GeminiImagePart[] = [];
+
+  if (modelReferenceImages.length > 0) {
+    parts.push({
+      text:
+        MODEL_FACE_REF_INTRO +
+        `(${modelReferenceImages.length} reference image(s))\n\n`,
+    });
+    for (const ref of modelReferenceImages) {
+      parts.push({
+        inlineData: {
+          mimeType: ref.mimeType || "image/png",
+          data: ref.base64,
+        },
+      });
+    }
+    parts.push({
+      text: "\n\n--- SCENE / PRODUCT / STYLE (text instructions) ---\n\n",
+    });
+  }
+
   if (productImageBase64) {
     parts.push({ text: MULTIMODAL_INTRO + promptText });
     parts.push({
@@ -136,10 +163,17 @@ async function generateOnce(
   promptText: string,
   aspectRatio: string,
   productImageBase64: string | null,
-  productMimeType: string
+  productMimeType: string,
+  modelReferenceImages: NanoBananaRefImage[]
 ): Promise<NanoBananaImageResult> {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
-  const body = buildBody(promptText, aspectRatio, productImageBase64, productMimeType);
+  const body = buildBody(
+    promptText,
+    aspectRatio,
+    productImageBase64,
+    productMimeType,
+    modelReferenceImages
+  );
 
   const res = await fetch(url, {
     method: "POST",
@@ -194,6 +228,8 @@ export async function generateNanoBananaImage(params: {
   aspectRatio: string;
   productImageBase64: string | null;
   productMimeType: string;
+  /** Fotos da modelo (preset) — mesma ordem que no pedido multimodal */
+  modelReferenceImages?: NanoBananaRefImage[];
 }): Promise<NanoBananaImageResult> {
   const key = process.env.GEMINI_API_KEY?.trim();
   if (!key) {
@@ -211,6 +247,8 @@ export async function generateNanoBananaImage(params: {
     return { ok: false, error: "Prompt vazio." };
   }
 
+  const modelReferenceImages = params.modelReferenceImages ?? [];
+
   for (const model of candidates) {
     const result = await generateOnce(
       model,
@@ -218,7 +256,8 @@ export async function generateNanoBananaImage(params: {
       promptText,
       params.aspectRatio,
       params.productImageBase64,
-      params.productMimeType
+      params.productMimeType,
+      modelReferenceImages
     );
     if (result.ok) return result;
     errors.push(`[${model}] ${result.error}`);

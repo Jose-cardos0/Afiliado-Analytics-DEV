@@ -7,6 +7,7 @@ import {
   type ExpertModelSelection,
 } from "@/lib/expert-generator/build-prompt";
 import { FEMALE_PRESETS, MALE_PRESETS } from "@/lib/expert-generator/constants";
+import { loadPresetReferenceImages } from "@/lib/expert-generator/load-preset-reference-images";
 import { generateNanoBananaImage } from "@/lib/expert-generator/nano-banana-image";
 
 export const maxDuration = 120;
@@ -127,11 +128,21 @@ export async function POST(req: Request) {
   // Não incluir nomes de API/modelo no prompt — o modelo tende a “imprimir” esse texto na imagem.
   const finalPrompt = buildExpertImagePrompt(buildInput, advancedImagePrompt);
 
+  let modelReferenceImages: { mimeType: string; base64: string }[] = [];
+  if (model.mode === "preset") {
+    const list = model.gender === "women" ? FEMALE_PRESETS : MALE_PRESETS;
+    const packId = list.find((p) => p.id === model.presetId)?.referencePackId;
+    if (packId) {
+      modelReferenceImages = loadPresetReferenceImages(packId);
+    }
+  }
+
   const nb = await generateNanoBananaImage({
     prompt: finalPrompt,
     aspectRatio,
     productImageBase64: productImageBase64 || null,
     productMimeType,
+    modelReferenceImages,
   });
   if (!nb.ok) {
     const isKey = /GEMINI_API_KEY não configurada/i.test(nb.error);
