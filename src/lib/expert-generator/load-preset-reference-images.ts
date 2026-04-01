@@ -22,7 +22,11 @@ export function loadPresetReferenceImages(packId: string): PresetRefImage[] {
   const names = fs
     .readdirSync(dir)
     .filter((f) => /\.(png|jpe?g|webp)$/i.test(f))
-    .sort();
+    /** `card.png` = miniatura do UI; referências faciais são ref*.png / refe*.png */
+    .filter((f) => !/^card\.(png|jpe?g|webp)$/i.test(f))
+    .sort((a, b) =>
+      a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" })
+    );
 
   const out: PresetRefImage[] = [];
 

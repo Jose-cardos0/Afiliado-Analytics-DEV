@@ -158,13 +158,27 @@ function buildModelDescriptionForTemplate(input: ExpertImageBuildInput): string 
 }
 
 function buildSceneDescriptionForTemplate(input: ExpertImageBuildInput): string {
-  return joinFragments(input.sceneIds, SCENE_CHIPS) || "Everyday Brazilian setting, imperfect and lived-in.";
+  const fromChips = joinFragments(input.sceneIds, SCENE_CHIPS);
+  const custom = input.sceneCustom?.trim();
+  if (fromChips) return fromChips;
+  if (custom) return custom;
+  return "Everyday Brazilian setting, imperfect and lived-in.";
+}
+
+/** Notas extra de cena só quando há chips + texto — evita duplicar no preâmbulo se a cena for só texto livre. */
+function sceneCustomAdditionalForPreamble(input: ExpertImageBuildInput): string {
+  const fromChips = joinFragments(input.sceneIds, SCENE_CHIPS);
+  const custom = input.sceneCustom?.trim();
+  if (fromChips && custom) return custom;
+  return "";
 }
 
 function buildPoseDescriptionForTemplate(input: ExpertImageBuildInput): string {
   const pose = joinFragments(input.poseIds, POSE_CHIPS);
   const custom = input.poseCustom?.trim();
-  return [pose, custom].filter(Boolean).join(" ") || "Natural candid framing toward the camera.";
+  if (pose && custom) return `${pose} ${custom}`;
+  if (custom && !pose) return custom;
+  return pose || "Natural candid framing toward the camera.";
 }
 
 function buildStyleDescriptionForTemplate(input: ExpertImageBuildInput): string {
@@ -201,12 +215,21 @@ export function fillExpertPromptTemplate(
       return [m, c].filter(Boolean).join(" ");
     })();
 
+  const sceneFromChips = joinFragments(input.sceneIds, SCENE_CHIPS);
+  const sceneCustomTrim = input.sceneCustom?.trim() || "";
+  const customSceneSlot =
+    sceneFromChips && sceneCustomTrim
+      ? sceneCustomTrim
+      : !sceneFromChips && sceneCustomTrim
+        ? "—"
+        : "not specified — use only the main scene type above";
+
   const map: Record<string, string> = {
     MODEL_GENDER: modelGenderWord(input.model.gender),
     MODEL_DESCRIPTION: buildModelDescriptionForTemplate(input),
     PRODUCT_REFERENCE_IMAGE: buildProductReferenceForTemplate(input),
     SCENE_DESCRIPTION: buildSceneDescriptionForTemplate(input),
-    CUSTOM_SCENE: input.sceneCustom?.trim() || "not specified — use only the main scene type above",
+    CUSTOM_SCENE: customSceneSlot,
     POSE_DESCRIPTION: buildPoseDescriptionForTemplate(input),
     STYLE_DESCRIPTION: buildStyleDescriptionForTemplate(input),
     IMPROVEMENT_DESCRIPTION: buildImprovementDescriptionForTemplate(input),
@@ -230,7 +253,7 @@ function buildImagePromptPreamble(input: ExpertImageBuildInput): string {
   const g = modelGenderWord(input.model.gender);
   const modelDesc = buildModelDescriptionForTemplate(input);
   const scene = buildSceneDescriptionForTemplate(input);
-  const sceneExtra = input.sceneCustom?.trim();
+  const sceneExtra = sceneCustomAdditionalForPreamble(input);
   const pose = buildPoseDescriptionForTemplate(input);
   return [
     ">>> START — OUTPUT TYPE (HIGHEST PRIORITY) <<<",
@@ -324,20 +347,26 @@ function buildStep2AppSelections(input: ExpertImageBuildInput): string {
     }
   }
 
-  const scene = joinFragments(input.sceneIds, SCENE_CHIPS);
-  if (scene) {
-    blocks.push(`Setting / scene: ${scene}`);
-  }
-  if (input.sceneCustom?.trim()) {
-    blocks.push(`Extra scene detail: ${input.sceneCustom.trim()}`);
+  const sceneChips = joinFragments(input.sceneIds, SCENE_CHIPS);
+  const sceneCustom = input.sceneCustom?.trim();
+  if (sceneChips) {
+    blocks.push(`Setting / scene: ${sceneChips}`);
+    if (sceneCustom) {
+      blocks.push(`Extra scene detail: ${sceneCustom}`);
+    }
+  } else if (sceneCustom) {
+    blocks.push(`Setting / scene (custom): ${sceneCustom}`);
   }
 
-  const pose = joinFragments(input.poseIds, POSE_CHIPS);
-  if (pose) {
-    blocks.push(`Pose / framing: ${pose}`);
-  }
-  if (input.poseCustom?.trim()) {
-    blocks.push(`Extra pose detail: ${input.poseCustom.trim()}`);
+  const poseChips = joinFragments(input.poseIds, POSE_CHIPS);
+  const poseCustom = input.poseCustom?.trim();
+  if (poseChips) {
+    blocks.push(`Pose / framing: ${poseChips}`);
+    if (poseCustom) {
+      blocks.push(`Extra pose detail: ${poseCustom}`);
+    }
+  } else if (poseCustom) {
+    blocks.push(`Pose / framing (custom): ${poseCustom}`);
   }
 
   const style = joinFragments(input.styleIds, STYLE_CHIPS);

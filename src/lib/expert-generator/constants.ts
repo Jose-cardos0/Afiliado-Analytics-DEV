@@ -10,14 +10,20 @@ export type PresetModel = {
 };
 
 export const FEMALE_PRESETS: PresetModel[] = [
-  { id: "brenda", name: "Brenda", promptEn: "Adult Brazilian woman, natural beauty, warm expression, relatable everyday look." },
-  { id: "fatima", name: "Fatima", promptEn: "Adult Brazilian woman, elegant but casual, soft features, authentic smile." },
-  { id: "larissa", name: "Larissa", promptEn: "Adult Brazilian woman, sporty-casual vibe, healthy skin, friendly eyes." },
-  { id: "livia", name: "Livia", promptEn: "Adult Brazilian woman, minimalist style, subtle makeup, calm presence." },
-  { id: "manuela", name: "Manuela", promptEn: "Adult Brazilian woman, curly hair, expressive, cozy home aesthetic." },
-  { id: "marina", name: "Marina", promptEn: "Adult Brazilian woman, beach-city casual, sun-kissed natural skin." },
-  { id: "melody", name: "Melody", promptEn: "Adult Brazilian woman, youthful adult, trendy but not influencer-perfect." },
-  { id: "sofia", name: "Sofia", promptEn: "Adult Brazilian woman, straight dark hair, soft lighting on face, genuine." },
+  {
+    id: "milena",
+    name: "Milena",
+    referencePackId: "milena",
+    promptEn:
+      "Adult woman — same facial identity as the reference face photos: long voluminous dark brown to black wavy hair, center part, warm tan skin, light brown eyes, defined arched brows, natural makeup with neutral lips, soft confident expression. Often wears a simple black V-neck top. Photoreal Brazilian UGC in the final shot — not catalog studio beauty, not a different face.",
+  },
+  {
+    id: "miko",
+    name: "Miko",
+    referencePackId: "miko",
+    promptEn:
+      "Adult woman — same facial identity as the reference face photos: straight jet-black hair in a chin-length bob with full straight-across bangs, oval face, light-to-medium clear skin, almond brown eyes, full natural lips, calm direct gaze. Black long-sleeve top with scoop neckline and delicate black lace trim; thin black choker with small silver cylindrical pendant; small dark script-style tattoo on upper chest below collarbone (keep if visible in framing). Photoreal Brazilian UGC — not a different face.",
+  },
   {
     id: "camille",
     name: "Camille",

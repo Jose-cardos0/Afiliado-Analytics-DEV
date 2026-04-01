@@ -37,8 +37,12 @@ import {
 import { compressImageFileToMaxBytes } from "@/lib/compress-image-client";
 import { humanizeLargeRequestError } from "@/lib/humanize-fetch-error";
 import camilleCardImg from "@/lib/expert-generator/expert/camille/card.png";
+import milenaCardImg from "@/lib/expert-generator/expert/milena/card.png";
+import mikoCardImg from "@/lib/expert-generator/expert/miko/card.png";
 
 const PRESET_THUMB_BY_ID: Partial<Record<string, StaticImageData>> = {
+  milena: milenaCardImg,
+  miko: mikoCardImg,
   camille: camilleCardImg,
 };
 
@@ -76,6 +80,47 @@ function FieldLabel({
           {hint}
         </p>
       ) : null}
+    </div>
+  );
+}
+
+function PersonalizedFieldSwitch({
+  checked,
+  onCheckedChange,
+  label,
+  description,
+  ariaLabel,
+}: {
+  checked: boolean;
+  onCheckedChange: (next: boolean) => void;
+  label: string;
+  description: string;
+  ariaLabel: string;
+}) {
+  return (
+    <div className="rounded-xl border border-dark-border bg-dark-bg/45 px-3.5 py-3 flex items-center justify-between gap-3">
+      <div className="min-w-0">
+        <p className="text-sm font-semibold text-text-primary">{label}</p>
+        <p className="text-[11px] text-text-secondary/80 mt-0.5 leading-snug">
+          {description}
+        </p>
+      </div>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        aria-label={ariaLabel}
+        onClick={() => onCheckedChange(!checked)}
+        className={`relative h-8 w-[3.25rem] shrink-0 rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-shopee-orange/50 ${
+          checked ? "bg-shopee-orange" : "bg-dark-border/90"
+        }`}
+      >
+        <span
+          className={`absolute top-1 left-1 h-6 w-6 rounded-full bg-white shadow-sm transition-transform duration-200 ${
+            checked ? "translate-x-[1.35rem]" : "translate-x-0"
+          }`}
+        />
+      </button>
     </div>
   );
 }
@@ -181,7 +226,13 @@ function ExpertGeneratorInner() {
   const [productBase64, setProductBase64] = useState<string | null>(null);
   const [productMime, setProductMime] = useState("image/jpeg");
   const [productDescription, setProductDescription] = useState("");
+  const [productDescriptionOpen, setProductDescriptionOpen] = useState(false);
   const [compressing, setCompressing] = useState(false);
+
+  const activeProductDescription = useMemo(
+    () => (productDescriptionOpen ? productDescription.trim() : ""),
+    [productDescriptionOpen, productDescription]
+  );
 
   const [gender, setGender] = useState<"women" | "men">("women");
   const [modelMode, setModelMode] = useState<"preset" | "custom">("preset");
@@ -207,6 +258,9 @@ function ExpertGeneratorInner() {
 
   const [motionIds, setMotionIds] = useState<string[]>(["micro", "uso"]);
   const [motionCustom, setMotionCustom] = useState("");
+  const [sceneUseCustom, setSceneUseCustom] = useState(false);
+  const [poseUseCustom, setPoseUseCustom] = useState(false);
+  const [motionUseCustom, setMotionUseCustom] = useState(false);
   const [durationSec, setDurationSec] = useState<4 | 6 | 8>(6);
   const [videoAspect, setVideoAspect] = useState<"9:16" | "16:9">("9:16");
   const [videoRes, setVideoRes] = useState<"720p" | "1080p">("720p");
@@ -276,27 +330,31 @@ function ExpertGeneratorInner() {
   const canGenerateImage = useMemo(() => {
     if (compressing) return false;
     if (modelMode === "custom" && customModel.trim().length < 8) return false;
-    return Boolean(productBase64) || productDescription.trim().length >= 15;
+    return (
+      Boolean(productBase64) || activeProductDescription.length >= 15
+    );
   }, [
     compressing,
     modelMode,
     customModel,
     productBase64,
-    productDescription,
+    activeProductDescription,
   ]);
 
   const hasProductBasics = useMemo(
     () =>
-      Boolean(productBase64) || productDescription.trim().length >= 15,
-    [productBase64, productDescription]
+      Boolean(productBase64) || activeProductDescription.length >= 15,
+    [productBase64, activeProductDescription]
   );
 
   const videoMotionSummaryLine = useMemo(() => {
+    if (motionUseCustom) {
+      const c = motionCustom.trim();
+      return c || "—";
+    }
     const chips = labelsFromChipIds(motionIds, VIDEO_MOTION_CHIPS);
-    const extra = motionCustom.trim();
-    if (extra) return [chips, extra].filter(Boolean).join(" · ");
     return chips || "—";
-  }, [motionIds, motionCustom]);
+  }, [motionUseCustom, motionIds, motionCustom]);
 
   const visibleVideoWizardTabs = useMemo(
     () =>
@@ -447,14 +505,14 @@ function ExpertGeneratorInner() {
         : { mode: "preset" as const, presetId, gender };
     return {
       model,
-      sceneIds,
-      sceneCustom,
-      poseIds,
-      poseCustom,
+      sceneIds: sceneUseCustom ? [] : sceneIds,
+      sceneCustom: sceneUseCustom ? sceneCustom : "",
+      poseIds: poseUseCustom ? [] : poseIds,
+      poseCustom: poseUseCustom ? poseCustom : "",
       styleIds,
       improvementIds,
-      motionIds,
-      motionCustom,
+      motionIds: motionUseCustom ? [] : motionIds,
+      motionCustom: motionUseCustom ? motionCustom : "",
     };
   }, [
     modelMode,
@@ -463,12 +521,15 @@ function ExpertGeneratorInner() {
     presetId,
     sceneIds,
     sceneCustom,
+    sceneUseCustom,
     poseIds,
     poseCustom,
+    poseUseCustom,
     styleIds,
     improvementIds,
     motionIds,
     motionCustom,
+    motionUseCustom,
   ]);
 
   const onGenerateImage = async () => {
@@ -486,7 +547,7 @@ function ExpertGeneratorInner() {
           aspectRatio: imageAspect,
           productImageBase64: productBase64 ?? "",
           productMimeType: productMime,
-          productDescription,
+          productDescription: activeProductDescription,
           options: buildOptionsPayload(),
         }),
       });
@@ -608,7 +669,7 @@ function ExpertGeneratorInner() {
           voiceGender: videoVoiceGender,
           advancedVideoPrompt,
           advancedImagePrompt,
-          productDescription,
+          productDescription: activeProductDescription,
           options: buildOptionsPayload(),
         }),
       });
@@ -661,15 +722,7 @@ function ExpertGeneratorInner() {
         </div>
       </div>
 
-      <p className="text-[11px] text-text-secondary/55 leading-relaxed max-w-3xl">
-        <strong className="text-text-primary/90">Custo indicativo:</strong> imagem
-        via Gemini Image (Nano Banana) · Veo ~US$0,10/s de vídeo. Imagem:{" "}
-        <code className="text-[10px] bg-dark-bg px-1 rounded">GEMINI_API_KEY</code>
-        {" · "}
-        vídeo: <code className="text-[10px] bg-dark-bg px-1 rounded">VERTEX_*</code>
-        . Use{" "}
-        <strong className="text-text-primary/90">uma cena</strong> de cada vez.
-      </p>
+ 
 
       <div className="flex items-center gap-0">
         {STEPS.map((s, idx) => {
@@ -736,7 +789,7 @@ function ExpertGeneratorInner() {
         <CardShell
           icon={ImageIcon}
           title="Foto do produto"
-          subtitle="JPEG, PNG ou WEBP — comprimimos no browser. Opcional: texto para notas (rótulo, cor, etc.)."
+          subtitle="JPEG, PNG ou WEBP — comprimimos no browser. Ative o interruptor se quiser descrever o produto por texto."
         >
           <label className="flex flex-col items-center justify-center min-h-[168px] border-2 border-dashed border-dark-border rounded-xl bg-dark-bg/50 cursor-pointer hover:border-shopee-orange/45 transition-colors">
             <input
@@ -766,16 +819,52 @@ function ExpertGeneratorInner() {
               </>
             )}
           </label>
-          <FieldLabel hint="Sem foto, descreva o produto (mín. 15 caracteres). Com foto, edite o texto se quiser.">
-            Descrição do produto
-          </FieldLabel>
-          <textarea
-            value={productDescription}
-            onChange={(e) => setProductDescription(e.target.value)}
-            placeholder="Ex.: Frasco cilíndrico preto mate, rótulo com marca visível…"
-            rows={5}
-            className={inputCls}
-          />
+
+          <div className="rounded-xl border border-dark-border bg-dark-bg/45 px-3.5 py-3 flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-text-primary">
+                Descrição do produto
+              </p>
+              <p className="text-[11px] text-text-secondary/80 mt-0.5 leading-snug">
+                Ative para escrever notas (rótulo, cor, materiais). Sem foto, o
+                texto precisa de pelo menos 15 caracteres.
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={productDescriptionOpen}
+              aria-label="Mostrar campo de descrição do produto"
+              onClick={() => setProductDescriptionOpen((v) => !v)}
+              className={`relative h-8 w-[3.25rem] shrink-0 rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-shopee-orange/50 ${
+                productDescriptionOpen
+                  ? "bg-shopee-orange"
+                  : "bg-dark-border/90"
+              }`}
+            >
+              <span
+                className={`absolute top-1 left-1 h-6 w-6 rounded-full bg-white shadow-sm transition-transform duration-200 ${
+                  productDescriptionOpen ? "translate-x-[1.35rem]" : "translate-x-0"
+                }`}
+              />
+            </button>
+          </div>
+
+          {productDescriptionOpen ? (
+            <>
+              <FieldLabel hint="Opcional com foto. Sem foto, use pelo menos 15 caracteres para gerar só com texto.">
+                Texto da descrição
+              </FieldLabel>
+              <textarea
+                value={productDescription}
+                onChange={(e) => setProductDescription(e.target.value)}
+                placeholder="Ex.: Frasco cilíndrico preto mate, rótulo com marca visível…"
+                rows={5}
+                className={inputCls}
+              />
+            </>
+          ) : null}
+
           <button
             type="button"
             disabled={!hasProductBasics}
@@ -848,6 +937,16 @@ function ExpertGeneratorInner() {
                       </button>
                     </div>
 
+                    <PersonalizedFieldSwitch
+                      checked={modelMode === "custom"}
+                      onCheckedChange={(on) => {
+                        setModelMode(on ? "custom" : "preset");
+                      }}
+                      label="Modelo personalizado"
+                      description="Ative para descrever a pessoa por texto. Desligado: só presets visuais."
+                      ariaLabel="Usar descrição de modelo personalizada"
+                    />
+
                     {modelMode === "preset" ? (
                       <div className="flex flex-wrap gap-3">
                         {presets.map((p) => (
@@ -883,37 +982,13 @@ function ExpertGeneratorInner() {
                             </span>
                           </button>
                         ))}
-                        <button
-                          type="button"
-                          onClick={() => setModelMode("custom")}
-                          className="flex flex-col items-center gap-1 p-2 rounded-xl border border-shopee-orange/50 bg-shopee-orange/5 min-w-[100px]"
-                        >
-                          <User className="w-8 h-8 text-shopee-orange mt-2" />
-                          <span className="text-[11px] font-semibold text-shopee-orange">
-                            Criar do zero
-                          </span>
-                        </button>
                       </div>
                     ) : (
-                      <div className="rounded-xl border border-shopee-orange/40 bg-dark-bg/80 p-4 space-y-2">
-                        <div className="flex items-center justify-between gap-2">
-                          <div>
-                            <p className="text-sm font-bold text-shopee-orange">
-                              Criar do zero
-                            </p>
-                            <p className="text-xs text-text-secondary/70">
-                              Mín. 8 caracteres — depois avançamos para Cena
-                              automaticamente.
-                            </p>
-                          </div>
-                          <button
-                            type="button"
-                            className="text-xs text-text-secondary underline"
-                            onClick={() => setModelMode("preset")}
-                          >
-                            Voltar aos presets
-                          </button>
-                        </div>
+                      <div className="space-y-2">
+                        <p className="text-xs text-text-secondary/70">
+                          Mín. 8 caracteres — com texto suficiente avançamos para
+                          Cena automaticamente.
+                        </p>
                         <textarea
                           value={customModel}
                           onChange={(e) => setCustomModel(e.target.value)}
@@ -928,67 +1003,113 @@ function ExpertGeneratorInner() {
 
                 {sceneWizardTab === "scene" && (
                   <>
-                    <FieldLabel hint='Um chip de cada vez (ex.: Casa OU Academia). Ao tocar, seguimos para Pose.'>
+                    <FieldLabel
+                      hint={
+                        sceneUseCustom
+                          ? "Descreva o ambiente em texto livre. Desligue o interruptor para voltar aos cenários prontos."
+                          : "Um chip de cada vez (ex.: Casa OU Academia). Ao tocar, seguimos para Pose."
+                      }
+                    >
                       Cena / ambiente
                     </FieldLabel>
-                    <div className="flex flex-wrap gap-2">
-                      {SCENE_CHIPS.map((c) => (
-                        <button
-                          key={c.id}
-                          type="button"
-                          className={
-                            sceneIds.length === 1 && sceneIds[0] === c.id
-                              ? chipOn
-                              : chipOff
-                          }
-                          onClick={() => {
-                            setSceneIds([c.id]);
-                            setSceneWizardTab("pose");
-                          }}
-                        >
-                          {c.label}
-                        </button>
-                      ))}
-                    </div>
-                    <textarea
-                      value={sceneCustom}
-                      onChange={(e) => setSceneCustom(e.target.value)}
-                      placeholder="Cenário personalizado (opcional)"
-                      rows={2}
-                      className={inputCls}
+                    <PersonalizedFieldSwitch
+                      checked={sceneUseCustom}
+                      onCheckedChange={(on) => {
+                        setSceneUseCustom(on);
+                        if (on) setSceneIds([]);
+                        else
+                          setSceneIds((prev) =>
+                            prev.length ? prev : ["casa"]
+                          );
+                      }}
+                      label="Cenário personalizado"
+                      description="Ligado: só texto. Desligado: chips prontos."
+                      ariaLabel="Usar cenário descrito por texto"
                     />
+                    {sceneUseCustom ? (
+                      <textarea
+                        value={sceneCustom}
+                        onChange={(e) => setSceneCustom(e.target.value)}
+                        placeholder="Descreva o ambiente (ex.: varanda com plantas, luz natural…)"
+                        rows={4}
+                        className={inputCls}
+                      />
+                    ) : (
+                      <div className="flex flex-wrap gap-2">
+                        {SCENE_CHIPS.map((c) => (
+                          <button
+                            key={c.id}
+                            type="button"
+                            className={
+                              sceneIds.length === 1 && sceneIds[0] === c.id
+                                ? chipOn
+                                : chipOff
+                            }
+                            onClick={() => {
+                              setSceneIds([c.id]);
+                              setSceneWizardTab("pose");
+                            }}
+                          >
+                            {c.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </>
                 )}
 
                 {sceneWizardTab === "pose" && (
                   <>
-                    <FieldLabel hint="Ao escolher ou alterar uma pose, passamos a Estilo — volte aqui pela aba se quiser várias poses.">
+                    <FieldLabel
+                      hint={
+                        poseUseCustom
+                          ? "Descreva a pose em texto. Desligue para voltar aos chips."
+                          : "Ao escolher ou alterar uma pose, passamos a Estilo — volte aqui pela aba se quiser várias poses."
+                      }
+                    >
                       Pose
                     </FieldLabel>
-                    <div className="flex flex-wrap gap-2">
-                      {POSE_CHIPS.map((c) => (
-                        <button
-                          key={c.id}
-                          type="button"
-                          className={
-                            poseIds.includes(c.id) ? chipOn : chipOff
-                          }
-                          onClick={() => {
-                            setPoseIds(toggleId(poseIds, c.id));
-                            setSceneWizardTab("style");
-                          }}
-                        >
-                          {c.label}
-                        </button>
-                      ))}
-                    </div>
-                    <textarea
-                      value={poseCustom}
-                      onChange={(e) => setPoseCustom(e.target.value)}
-                      placeholder="Pose personalizada (opcional)"
-                      rows={2}
-                      className={inputCls}
+                    <PersonalizedFieldSwitch
+                      checked={poseUseCustom}
+                      onCheckedChange={(on) => {
+                        setPoseUseCustom(on);
+                        if (on) setPoseIds([]);
+                        else
+                          setPoseIds((prev) =>
+                            prev.length ? prev : ["frente"]
+                          );
+                      }}
+                      label="Pose personalizada"
+                      description="Ligado: só texto. Desligado: poses prontas."
+                      ariaLabel="Usar pose descrita por texto"
                     />
+                    {poseUseCustom ? (
+                      <textarea
+                        value={poseCustom}
+                        onChange={(e) => setPoseCustom(e.target.value)}
+                        placeholder="Descreva a pose e o enquadramento…"
+                        rows={4}
+                        className={inputCls}
+                      />
+                    ) : (
+                      <div className="flex flex-wrap gap-2">
+                        {POSE_CHIPS.map((c) => (
+                          <button
+                            key={c.id}
+                            type="button"
+                            className={
+                              poseIds.includes(c.id) ? chipOn : chipOff
+                            }
+                            onClick={() => {
+                              setPoseIds(toggleId(poseIds, c.id));
+                              setSceneWizardTab("style");
+                            }}
+                          >
+                            {c.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </>
                 )}
 
@@ -1047,29 +1168,23 @@ function ExpertGeneratorInner() {
                   <p className="text-[10px] font-semibold text-shopee-orange uppercase">
                     Cena
                   </p>
-                  <p className="text-text-primary/90 mt-1">
-                    {SCENE_CHIPS.find((s) => s.id === sceneIds[0])?.label ??
-                      sceneIds[0] ??
-                      "—"}
+                  <p className="text-text-primary/90 mt-1 leading-snug">
+                    {sceneUseCustom
+                      ? sceneCustom.trim() || "—"
+                      : SCENE_CHIPS.find((s) => s.id === sceneIds[0])?.label ??
+                        sceneIds[0] ??
+                        "—"}
                   </p>
-                  {sceneCustom.trim() ? (
-                    <p className="text-[11px] text-text-secondary/80 mt-1 leading-snug">
-                      + {sceneCustom.trim()}
-                    </p>
-                  ) : null}
                 </div>
                 <div>
                   <p className="text-[10px] font-semibold text-shopee-orange uppercase">
                     Pose
                   </p>
                   <p className="text-text-primary/90 mt-1 leading-snug">
-                    {labelsFromChipIds(poseIds, POSE_CHIPS) || "—"}
+                    {poseUseCustom
+                      ? poseCustom.trim() || "—"
+                      : labelsFromChipIds(poseIds, POSE_CHIPS) || "—"}
                   </p>
-                  {poseCustom.trim() ? (
-                    <p className="text-[11px] text-text-secondary/80 mt-1">
-                      + {poseCustom.trim()}
-                    </p>
-                  ) : null}
                 </div>
                 <div>
                   <p className="text-[10px] font-semibold text-shopee-orange uppercase">
@@ -1185,8 +1300,8 @@ function ExpertGeneratorInner() {
               </button>
               {!canGenerateImage ? (
                 <p className="text-center text-xs text-text-secondary">
-                  Complete o passo 1 (foto ou 15+ caracteres) e o modelo no
-                  passo 2.
+                  Complete o passo 1 (foto ou descrição ativada com 15+
+                  caracteres) e o modelo no passo 2.
                 </p>
               ) : null}
             </div>
@@ -1300,23 +1415,46 @@ function ExpertGeneratorInner() {
                   <div className="flex-1 space-y-4 min-h-[160px]">
                     {videoWizardTab === "motion" && (
                       <>
-                        <FieldLabel hint="Pode marcar vários. Depois avance para Duração.">
+                        <FieldLabel
+                          hint={
+                            motionUseCustom
+                              ? "Descreva o movimento da câmara e da pessoa em texto livre."
+                              : "Pode marcar vários. Depois avance para Duração."
+                          }
+                        >
                           Movimento
                         </FieldLabel>
-                        <ChipGroup
-                          items={VIDEO_MOTION_CHIPS}
-                          selected={motionIds}
-                          onToggle={(id) =>
-                            setMotionIds(toggleId(motionIds, id))
-                          }
+                        <PersonalizedFieldSwitch
+                          checked={motionUseCustom}
+                          onCheckedChange={(on) => {
+                            setMotionUseCustom(on);
+                            if (on) setMotionIds([]);
+                            else
+                              setMotionIds((prev) =>
+                                prev.length ? prev : ["micro", "uso"]
+                              );
+                          }}
+                          label="Movimento personalizado"
+                          description="Ligado: só texto. Desligado: opções prontas."
+                          ariaLabel="Usar movimento descrito por texto"
                         />
-                        <textarea
-                          value={motionCustom}
-                          onChange={(e) => setMotionCustom(e.target.value)}
-                          placeholder="Movimento personalizado (opcional)"
-                          rows={2}
-                          className={inputCls}
-                        />
+                        {motionUseCustom ? (
+                          <textarea
+                            value={motionCustom}
+                            onChange={(e) => setMotionCustom(e.target.value)}
+                            placeholder="Descreva o movimento desejado no vídeo…"
+                            rows={4}
+                            className={inputCls}
+                          />
+                        ) : (
+                          <ChipGroup
+                            items={VIDEO_MOTION_CHIPS}
+                            selected={motionIds}
+                            onToggle={(id) =>
+                              setMotionIds(toggleId(motionIds, id))
+                            }
+                          />
+                        )}
                         <button
                           type="button"
                           className={`w-full ${btnPrimary} py-3`}
@@ -1550,7 +1688,8 @@ function ExpertGeneratorInner() {
                                 setScriptIaBrief((b) =>
                                   b.trim()
                                     ? b
-                                    : productDescription.trim()
+                                    : activeProductDescription ||
+                                        productDescription.trim()
                                 );
                                 setScriptIaModalOpen(true);
                               }}
