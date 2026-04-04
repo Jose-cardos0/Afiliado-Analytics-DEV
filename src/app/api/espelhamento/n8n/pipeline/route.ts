@@ -31,6 +31,15 @@ function getEspelhamentoDisparoWebhookUrl(): string {
   return (process.env.ESPELHAMENTO_N8N_WEBHOOK_URL ?? "").trim();
 }
 
+function disparoWebhookDebugMeta(url: string): { disparoWebhookHost: string; disparoWebhookPath: string } {
+  try {
+    const u = new URL(url);
+    return { disparoWebhookHost: u.host, disparoWebhookPath: u.pathname || "/" };
+  } catch {
+    return { disparoWebhookHost: "", disparoWebhookPath: "" };
+  }
+}
+
 function getServiceSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -288,6 +297,7 @@ export async function POST(req: NextRequest) {
           action: "error",
           reason: "webhook_failed",
           webhookStatus,
+          ...disparoWebhookDebugMeta(webhookUrl),
           disparoPayload,
           detail: t.slice(0, 200),
         },
@@ -310,6 +320,7 @@ export async function POST(req: NextRequest) {
       action: "sent",
       webhookDelivered: webhookOk,
       webhookStatus,
+      ...disparoWebhookDebugMeta(webhookUrl),
       disparoPayload,
       textoSaida,
     });
