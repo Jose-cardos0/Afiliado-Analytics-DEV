@@ -659,7 +659,9 @@ export default function CapturaClient() {
       return;
     }
 
-    const { error: upErr } = await supabase
+    const wantedTpl = normalizeCapturePageTemplate(pageTemplateRef.current);
+
+    const { data: updatedRow, error: upErr } = await supabase
       .from("capture_sites")
       .update({
         title: title.trim() || null,
@@ -669,12 +671,27 @@ export default function CapturaClient() {
         button_color: buttonColor,
         layout_variant: layoutVariant,
         meta_pixel_id: metaPixelId.trim() || null,
+        page_template: wantedTpl,
         updated_at: new Date().toISOString(),
       })
-      .eq("id", site.id);
+      .eq("id", site.id)
+      .select("page_template")
+      .maybeSingle();
 
     if (upErr) {
       setError(upErr.message);
+      setSaving(false);
+      return;
+    }
+
+    const savedTpl = normalizeCapturePageTemplate(
+      (updatedRow as { page_template?: unknown } | null)?.page_template,
+    );
+    if (savedTpl !== wantedTpl) {
+      setError(
+        `O modelo não foi gravado corretamente (escolhido: ${wantedTpl}, salvo: ${savedTpl}). ` +
+          "Confirme a migration da coluna page_template no Supabase e as permissões de UPDATE em capture_sites."
+      );
       setSaving(false);
       return;
     }
