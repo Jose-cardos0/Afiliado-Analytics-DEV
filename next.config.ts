@@ -84,16 +84,14 @@ const nextConfig: NextConfig = {
     };
   },
 
+  /**
+   * NÃO redirecionar /capture/:slug → /:slug aqui no host de captura.
+   * Esse 308 permanente podia correr depois do rewrite interno (/<slug> → /capture/<slug>)
+   * e quebrar a cadeia na Vercel, servindo HTML errado/cacheado (ex.: sempre layout classic).
+   * URL limpa sem /capture/ fica a cargo do middleware (307).
+   */
   async redirects() {
-    return [
-      // Opcional: se alguém acessar /capture/<slug> no subdomínio, manda para URL limpa
-      {
-        source: "/capture/:slug",
-        has: [{ type: "host", value: CAPTURE_HOST }],
-        destination: "/:slug",
-        permanent: true,
-      },
-    ];
+    return [];
   },
 };
 

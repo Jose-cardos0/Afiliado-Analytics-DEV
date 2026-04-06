@@ -45,10 +45,23 @@ export async function middleware(req: NextRequest) {
   // 0) Subdomínio do site de captura (público): /<slug> e /<slug>/go
   if (host === CAPTURE_HOST) {
     if (pathname === "/") return NextResponse.next();
-    if (isReservedPath(pathname)) return NextResponse.next();
 
     // ✅ IMPORTANTE: deixa passar arquivos públicos do /public (ex.: /whatsapp.svg)
     if (isPublicAssetPath(pathname)) return NextResponse.next();
+
+    // Antes de isReservedPath: /capture está em RESERVED mas /capture/<slug> deve ir para URL limpa
+    const directCapture = pathname.match(/^\/capture\/([^/]+)(\/go)?\/?$/);
+    if (directCapture) {
+      const slugPart = directCapture[1];
+      const isGo = Boolean(directCapture[2]);
+      const url = req.nextUrl.clone();
+      url.pathname = isGo ? `/${slugPart}/go` : `/${slugPart}`;
+      const res = NextResponse.redirect(url, 307);
+      res.headers.set("Cache-Control", "no-store, max-age=0");
+      return res;
+    }
+
+    if (isReservedPath(pathname)) return NextResponse.next();
 
     // /<slug>/go -> /capture/<slug>/go
     const goMatch = pathname.match(/^\/([^/]+)\/go\/?$/);
@@ -56,7 +69,9 @@ export async function middleware(req: NextRequest) {
       const slug = goMatch[1];
       const url = req.nextUrl.clone();
       url.pathname = `/capture/${slug}/go`;
-      return NextResponse.rewrite(url);
+      const rw = NextResponse.rewrite(url);
+      rw.headers.set("Cache-Control", "private, no-store, max-age=0");
+      return rw;
     }
 
     // /<slug> -> /capture/<slug>
@@ -65,7 +80,9 @@ export async function middleware(req: NextRequest) {
       const slug = slugMatch[1];
       const url = req.nextUrl.clone();
       url.pathname = `/capture/${slug}`;
-      return NextResponse.rewrite(url);
+      const rw = NextResponse.rewrite(url);
+      rw.headers.set("Cache-Control", "private, no-store, max-age=0");
+      return rw;
     }
 
     return NextResponse.next();

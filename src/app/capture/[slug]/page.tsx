@@ -1,3 +1,4 @@
+import { unstable_noStore as noStore } from "next/cache";
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import Image from "next/image";
@@ -169,6 +170,7 @@ export async function generateMetadata(props: {
 }
 
 export default async function CapturePage(props: { params: Promise<{ slug: string }> }) {
+  noStore();
   const { slug } = await props.params;
 
   const supabase = admin();
