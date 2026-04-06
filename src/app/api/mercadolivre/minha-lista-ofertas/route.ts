@@ -14,6 +14,7 @@ function mapItem(r: Record<string, unknown>) {
     pricePromo: r.price_promo != null ? Number(r.price_promo) : null,
     discountRate: r.discount_rate != null ? Number(r.discount_rate) : null,
     converterLink: r.converter_link ?? "",
+    productPageUrl: String(r.product_page_url ?? "").trim(),
     createdAt: r.created_at,
   };
 }
@@ -30,7 +31,9 @@ export async function GET(req: Request) {
     if (listaId) {
       const { data: rows, error } = await supabase
         .from("minha_lista_ofertas_ml")
-        .select("id, lista_id, image_url, product_name, price_original, price_promo, discount_rate, converter_link, created_at")
+        .select(
+          "id, lista_id, image_url, product_name, price_original, price_promo, discount_rate, converter_link, product_page_url, created_at",
+        )
         .eq("user_id", user.id)
         .eq("lista_id", listaId)
         .order("created_at", { ascending: false });
@@ -41,7 +44,9 @@ export async function GET(req: Request) {
 
     const { data: rows, error } = await supabase
       .from("minha_lista_ofertas_ml")
-      .select("id, lista_id, image_url, product_name, price_original, price_promo, discount_rate, converter_link, created_at")
+      .select(
+        "id, lista_id, image_url, product_name, price_original, price_promo, discount_rate, converter_link, product_page_url, created_at",
+      )
       .eq("user_id", user.id)
       .order("created_at", { ascending: false });
 
@@ -62,6 +67,7 @@ export async function POST(req: Request) {
     const body = await req.json().catch(() => ({}));
     const listaId = (body?.listaId ?? body?.lista_id ?? "").toString().trim();
     const converterLink = String(body?.converterLink ?? body?.converter_link ?? "").trim();
+    const productPageUrl = String(body?.productPageUrl ?? body?.product_page_url ?? "").trim();
 
     if (!listaId) return NextResponse.json({ error: "listaId é obrigatório" }, { status: 400 });
     if (!converterLink) return NextResponse.json({ error: "converterLink é obrigatório (seu link de afiliado já gerado)" }, { status: 400 });
@@ -87,11 +93,60 @@ export async function POST(req: Request) {
         price_promo: Number.isFinite(pricePromo as number) ? pricePromo : null,
         discount_rate: Number.isFinite(discountRate as number) ? discountRate : null,
         converter_link: converterLink,
+        product_page_url: productPageUrl,
       })
-      .select("id, lista_id, image_url, product_name, price_original, price_promo, discount_rate, converter_link, created_at")
+      .select(
+        "id, lista_id, image_url, product_name, price_original, price_promo, discount_rate, converter_link, product_page_url, created_at",
+      )
       .single();
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+    return NextResponse.json({ data: mapItem(row as Record<string, unknown>) });
+  } catch (e) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : "Erro" }, { status: 500 });
+  }
+}
+
+export async function PATCH(req: Request) {
+  try {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+
+    const body = await req.json().catch(() => ({}));
+    const id = String(body?.id ?? "").trim();
+    if (!id) return NextResponse.json({ error: "id é obrigatório" }, { status: 400 });
+
+    const priceOriginal = body?.priceOriginal != null ? Number(body.priceOriginal) : null;
+    let pricePromo = body?.pricePromo != null ? Number(body.pricePromo) : null;
+    const discountRate = body?.discountRate != null ? Number(body.discountRate) : null;
+
+    const poFin = Number.isFinite(priceOriginal as number) ? priceOriginal : null;
+    let ppFin = Number.isFinite(pricePromo as number) ? pricePromo : null;
+    const drFin = Number.isFinite(discountRate as number) ? discountRate : null;
+    const normalizedPromo = effectiveListaOfferPromoPrice(poFin, ppFin, drFin);
+    if (normalizedPromo != null) ppFin = normalizedPromo;
+
+    const { data: row, error } = await supabase
+      .from("minha_lista_ofertas_ml")
+      .update({
+        product_name: String(body?.productName ?? body?.product_name ?? "").trim(),
+        price_original: poFin,
+        price_promo: ppFin,
+        discount_rate: drFin,
+      })
+      .eq("id", id)
+      .eq("user_id", user.id)
+      .select(
+        "id, lista_id, image_url, product_name, price_original, price_promo, discount_rate, converter_link, product_page_url, created_at",
+      )
+      .maybeSingle();
+
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (!row) return NextResponse.json({ error: "Item não encontrado." }, { status: 404 });
 
     return NextResponse.json({ data: mapItem(row as Record<string, unknown>) });
   } catch (e) {

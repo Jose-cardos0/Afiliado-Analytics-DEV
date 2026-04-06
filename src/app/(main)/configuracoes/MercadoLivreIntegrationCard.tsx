@@ -10,6 +10,8 @@ interface MercadoLivreIntegrationCardProps {
 }
 
 const DOCS_URL = "https://developers.mercadolivre.com.br/pt_br/registre-o-seu-aplicativo";
+const CREATE_APP_DOCS_URL =
+  "https://developers.mercadolivre.com.br/pt_br/crie-uma-aplicacao-no-mercado-livre";
 
 export default function MercadoLivreIntegrationCard({
   initialClientId,
@@ -184,24 +186,28 @@ export default function MercadoLivreIntegrationCard({
           {error && <span className="text-sm text-red-400">{error}</span>}
         </div>
 
-        <p className="text-xs text-text-secondary/70 leading-relaxed">
-          Usamos essas credenciais para identificar seu app nas chamadas à API do Mercado Livre. Dados públicos de anúncios (título, fotos, preços, estoque, link permanente) são obtidos pela API de itens; quando o ML permitir token de aplicação, usaremos automaticamente.
-          Recursos privados exigem{" "}
-          <a href="https://developers.mercadolivre.com.br/pt_br/autenticacao-e-autorizacao" target="_blank" rel="noopener noreferrer" className="text-amber-400 hover:underline">
-            login OAuth
-          </a>{" "}
-          com sua conta (fluxo futuro no app).
-        </p>
+      
 
-        <a
-          href={DOCS_URL}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-1.5 text-xs font-medium text-amber-400 hover:underline"
-        >
-          Documentação — registrar aplicativo
-          <ExternalLink className="h-3 w-3" />
-        </a>
+        <div className="flex flex-col gap-2">
+          <a
+            href={DOCS_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 text-xs font-medium text-amber-400 hover:underline w-fit"
+          >
+            Documentação — registrar aplicativo
+            <ExternalLink className="h-3 w-3" />
+          </a>
+          <a
+            href={CREATE_APP_DOCS_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 text-xs font-medium text-amber-400 hover:underline w-fit"
+          >
+            Como conseguir Client ID e Secret (chave da API no Mercado Livre)
+            <ExternalLink className="h-3 w-3" />
+          </a>
+        </div>
       </div>
     </section>
   );

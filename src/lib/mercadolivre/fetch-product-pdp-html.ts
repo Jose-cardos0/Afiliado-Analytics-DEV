@@ -47,6 +47,25 @@ function isAllowedMlPdpHost(hostname: string): boolean {
   return false;
 }
 
+/**
+ * O fetch HTTP não envia fragmento #…; URLs do ML trazem `wid=MLB…` na hash para o anúncio certo.
+ * Copia o último wid da URL inteira para ?wid= para o servidor devolver o HTML/JSON-LD do listing.
+ */
+export function normalizeMercadoLivrePdpUrlForFetch(pageUrl: string): string {
+  try {
+    const u = new URL(pageUrl.trim());
+    if (!isAllowedMlPdpHost(u.hostname)) return pageUrl.trim();
+    const widAll = [...u.href.matchAll(/wid=(MLB\d+)/gi)];
+    if (widAll.length === 0) return pageUrl.trim();
+    const wid = widAll[widAll.length - 1][1];
+    u.searchParams.set("wid", wid);
+    u.hash = "";
+    return u.toString();
+  } catch {
+    return pageUrl.trim();
+  }
+}
+
 function parsePrice(v: unknown): number | null {
   if (typeof v === "number" && Number.isFinite(v)) return v;
   if (typeof v === "string") {
@@ -142,16 +161,17 @@ function tryParseLdJsonBlock(jsonStr: string, sourceUrl: string, resolvedId: str
  * Busca metadados na página HTML do PDP (JSON-LD).
  */
 export async function fetchMlProductMetaFromPdpHtml(productUrl: string): Promise<MlPdpProductMeta | null> {
+  const fetchUrl = normalizeMercadoLivrePdpUrlForFetch(productUrl);
   let u: URL;
   try {
-    u = new URL(productUrl.trim());
+    u = new URL(fetchUrl);
   } catch {
     return null;
   }
   if (u.protocol !== "https:" && u.protocol !== "http:") return null;
   if (!isAllowedMlPdpHost(u.hostname)) return null;
 
-  const resolvedId = extractMlbIdFromUrl(productUrl) ?? "MLB";
+  const resolvedId = extractMlbIdFromUrl(productUrl) ?? extractMlbIdFromUrl(fetchUrl) ?? "MLB";
 
   const res = await fetch(u.toString(), {
     headers: BROWSER_HEADERS,

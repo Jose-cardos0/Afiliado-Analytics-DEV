@@ -640,7 +640,7 @@ export default function GruposVendaPage() {
       {
         value: "",
         label: "Selecione uma lista ML",
-        description: "Crie em Lista de Ofertas — Mercado Livre",
+        description: "Crie em Lista de Ofertas - ML",
       },
       ...listasOfertasMl.map((l) => ({
         value: l.id,
@@ -1061,7 +1061,7 @@ export default function GruposVendaPage() {
                           onChange={setSelectedListaOfertasMlId}
                           options={listaOfertasMlPickerOptions}
                           modalTitle="Lista de ofertas Mercado Livre"
-                          modalDescription="Listas com links de afiliado já convertidos (página Lista de Ofertas — ML)."
+                          modalDescription="Listas com links de afiliado já convertidos (página Lista de Ofertas - ML)."
                           searchPlaceholder="Filtrar listas…"
                           emptyButtonLabel="Escolher lista ML"
                           emptyAsTag

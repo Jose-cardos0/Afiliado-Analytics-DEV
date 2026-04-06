@@ -350,3 +350,31 @@ select::-webkit-scrollbar-thumb:hover {
   width: 0;
   height: 0;
 }
+
+/* Mercado Livre — botão “Atualizar erros” (light sweep) */
+@keyframes ml-refresh-sweep {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(120%);
+  }
+}
+
+.ml-refresh-errors::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    105deg,
+    transparent 0%,
+    transparent 38%,
+    rgba(255, 255, 255, 0.28) 50%,
+    transparent 62%,
+    transparent 100%
+  );
+  width: 55%;
+  animation: ml-refresh-sweep 2.4s ease-in-out infinite;
+  pointer-events: none;
+  z-index: 0;
+}

@@ -16,12 +16,17 @@ export function extractMlbIdFromUrl(url: string): string | null {
     }
   }
 
-  // Página de catálogo: o anúncio exibido costuma vir em wid=MLB… no hash (prioridade sobre /p/MLB do produto).
-  const widM = href.match(/[?&#]wid=(MLB\d+)/i) ?? href.match(/\bwid=(MLB\d+)/i);
-  if (widM) return widM[1].toUpperCase();
+  // Hash/query: wid=MLB… identifica o anúncio exibido (recomendações / catálogo). Pode haver mais de um — usamos o último.
+  const widAll = [...href.matchAll(/wid=(MLB\d+)/gi)];
+  if (widAll.length > 0) return widAll[widAll.length - 1][1].toUpperCase();
 
   const pMatch = blob.match(/\/p\/MLB(\d+)/i);
   if (pMatch) return `MLB${pMatch[1]}`;
+
+  // Anúncio “user product” no path (sem hash, p.ex. após exportar planilha sem #).
+  const upMatch = blob.match(/\/up\/(MLBU\d+)/i);
+  if (upMatch) return upMatch[1].toUpperCase();
+
   const m = blob.match(/MLB-?(\d{6,})/i);
   if (m) return `MLB${m[1]}`;
   return null;

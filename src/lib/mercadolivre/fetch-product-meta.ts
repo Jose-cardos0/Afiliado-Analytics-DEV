@@ -147,11 +147,19 @@ async function enriquecerPrecosPeloHtmlSeVazio(
   };
 }
 
+function normalizeMlApiItemId(raw: string): string {
+  const t = raw.trim();
+  const u = t.toUpperCase();
+  if (/^MLBU\d+$/i.test(t)) return u;
+  if (/^MLB\d+$/i.test(t)) return u;
+  return `MLB${t.replace(/^MLB-?/i, "")}`;
+}
+
 export async function fetchMlProductMetaByMlbId(
   mlbId: string,
   accessToken?: string | null,
 ): Promise<MlProductMeta | null> {
-  const id = /^MLB\d+$/i.test(mlbId) ? mlbId.toUpperCase() : `MLB${mlbId.replace(/^MLB-?/i, "")}`;
+  const id = normalizeMlApiItemId(mlbId);
   const headers = buildMlFetchHeaders(accessToken);
 
   const resItem = await fetch(`https://api.mercadolibre.com/items/${encodeURIComponent(id)}`, {
@@ -176,6 +184,13 @@ export async function fetchMlProductMetaByMlbId(
   if (shortPdp) {
     const fromHtml = await fetchMlProductMetaFromPdpHtml(shortPdp);
     if (fromHtml) return fromHtml as MlProductMeta;
+  }
+
+  // MLBU não existe em /items público como MLB; a página /up/MLBU… costuma ter JSON-LD.
+  if (/^MLBU\d+$/i.test(id)) {
+    const upUrl = `https://www.mercadolivre.com.br/up/${encodeURIComponent(id)}`;
+    const fromUp = await fetchMlProductMetaFromPdpHtml(upUrl);
+    if (fromUp) return fromUp as MlProductMeta;
   }
 
   return null;

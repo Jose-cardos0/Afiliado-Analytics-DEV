@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo, useId } from "react";
+import { useState, useEffect, useCallback, useMemo, useId, useRef } from "react";
+import Papa from "papaparse";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { GeradorPaginationBar } from "@/app/components/shopee/GeradorPaginationBar";
@@ -20,6 +21,9 @@ import {
   Store,
   X,
   Plus,
+  Upload,
+  FileDown,
+  Pencil,
 } from "lucide-react";
 import ConfirmModal from "@/app/components/ui/ConfirmModal";
 import Toolist from "@/app/components/ui/Toolist";
@@ -37,6 +41,8 @@ type Item = {
   pricePromo: number | null;
   discountRate: number | null;
   converterLink: string;
+  /** URL do anúncio ML salva no servidor para “Atualizar” quando o meli.la falhar */
+  productPageUrl?: string;
   createdAt: string;
 };
 
@@ -50,13 +56,69 @@ function displayPrecoPorLista(item: Item): string {
   return por != null ? formatCurrency(por) : "—";
 }
 
+function moneyInputStringFromNumber(n: number | null | undefined): string {
+  if (n == null || !Number.isFinite(n)) return "";
+  return String(n).replace(".", ",");
+}
+
+function parseMoneyInput(s: string): number | null {
+  const t = s.trim().replace(/\s/g, "").replace(",", ".");
+  if (!t) return null;
+  const n = Number(t);
+  return Number.isFinite(n) ? n : null;
+}
+
+function parsePercentInput(s: string): number | null {
+  const t = s.trim().replace(/\s/g, "").replace(",", ".");
+  if (!t) return null;
+  const n = Number(t);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Item com meta incompleta (falha de scrape/API) — dispara modo “Atualizar erros”. */
+function mlItemLooksIncomplete(item: Item): boolean {
+  if (!item.converterLink?.trim()) return false;
+  const por =
+    effectiveListaOfferPromoPrice(item.priceOriginal, item.pricePromo, item.discountRate) ?? item.pricePromo;
+  const hasPrice = por != null && Number.isFinite(Number(por));
+  const hasImg = !!item.imageUrl?.trim();
+  const n = (item.productName || "").trim();
+  if (/^Produto \(linha \d+\)$/i.test(n)) return true;
+  if (/^MLBU\d{5,}$/i.test(n)) return true;
+  if (!hasImg && !hasPrice) return true;
+  return false;
+}
+
 const MAX_BULK_PAIRS = 60;
+
+/** Alinhado ao MAX_ROWS_PER_REQUEST da API refresh (fatias por POST). */
+const ML_LISTA_REFRESH_CHUNK = 120;
 
 const inputClass =
   "w-full px-3 py-2 rounded-lg border border-dark-border bg-dark-bg text-sm text-text-primary placeholder:text-text-secondary/60";
 const textareaClass =
   "w-full px-3 py-2 rounded-lg border border-dark-border bg-dark-bg text-xs sm:text-sm font-mono text-text-primary placeholder:text-text-secondary/50 min-h-[160px]";
 const labelClass = "block text-xs font-medium text-text-secondary mb-1.5";
+
+/** Formulários “Colar em lote” / “Um produto por vez” — alinhado ao SectionBox (Meta / padrão do app) */
+const mlSectionFormClass =
+  "rounded-xl border border-dark-border/60 bg-dark-bg/40 p-4 sm:p-5 space-y-4";
+const mlSectionHeadClass =
+  "flex flex-wrap items-center gap-2 border-l-2 border-shopee-orange/60 pl-2 -ml-px";
+const mlSectionTitleClass =
+  "text-xs font-semibold text-text-primary uppercase tracking-wide";
+const mlInputClass =
+  "w-full rounded-xl border border-dark-border bg-dark-bg py-2.5 px-3 text-sm text-text-primary placeholder:text-text-secondary/50 focus:outline-none focus:border-shopee-orange/60 focus:ring-1 focus:ring-shopee-orange/20";
+const mlTextareaClass =
+  "w-full rounded-xl border border-dark-border bg-dark-bg py-2.5 px-3 text-xs sm:text-sm font-mono text-text-primary placeholder:text-text-secondary/45 min-h-[160px] focus:outline-none focus:border-shopee-orange/60 focus:ring-1 focus:ring-shopee-orange/20 scrollbar-thin";
+const mlFieldLabelClass =
+  "block text-xs font-semibold text-text-secondary uppercase tracking-wide mb-1.5";
+const mlFieldLabelInlineClass =
+  "text-xs font-semibold text-text-secondary uppercase tracking-wide shrink-0";
+const mlBtnPrimaryClass =
+  "inline-flex items-center justify-center gap-2 min-h-10 px-4 rounded-xl bg-shopee-orange text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50 shadow-[0_2px_12px_rgba(238,77,45,0.22)] transition-opacity";
+const mlBtnSecondaryClass =
+  "inline-flex items-center justify-center gap-2 min-h-10 px-4 rounded-xl border border-dark-border/80 bg-dark-bg/30 text-text-primary text-sm font-medium hover:border-shopee-orange/35 hover:text-shopee-orange disabled:opacity-50 transition-colors";
 
 const mlModalOverlayClass =
   "fixed inset-0 z-[100] flex items-center justify-center p-3 md:p-6 bg-black/70 backdrop-blur-[2px]";
@@ -65,7 +127,7 @@ const mlModalShellClass =
 const mlModalHeaderClass = "shrink-0 px-4 pt-4 pb-3 border-b border-dark-border/60 bg-dark-bg/40";
 const mlModalSearchInputClass =
   "w-full rounded-xl border border-dark-border bg-dark-bg py-2.5 pl-10 pr-3 text-sm text-text-primary placeholder:text-text-secondary/40 focus:outline-none focus:border-shopee-orange/60 focus:ring-1 focus:ring-shopee-orange/20";
-const mlModalListScrollClass = "flex-1 min-h-0 overflow-y-auto p-3 scrollbar-shopee space-y-2";
+const mlModalListScrollClass = "flex-1 min-h-0 overflow-y-auto p-3 scrollbar-thin space-y-2";
 const mlModalFooterClass = "shrink-0 flex justify-end gap-2 px-4 py-3 border-t border-dark-border/60 bg-dark-bg/30";
 const mlPickerRowClass = (selected: boolean) =>
   `w-full text-left rounded-lg border px-3 py-2.5 text-sm font-medium transition-all ${
@@ -76,6 +138,173 @@ const mlPickerRowClass = (selected: boolean) =>
 
 function linesFromTextarea(s: string): string[] {
   return s.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+}
+
+function looksLikeBulkHeaderRow(cols: string[]): boolean {
+  const a = (cols[0] ?? "").trim();
+  if (/^https?:\/\//i.test(a)) return false;
+  const hint = cols.map((c) => String(c ?? "").toLowerCase()).join(" ");
+  return /\b(url|produto|an[uú]ncio|link|afiliado|meli|coluna)\b/i.test(hint);
+}
+
+function parseBulkCsvRows(rows: string[][]): { product: string; affiliate: string }[] {
+  let data = rows.filter((r) => r.some((c) => String(c ?? "").trim()));
+  if (data.length && looksLikeBulkHeaderRow(data[0].map((c) => String(c ?? "")))) {
+    data = data.slice(1);
+  }
+  const pairs: { product: string; affiliate: string }[] = [];
+  for (const r of data) {
+    const product = String(r[0] ?? "").trim();
+    const affiliate = String(r[1] ?? "").trim();
+    if (product && affiliate) pairs.push({ product, affiliate });
+  }
+  return pairs;
+}
+
+function isHttpUrlLine(line: string): boolean {
+  return /^https?:\/\//i.test(line.trim());
+}
+
+/** Linha é link curto de afiliado (não confundir com URL de produto ML). */
+function isMeliLaHttpLine(line: string): boolean {
+  const t = line.trim();
+  if (!/^https?:\/\//i.test(t)) return false;
+  try {
+    const h = new URL(t).hostname.toLowerCase();
+    return h === "meli.la" || h === "www.meli.la";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Um único bloco: todas as URLs de produto primeiro, depois todas as meli.la (sem precisar linha em branco).
+ */
+function splitBulkTxtUrlsIntoProductsAndAffiliates(lines: string[]): { products: string[]; affiliates: string[] } | null {
+  const trimmed = lines.map((l) => l.trim()).filter(Boolean);
+  const idx = trimmed.findIndex(isMeliLaHttpLine);
+  if (idx <= 0) return null;
+  const products = trimmed.slice(0, idx).filter((l) => !isMeliLaHttpLine(l));
+  const affiliates = trimmed.slice(idx).filter(isMeliLaHttpLine);
+  if (products.length === 0 || affiliates.length === 0) return null;
+  return { products, affiliates };
+}
+
+/** Formato alternativo em TXT (um único bloco): TAB ou `;` entre URL do produto e meli.la na mesma linha. */
+function parseTxtLineToPair(line: string): { product: string; affiliate: string } | null {
+  const t = line.trim();
+  if (!t || t.startsWith("#")) return null;
+  let product: string;
+  let affiliate: string;
+  if (t.includes("\t")) {
+    const idx = t.indexOf("\t");
+    product = t.slice(0, idx).trim();
+    affiliate = t.slice(idx + 1).trim();
+  } else if (t.includes(";")) {
+    const idx = t.indexOf(";");
+    product = t.slice(0, idx).trim();
+    affiliate = t.slice(idx + 1).trim();
+  } else {
+    return null;
+  }
+  if (!product || !affiliate) return null;
+  return { product, affiliate };
+}
+
+/**
+ * TXT: (1) dois blocos separados por linha em branco — só linhas que começam com http(s), comentários # ignorados;
+ * (2) um bloco só — produtos ML primeiro, depois meli.la na ordem (linha em branco entre blocos é opcional);
+ * (3) TAB ou `;` na mesma linha.
+ */
+function parseBulkNotepadContent(text: string): { product: string; affiliate: string }[] {
+  const rawLines = text.split(/\r?\n/);
+  const blocks: string[][] = [[]];
+  for (const line of rawLines) {
+    if (line.trim() === "") {
+      if (blocks[blocks.length - 1].length > 0) blocks.push([]);
+    } else {
+      blocks[blocks.length - 1].push(line);
+    }
+  }
+
+  const dataBlocks = blocks
+    .map((b) =>
+      b
+        .map((l) => l.trim())
+        .filter((l) => l.length > 0 && !l.startsWith("#") && isHttpUrlLine(l)),
+    )
+    .filter((b) => b.length > 0);
+
+  if (dataBlocks.length >= 2) {
+    const products = dataBlocks[0];
+    const affiliates = dataBlocks[1];
+    const n = Math.min(products.length, affiliates.length);
+    return Array.from({ length: n }, (_, i) => ({
+      product: products[i],
+      affiliate: affiliates[i],
+    }));
+  }
+
+  if (dataBlocks.length === 1) {
+    const split = splitBulkTxtUrlsIntoProductsAndAffiliates(dataBlocks[0]);
+    if (split) {
+      const n = Math.min(split.products.length, split.affiliates.length);
+      return Array.from({ length: n }, (_, i) => ({
+        product: split.products[i],
+        affiliate: split.affiliates[i],
+      }));
+    }
+  }
+
+  const pairs: { product: string; affiliate: string }[] = [];
+  for (const line of dataBlocks[0] ?? []) {
+    const p = parseTxtLineToPair(line);
+    if (p) pairs.push(p);
+  }
+  return pairs;
+}
+
+function pairsToBulkTextareas(pairs: { product: string; affiliate: string }[]): {
+  products: string;
+  affiliates: string;
+} {
+  return {
+    products: pairs.map((p) => p.product).join("\n"),
+    affiliates: pairs.map((p) => p.affiliate).join("\n"),
+  };
+}
+
+function triggerUtf8Download(filename: string, content: string) {
+  const blob = new Blob([`\uFEFF${content}`], { type: "text/plain;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function downloadMlBulkTemplateCsv() {
+  const body =
+    "URL do produto (coluna A);Link de afiliado meli.la (coluna B)\r\n" +
+    "https://www.mercadolivre.com.br/SEU_ANUNCIO;https://meli.la/SEU_LINK\r\n";
+  triggerUtf8Download("modelo-lote-ml.csv", body);
+}
+
+function downloadMlBulkTemplateTxt() {
+  const body =
+    "# Afiliado Analytics — modelo lote Mercado Livre\r\n" +
+    "# Linhas com # no início são ignoradas.\r\n" +
+    "# ACIMA: uma URL http(s) de produto por linha. ABAIXO: um https://meli.la/… por linha (mesma ordem).\r\n" +
+    "# Linha em branco entre as duas listas é opcional.\r\n" +
+    "\r\n" +
+    "#https://www.mercadolivre.com.br/exemplo-produto\r\n" +
+    "https://www.mercadolivre.com.br/SEU_PRODUTO_1\r\n" +
+    "https://www.mercadolivre.com.br/SEU_PRODUTO_2\r\n" +
+    "\r\n" +
+    "#https://meli.la/exemplo\r\n" +
+    "https://meli.la/SEU_LINK_1\r\n" +
+    "https://meli.la/SEU_LINK_2\r\n";
+  triggerUtf8Download("modelo-lote-ml.txt", body);
 }
 
 function isMeliLaShort(u: string): boolean {
@@ -120,7 +349,15 @@ export default function MinhaListaOfertasMlPage() {
     payload: { itemId?: string; listaId: string };
   } | null>(null);
   const [confirmLoading, setConfirmLoading] = useState(false);
-  const ITEMS_PER_PAGE = 5;
+  const [editItemModal, setEditItemModal] = useState<{ item: Item; listaId: string } | null>(null);
+  const [editItemForm, setEditItemForm] = useState({
+    productName: "",
+    priceOriginal: "",
+    pricePromo: "",
+    discountRate: "",
+  });
+  const [savingEditItem, setSavingEditItem] = useState(false);
+  const ITEMS_PER_PAGE = 4;
   const LISTAS_PER_PAGE = 4;
   const [listasPage, setListasPage] = useState(1);
 
@@ -132,9 +369,12 @@ export default function MinhaListaOfertasMlPage() {
   const [selecionarListaModalOpen, setSelecionarListaModalOpen] = useState(false);
   const [listaPickerQuery, setListaPickerQuery] = useState("");
   const [listaPickerDraftId, setListaPickerDraftId] = useState("");
+  /** Sanfona "Um produto por vez" — fechada por padrão */
+  const [umProdutoAccordionOpen, setUmProdutoAccordionOpen] = useState(false);
   const listasMenuTitleId = useId();
   const criarListaTitleId = useId();
   const ondeSalvarTitleId = useId();
+  const editItemTitleId = useId();
 
   const [addListaId, setAddListaId] = useState("");
   const [affiliateLink, setAffiliateLink] = useState("");
@@ -146,6 +386,68 @@ export default function MinhaListaOfertasMlPage() {
   const [bulkAffiliateUrls, setBulkAffiliateUrls] = useState("");
   const [bulkSaving, setBulkSaving] = useState(false);
   const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(null);
+  const bulkFileInputRef = useRef<HTMLInputElement>(null);
+  /** Só erros de importação — sucesso não mostra aviso (evita ruído visual). */
+  const [bulkImportWarn, setBulkImportWarn] = useState<string | null>(null);
+
+  const applyBulkPairs = useCallback((pairs: { product: string; affiliate: string }[]) => {
+    if (pairs.length === 0) {
+      setBulkImportWarn(
+        "Nenhum par válido: CSV com colunas A/B; ou TXT com URLs de produto e depois meli.la; ou TAB/; na mesma linha.",
+      );
+      return;
+    }
+    if (pairs.length > MAX_BULK_PAIRS) {
+      setBulkImportWarn(null);
+      setError(`Máximo de ${MAX_BULK_PAIRS} linhas por vez. O arquivo tem ${pairs.length}.`);
+      return;
+    }
+    setError(null);
+    setBulkImportWarn(null);
+    const { products, affiliates } = pairsToBulkTextareas(pairs);
+    setBulkProductUrls(products);
+    setBulkAffiliateUrls(affiliates);
+  }, []);
+
+  const onBulkFileSelected = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      e.target.value = "";
+      if (!file) return;
+      setBulkImportWarn(null);
+
+      const name = file.name.toLowerCase();
+      const isCsv = name.endsWith(".csv") || file.type === "text/csv";
+      const isTxt = name.endsWith(".txt") || name.endsWith(".tsv") || file.type === "text/plain";
+
+      if (isCsv) {
+        Papa.parse(file, {
+          complete: (results) => {
+            const rows = (results.data as unknown[][]).map((row) =>
+              (Array.isArray(row) ? row : []).map((c) => String(c ?? ""))
+            );
+            applyBulkPairs(parseBulkCsvRows(rows));
+          },
+          error: (err) => {
+            setBulkImportWarn(`Erro ao ler CSV: ${err.message}`);
+          },
+          skipEmptyLines: "greedy",
+        });
+      } else if (isTxt) {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const text = String(reader.result ?? "");
+          applyBulkPairs(parseBulkNotepadContent(text));
+        };
+        reader.onerror = () =>
+          setBulkImportWarn("Não foi possível ler o arquivo.");
+        reader.readAsText(file, "UTF-8");
+      } else {
+        setBulkImportWarn("Use um arquivo .csv (planilha) ou .txt / .tsv (bloco de notas).");
+      }
+    },
+    [applyBulkPairs]
+  );
   const [refreshTarget, setRefreshTarget] = useState<string | null>(null);
 
   const bulkProductLines = useMemo(() => linesFromTextarea(bulkProductUrls), [bulkProductUrls]);
@@ -177,15 +479,18 @@ export default function MinhaListaOfertasMlPage() {
     }
   }, []);
 
-  const loadItems = useCallback(async (listaId: string) => {
+  const loadItems = useCallback(async (listaId: string): Promise<Item[]> => {
     setLoadingListaId(listaId);
     try {
       const res = await fetch(`/api/mercadolivre/minha-lista-ofertas?lista_id=${listaId}`);
       const json = await res.json();
-      if (!res.ok) return;
-      setItemsByLista((prev) => ({ ...prev, [listaId]: Array.isArray(json?.data) ? json.data : [] }));
+      const arr: Item[] = Array.isArray(json?.data) ? json.data : [];
+      if (!res.ok) return [];
+      setItemsByLista((prev) => ({ ...prev, [listaId]: arr }));
+      return arr;
     } catch {
       setItemsByLista((prev) => ({ ...prev, [listaId]: [] }));
+      return [];
     } finally {
       setLoadingListaId(null);
     }
@@ -223,6 +528,78 @@ export default function MinhaListaOfertasMlPage() {
       document.body.style.overflow = prevOverflow;
     };
   }, [listasMenuModalOpen, selecionarListaModalOpen, criarListaModalOpen, criandoLista, bulkSaving]);
+
+  useEffect(() => {
+    if (!bulkSaving) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [bulkSaving]);
+
+  useEffect(() => {
+    if (!editItemModal) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || savingEditItem) return;
+      setEditItemModal(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [editItemModal, savingEditItem]);
+
+  const openEditItemModal = useCallback((item: Item, listaId: string) => {
+    setEditItemModal({ item, listaId });
+    setEditItemForm({
+      productName: item.productName ?? "",
+      priceOriginal: moneyInputStringFromNumber(item.priceOriginal),
+      pricePromo: moneyInputStringFromNumber(
+        effectiveListaOfferPromoPrice(item.priceOriginal, item.pricePromo, item.discountRate) ??
+          item.pricePromo,
+      ),
+      discountRate:
+        item.discountRate != null && Number.isFinite(item.discountRate) ? String(item.discountRate) : "",
+    });
+  }, []);
+
+  const submitEditItemModal = useCallback(async () => {
+    if (!editItemModal) return;
+    setSavingEditItem(true);
+    setError(null);
+    try {
+      const po = parseMoneyInput(editItemForm.priceOriginal);
+      let pp = parseMoneyInput(editItemForm.pricePromo);
+      const dr = parsePercentInput(editItemForm.discountRate);
+      const normalized = effectiveListaOfferPromoPrice(po, pp, dr);
+      if (normalized != null) pp = normalized;
+
+      const res = await fetch("/api/mercadolivre/minha-lista-ofertas", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: editItemModal.item.id,
+          productName: editItemForm.productName.trim(),
+          priceOriginal: po,
+          pricePromo: pp,
+          discountRate: dr,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error ?? "Erro ao salvar");
+      await loadItems(editItemModal.listaId);
+      setEditItemModal(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erro ao salvar alterações");
+    } finally {
+      setSavingEditItem(false);
+    }
+  }, [editItemModal, editItemForm, loadItems]);
 
   const selectedLista = useMemo(() => listas.find((l) => l.id === addListaId), [listas, addListaId]);
 
@@ -266,6 +643,13 @@ export default function MinhaListaOfertasMlPage() {
       if (!nome && a && (looksLikeMercadoLivreProductUrl(a) || !!extractMlbIdFromUrl(a))) {
         await callResolve({ productUrl: a });
       }
+      /* Igual a “Um produto por vez”: meli.la resolve no servidor com affiliateUrl (expand do redirect). */
+      if ((!nome.trim() || !img.trim()) && isMeliLaShort(a)) {
+        await callResolve({ affiliateUrl: a });
+      }
+      if ((!nome.trim() || !img.trim()) && isMeliLaShort(p)) {
+        await callResolve({ affiliateUrl: p });
+      }
     } catch {
       /* mantém fallback de nome abaixo */
     }
@@ -287,6 +671,7 @@ export default function MinhaListaOfertasMlPage() {
           body: JSON.stringify({
             listaId: listaIdTarget,
             converterLink: aff,
+            productPageUrl: pUrl.trim(),
             productName: nome,
             imageUrl: img,
             priceOriginal: po != null && Number.isFinite(po) ? po : null,
@@ -462,18 +847,37 @@ export default function MinhaListaOfertasMlPage() {
     setRefreshTarget(`lista:${listaId}`);
     setError(null);
     try {
-      const res = await fetch("/api/mercadolivre/minha-lista-ofertas/refresh", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ listaId }),
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json?.error ?? "Erro ao atualizar");
+      let items = itemsByLista[listaId] ?? [];
+      if (items.length === 0) {
+        items = await loadItems(listaId);
+      }
+      if (items.length === 0) return;
+
+      let uTot = 0;
+      let fTot = 0;
+      const allErrors: string[] = [];
+
+      const runChunk = async (body: { listaId: string; itemIds: string[] }) => {
+        const res = await fetch("/api/mercadolivre/minha-lista-ofertas/refresh", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json?.error ?? "Erro ao atualizar");
+        uTot += json?.data?.updated ?? 0;
+        fTot += json?.data?.failed ?? 0;
+        if (Array.isArray(json?.data?.errors)) allErrors.push(...json.data.errors);
+      };
+
+      for (let i = 0; i < items.length; i += ML_LISTA_REFRESH_CHUNK) {
+        const itemIds = items.slice(i, i + ML_LISTA_REFRESH_CHUNK).map((x) => x.id);
+        await runChunk({ listaId, itemIds });
+      }
+
       await loadItems(listaId);
-      const u = json?.data?.updated ?? 0;
-      const f = json?.data?.failed ?? 0;
-      if (f > 0 && Array.isArray(json?.data?.errors) && json.data.errors.length) {
-        setError(`Atualizados: ${u}. Com aviso: ${f}. ${json.data.errors[0]}`);
+      if (fTot > 0 && allErrors.length > 0) {
+        setError(`Atualizados: ${uTot}. Com aviso: ${fTot}. ${allErrors[0]}`);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erro ao atualizar lista");
@@ -594,6 +998,7 @@ export default function MinhaListaOfertasMlPage() {
         body: JSON.stringify({
           listaId: addListaId,
           converterLink: linkAfiliado,
+          productPageUrl: urlProduto.trim(),
           productName: nome,
           imageUrl: img,
           priceOriginal: po != null && Number.isFinite(po) ? po : null,
@@ -725,11 +1130,11 @@ export default function MinhaListaOfertasMlPage() {
 
   return (
     <div className="min-h-screen bg-dark-bg text-text-primary p-4 md:p-6">
-      <div className="max-w-3xl mx-auto">
+      <div className="mx-auto w-full max-w-7xl lg:max-w-[90vw]">
         <div className="flex items-center gap-3 mb-2">
           <Link
             href="/dashboard/grupos-venda"
-            className="p-2 rounded-lg border border-dark-border bg-dark-card text-text-secondary hover:text-amber-400 hover:border-amber-500/40 transition-colors"
+            className="p-2 rounded-lg border border-dark-border bg-dark-card text-text-secondary hover:text-shopee-orange hover:border-shopee-orange/40 transition-colors"
             title="Grupos de Venda"
           >
             <ArrowLeft className="h-5 w-5" />
@@ -742,15 +1147,21 @@ export default function MinhaListaOfertasMlPage() {
         </div>
 
         <div className="flex items-start gap-2 mb-6 max-w-2xl">
-          <p className="text-sm text-text-secondary leading-relaxed flex-1">
-            URL do anúncio + <span className="text-text-primary">meli.la</span>. Importe em lote ou cadastre um item.{" "}
-            <span className="text-text-primary/90">Atualizar preços</span> nas listas puxa dados de novo pelo link salvo.
-          </p>
-          <Toolist
-            variant="below"
-            wide
-            text="Use o gerador de afiliados do ML para obter meli.la. A mesma lista vale para o lote e para um produto por vez. Em listas expandidas, Atualizar preços reconsulta nome, imagem e valores."
-          />
+          <div className="text-xs text-text-secondary leading-relaxed flex-1 space-y-3">
+            <p>
+              Para gerar links massivos no seu ML Afiliado, acesse esse link:
+            </p>
+            <a
+              href="https://www.mercadolivre.com.br/afiliados/linkbuilder#hub"
+              target="_blank"
+              rel="noopener noreferrer"
+              className={`${mlBtnSecondaryClass} text-xs inline-flex no-underline w-full sm:w-auto justify-center`}
+            >
+              <ExternalLink className="h-4 w-4 shrink-0" aria-hidden />
+              Construtor de links 
+            </a>
+          </div>
+    
         </div>
 
         {error && (
@@ -759,9 +1170,11 @@ export default function MinhaListaOfertasMlPage() {
           </div>
         )}
 
-        <section className="rounded-xl border border-dark-border bg-dark-card p-4 mb-5">
-          <div className="flex flex-wrap items-center gap-3">
-            <h2 className="text-sm font-semibold text-text-primary">Lista destino</h2>
+        <div className="lg:grid lg:grid-cols-2 gap-6 xl:gap-8 items-start">
+          <div className="min-w-0 flex flex-col gap-5">
+        <section className="rounded-xl border border-dark-border bg-dark-card p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex  items-center gap-3">
+           
             <button
               type="button"
               onClick={() => setListasMenuModalOpen(true)}
@@ -775,193 +1188,269 @@ export default function MinhaListaOfertasMlPage() {
               text="Abra Listas para criar uma lista nova ou escolher onde os produtos serão salvos (lote e cadastro avançado)."
             />
           </div>
-          <div className="mt-3 flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 sm:justify-end">
             {selectedLista ? (
               <button
                 type="button"
                 onClick={openOndeSalvarFromMenu}
                 title="Clique para trocar de lista"
-                className="inline-flex items-center gap-2 pl-3 pr-2 py-1.5 rounded-lg text-xs sm:text-sm font-medium border border-shopee-orange/50 bg-shopee-orange/8 text-text-primary hover:border-shopee-orange/65 max-w-full"
+                className="inline-flex items-center gap-2 pl-3 pr-2 py-1.5 rounded-lg text-xs font-medium border border-shopee-orange/50 bg-shopee-orange/8 text-text-primary hover:border-shopee-orange/65 max-w-full"
               >
                 <span className="truncate">{selectedLista.nome}</span>
                 <span className="text-text-secondary/80 shrink-0 tabular-nums">({selectedLista.totalItens ?? 0})</span>
                 <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-80" />
               </button>
             ) : (
-              <p className="text-xs text-text-secondary">Nenhuma lista selecionada — Listas → Onde salvar.</p>
+              <p className="text-xs text-text-secondary">Listas → Onde salvar.</p>
             )}
           </div>
         </section>
 
-        <section className="rounded-xl border border-dark-border bg-dark-card p-5 mb-5 space-y-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <Columns2 className="h-4 w-4 text-amber-400 shrink-0" />
-            <h2 className="text-sm font-semibold text-text-primary">Colar em lote (produto + meli.la)</h2>
+        <section className={mlSectionFormClass}>
+          <div className={mlSectionHeadClass}>
+            <Columns2 className="h-3.5 w-3.5 text-shopee-orange/80 shrink-0" />
+            <h2 className={mlSectionTitleClass}>Colar em lote </h2>
             <Toolist
               variant="below"
               wide
               text={`Linha 1 do bloco de produtos alinha com linha 1 dos links meli.la (como no gerador do ML). Máximo ${MAX_BULK_PAIRS} pares por vez.`}
             />
           </div>
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-4 sm:grid-cols-2 pt-1">
             <div className="min-w-0">
-              <label className={labelClass}>URLs dos produtos</label>
+              <label className={mlFieldLabelClass}>URLs dos produtos</label>
               <textarea
                 value={bulkProductUrls}
-                onChange={(e) => setBulkProductUrls(e.target.value)}
-                rows={9}
+                onChange={(e) => {
+                  setBulkImportWarn(null);
+                  setBulkProductUrls(e.target.value);
+                }}
                 spellCheck={false}
                 placeholder={
                   "https://produto.mercadolivre.com.br/MLB-…\nhttps://www.mercadolivre.com.br/…/p/MLB…"
                 }
-                className={textareaClass}
+                className={mlTextareaClass}
               />
             </div>
             <div className="min-w-0">
-              <label className={labelClass}>Links de afiliado (meli.la)</label>
+              <label className={mlFieldLabelClass}>Links de afiliado </label>
               <textarea
                 value={bulkAffiliateUrls}
-                onChange={(e) => setBulkAffiliateUrls(e.target.value)}
-                rows={9}
+                onChange={(e) => {
+                  setBulkImportWarn(null);
+                  setBulkAffiliateUrls(e.target.value);
+                }}
                 spellCheck={false}
                 placeholder={"https://meli.la/…\nhttps://meli.la/…"}
-                className={textareaClass}
+                className={mlTextareaClass}
               />
             </div>
           </div>
+
+          <div className="rounded-xl border border-dark-border/50 bg-dark-bg/30 px-3 py-3 space-y-2">
+            <p className="text-xs font-semibold text-text-secondary uppercase tracking-wide">
+              Planilha ou bloco de notas
+            </p>
+        
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                ref={bulkFileInputRef}
+                type="file"
+                accept=".csv,.txt,.tsv,text/csv,text/plain"
+                className="sr-only"
+                onChange={onBulkFileSelected}
+              />
+              <button
+                type="button"
+                onClick={() => bulkFileInputRef.current?.click()}
+                className={`${mlBtnSecondaryClass} text-xs py-2 min-h-9`}
+              >
+                <Upload className="h-3.5 w-3.5 shrink-0 text-shopee-orange" aria-hidden />
+                Dados
+              </button>
+              <button
+                type="button"
+                onClick={downloadMlBulkTemplateCsv}
+                className="inline-flex items-center gap-1.5 text-xs font-medium text-shopee-orange hover:text-shopee-orange/85 hover:underline py-2"
+              >
+                <FileDown className="h-3.5 w-3.5 shrink-0 text-shopee-orange" aria-hidden />
+                (CSV)
+              </button>
+              <button
+                type="button"
+                onClick={downloadMlBulkTemplateTxt}
+                className="inline-flex items-center gap-1.5 text-xs font-medium text-shopee-orange hover:text-shopee-orange/85 hover:underline py-2"
+              >
+                <FileDown className="h-3.5 w-3.5 shrink-0 text-shopee-orange" aria-hidden />
+                (TXT)
+              </button>
+            </div>
+            {bulkImportWarn ? (
+              <p className="text-xs text-shopee-orange/95 leading-relaxed">{bulkImportWarn}</p>
+            ) : null}
+          </div>
+
           <div className="flex flex-wrap items-center gap-2 text-xs">
             <span
               className={
-                bulkPairMatch
-                  ? "text-emerald-400/90 font-medium"
-                  : bulkProductLines.length > 0 || bulkAffiliateLines.length > 0
-                    ? "text-amber-400/90"
-                    : "text-text-secondary"
+                bulkProductLines.length > 0 || bulkAffiliateLines.length > 0
+                  ? bulkPairMatch
+                    ? "text-text-secondary"
+                    : "text-shopee-orange/90"
+                  : "text-text-secondary"
               }
             >
               {bulkProductLines.length} URL(s) de produto · {bulkAffiliateLines.length} link(s) de afiliado
-              {bulkPairMatch
-                ? " — linhas conferem"
-                : bulkProductLines.length !== bulkAffiliateLines.length &&
-                    (bulkProductLines.length > 0 || bulkAffiliateLines.length > 0)
-                  ? " — mesmo número de linhas nos dois blocos"
-                  : ""}
+              {!bulkPairMatch &&
+              (bulkProductLines.length > 0 || bulkAffiliateLines.length > 0)
+                ? " — ajuste para o mesmo número de linhas nos dois blocos"
+                : ""}
             </span>
           </div>
-          {bulkProgress ? (
-            <p className="text-xs text-amber-400 flex items-center gap-2">
-              <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" />
-              Salvando {bulkProgress.done} / {bulkProgress.total}…
-            </p>
-          ) : null}
-          <div className="flex flex-col sm:flex-row flex-wrap gap-2 pt-2 border-t border-dark-border">
+          <div className="flex flex-col sm:flex-row flex-wrap gap-2 pt-3 border-t border-dark-border/60">
             <button
               type="button"
               onClick={runBulkSaveSelected}
               disabled={bulkSaving || !bulkPairMatch || !addListaId}
               title={!addListaId ? "Escolha uma lista em Listas → Onde salvar." : undefined}
-              className="flex items-center justify-center gap-2 min-h-10 px-4 rounded-lg bg-amber-500 text-dark-bg text-sm font-semibold hover:opacity-90 disabled:opacity-50"
+              className={mlBtnPrimaryClass}
             >
-              {bulkSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-              Adicionar na lista selecionada
+              Adicionar
             </button>
             <button
               type="button"
               onClick={openBulkNewListModal}
               disabled={bulkSaving || !bulkPairMatch}
               title="Abre um popup para nomear a lista; se deixar em branco, usamos um nome com a data."
-              className="flex items-center justify-center gap-2 min-h-10 px-4 rounded-lg border border-dark-border text-text-primary text-sm font-medium hover:border-amber-500/45 hover:text-amber-400 disabled:opacity-50"
+              className={mlBtnSecondaryClass}
             >
-              Criar lista nova e adicionar tudo
+              Criar lista
             </button>
           </div>
         </section>
 
-        <section className="rounded-xl border border-dark-border bg-dark-card p-5 mb-8 space-y-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <Link2 className="h-4 w-4 text-amber-400 shrink-0" />
-            <h2 className="text-sm font-semibold text-text-primary">Um produto por vez</h2>
+        <section className={mlSectionFormClass}>
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <button
+              type="button"
+              id="ml-um-produto-accordion-trigger"
+              onClick={() => setUmProdutoAccordionOpen((v) => !v)}
+              className={`${mlSectionHeadClass} flex flex-wrap items-center gap-2 flex-1 min-w-0 rounded-lg py-1.5 -my-1 pr-2 text-left hover:bg-dark-bg/60 transition-colors`}
+              aria-expanded={umProdutoAccordionOpen}
+              aria-controls="ml-um-produto-accordion-panel"
+            >
+              {umProdutoAccordionOpen ? (
+                <ChevronDown className="h-4 w-4 text-text-secondary shrink-0" aria-hidden />
+              ) : (
+                <ChevronRight className="h-4 w-4 text-text-secondary shrink-0" aria-hidden />
+              )}
+              <Link2 className="h-3.5 w-3.5 text-shopee-orange/80 shrink-0" aria-hidden />
+              <span className={mlSectionTitleClass}>Um produto por vez</span>
+            </button>
             <Toolist
               variant="below"
               wide
               text="Ao salvar, o app busca na API nome, imagem e preços (URL do anúncio ou meli.la) e grava na lista. Desconto % é opcional e recalcula o preço promo. Para vários itens, use o lote acima."
             />
           </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="sm:col-span-2">
-              <div className="flex items-center gap-1.5 mb-1.5">
-                <label className="text-xs font-medium text-text-secondary">URL do anúncio (recomendado)</label>
-                <Toolist
-                  variant="floating"
-                  wide
-                  text="Se não colar aqui, use um link meli.la no campo abaixo — a API tenta resolver só pelo meli.la."
+          {umProdutoAccordionOpen ? (
+            <div
+              id="ml-um-produto-accordion-panel"
+              role="region"
+              aria-labelledby="ml-um-produto-accordion-trigger"
+              className="grid gap-3 sm:grid-cols-2 pt-3 mt-2 border-t border-dark-border/60"
+            >
+              <div className="sm:col-span-2">
+                <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
+                  <label className={mlFieldLabelInlineClass} htmlFor="ml-product-url">
+                    URL do anúncio (recomendado)
+                  </label>
+                  <Toolist
+                    variant="floating"
+                    wide
+                    text="Se não colar aqui, use um link meli.la no campo abaixo — a API tenta resolver só pelo meli.la."
+                  />
+                </div>
+                <input
+                  id="ml-product-url"
+                  value={productUrl}
+                  onChange={(e) => setProductUrl(e.target.value)}
+                  placeholder="Página do produto com MLB na URL"
+                  className={mlInputClass}
                 />
               </div>
-              <input
-                value={productUrl}
-                onChange={(e) => setProductUrl(e.target.value)}
-                placeholder="Página do produto com MLB na URL"
-                className={inputClass}
-              />
-            </div>
-            <div className="sm:col-span-2">
-              <label className={labelClass}>Link de afiliado (obrigatório)</label>
-              <input
-                value={affiliateLink}
-                onChange={(e) => setAffiliateLink(e.target.value)}
-                placeholder="Link do gerador de afiliados (meli.la)"
-                className={inputClass}
-              />
-            </div>
-            <div className="sm:col-span-2 sm:max-w-xs">
-              <div className="flex items-center gap-1.5 mb-1.5">
-                <label className="text-xs font-medium text-text-secondary">Desconto % (opcional)</label>
-                <Toolist
-                  variant="floating"
-                  text="Se preencher, substitui o desconto vindo da API e recalcula o preço promo a partir do preço original."
+              <div className="sm:col-span-2">
+                <label className={mlFieldLabelClass} htmlFor="ml-affiliate-link">
+                  Link de afiliado (obrigatório)
+                </label>
+                <input
+                  id="ml-affiliate-link"
+                  value={affiliateLink}
+                  onChange={(e) => setAffiliateLink(e.target.value)}
+                  placeholder="Link do gerador de afiliados (meli.la)"
+                  className={mlInputClass}
                 />
               </div>
-              <input
-                value={discountRate}
-                onChange={(e) => setDiscountRate(e.target.value)}
-                placeholder="Ex.: 10"
-                className={inputClass}
-              />
+              <div className="sm:col-span-2 sm:max-w-xs">
+                <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
+                  <label className={mlFieldLabelInlineClass} htmlFor="ml-discount">
+                    Desconto % (opcional)
+                  </label>
+                  <Toolist
+                    variant="floating"
+                    text="Se preencher, substitui o desconto vindo da API e recalcula o preço promo a partir do preço original."
+                  />
+                </div>
+                <input
+                  id="ml-discount"
+                  value={discountRate}
+                  onChange={(e) => setDiscountRate(e.target.value)}
+                  placeholder="Ex.: 10"
+                  className={mlInputClass}
+                />
+              </div>
+              <div className="sm:col-span-2 pt-2 border-t border-dark-border/60">
+                <button
+                  type="button"
+                  onClick={() => void handleAdicionarItem()}
+                  disabled={salvandoItem || !addListaId}
+                  title={!addListaId ? "Escolha uma lista em Listas → Onde salvar." : undefined}
+                  className={`${mlBtnPrimaryClass} h-11 px-6`}
+                >
+                  {salvandoItem ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                  Salvar na lista
+                </button>
+              </div>
             </div>
-            <div className="sm:col-span-2 pt-1">
-              <button
-                type="button"
-                onClick={() => void handleAdicionarItem()}
-                disabled={salvandoItem || !addListaId}
-                title={!addListaId ? "Escolha uma lista em Listas → Onde salvar." : undefined}
-                className="inline-flex items-center justify-center gap-2 h-11 px-6 rounded-lg bg-amber-500 text-dark-bg font-semibold text-sm hover:opacity-90 disabled:opacity-50"
-              >
-                {salvandoItem ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                Salvar na lista
-              </button>
-            </div>
-          </div>
+          ) : null}
         </section>
+          </div>
 
+          <aside className="min-w-0 scrollbar-thin lg:sticky lg:top-6 lg:max-h-[calc(100dvh-5rem)] lg:overflow-y-auto lg:overflow-x-hidden lg:pb-2 lg:pr-1 [scrollbar-gutter:stable]">
         {loading ? (
-          <div className="flex items-center justify-center py-12">
-            <Loader2 className="h-8 w-8 animate-spin text-amber-400" />
+          <div className="flex items-center justify-center py-12 rounded-xl border border-dark-border/60 bg-dark-bg/40">
+            <Loader2 className="h-8 w-8 animate-spin text-shopee-orange" />
           </div>
         ) : listas.length === 0 ? (
-          <div className="rounded-xl border border-dark-border bg-dark-card p-8 text-center text-text-secondary">
-            <ListChecks className="h-12 w-12 mx-auto mb-3 opacity-50" />
-            <p className="font-medium text-text-primary">Nenhuma lista ainda</p>
-            <p className="text-sm mt-1 max-w-md mx-auto">
+          <div className="rounded-xl border border-dark-border/60 bg-dark-bg/40 p-6 sm:p-8 text-center text-text-secondary">
+            <ListChecks className="h-10 w-10 sm:h-12 sm:w-12 mx-auto mb-3 text-shopee-orange" />
+            <p className="font-medium text-text-primary text-sm">Nenhuma lista ainda</p>
+            <p className="text-xs sm:text-sm mt-2 max-w-xs mx-auto leading-relaxed">
               Toque em <span className="text-text-primary">Listas</span> → Criar lista, ou use &quot;Criar lista nova e adicionar tudo&quot; no lote. Depois escolha Onde salvar e adicione produtos.
             </p>
           </div>
         ) : (
-          <div className="space-y-4">
-            <h2 className="text-sm font-semibold text-text-primary px-0.5">Suas listas</h2>
+          <div className="space-y-3">
+            <h2 className="text-xs font-semibold text-text-primary uppercase tracking-wide border-l-2 border-shopee-orange/60 pl-2 -ml-px">
+              Suas listas
+            </h2>
             <ul className="space-y-3">
               {pagedListas.map((lista) => {
                 const isExpanded = expandedListas.has(lista.id);
                 const { slice, totalPages, page, total } = getFilteredAndPaginatedItems(lista.id);
+                const listaItemsFull = itemsByLista[lista.id] ?? [];
+                const mlIncompleteCount = listaItemsFull.filter(mlItemLooksIncomplete).length;
+                const mlHasIncomplete = mlIncompleteCount > 0;
                 return (
                   <li key={lista.id} className="rounded-xl border border-dark-border bg-dark-card overflow-hidden">
                     <button
@@ -975,16 +1464,36 @@ export default function MinhaListaOfertasMlPage() {
                         ) : (
                           <ChevronRight className="h-5 w-5 text-text-secondary shrink-0" />
                         )}
-                        <Store className="h-5 w-5 text-amber-400 shrink-0" />
+                        <Store className="h-5 w-5 text-shopee-orange shrink-0" />
                         <span className="text-lg font-semibold text-text-primary truncate">{lista.nome}</span>
                         <span className="text-sm text-text-secondary shrink-0">({lista.totalItens ?? 0} itens)</span>
                       </span>
-                      <span className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
+                      <span className="flex items-center gap-2 shrink-0 flex-wrap justify-end" onClick={(e) => e.stopPropagation()}>
+                        {mlHasIncomplete && !isExpanded ? (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              void handleRefreshLista(lista.id);
+                            }}
+                            disabled={refreshTarget !== null}
+                            title={`${mlIncompleteCount} item(ns) incompletos. Atualiza toda a lista pelos links salvos.`}
+                            className="flex items-center gap-1 px-2 py-1.5 rounded-md border border-shopee-orange bg-shopee-orange/15 text-shopee-orange text-xs font-medium hover:bg-shopee-orange/25 hover:border-shopee-orange disabled:opacity-50 relative overflow-hidden ml-refresh-errors"
+                          >
+                            {refreshTarget === `lista:${lista.id}` ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin relative z-[1]" />
+                            ) : (
+                              <RefreshCw className="h-3.5 w-3.5 relative z-[1]" />
+                            )}
+                            <span className="relative z-[1]">Atualizar erros</span>
+                          </button>
+                        ) : null}
                         <button
                           type="button"
                           onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleEmptyListClick(lista.id); }}
                           disabled={(itemsByLista[lista.id]?.length ?? 0) === 0}
-                          className="flex items-center gap-1 px-2 py-1.5 rounded-md border border-dark-border text-text-secondary text-xs hover:bg-amber-500/10 hover:text-amber-400 hover:border-amber-500/30 disabled:opacity-40"
+                          className="flex items-center gap-1 px-2 py-1.5 rounded-md border border-dark-border text-text-secondary text-xs hover:bg-shopee-orange/10 hover:text-shopee-orange hover:border-shopee-orange/35 disabled:opacity-40"
                           title="Esvaziar lista"
                         >
                           <FolderMinus className="h-3.5 w-3.5" /> Esvaziar
@@ -1003,7 +1512,7 @@ export default function MinhaListaOfertasMlPage() {
                       <div className="border-t border-dark-border p-4">
                         {loadingListaId === lista.id ? (
                           <div className="flex justify-center py-6">
-                            <Loader2 className="h-6 w-6 animate-spin text-amber-400" />
+                            <Loader2 className="h-6 w-6 animate-spin text-shopee-orange" />
                           </div>
                         ) : !itemsByLista[lista.id]?.length ? (
                           <p className="text-sm text-text-secondary py-4 text-center">Nenhum produto nesta lista.</p>
@@ -1025,15 +1534,23 @@ export default function MinhaListaOfertasMlPage() {
                                 type="button"
                                 onClick={() => handleRefreshLista(lista.id)}
                                 disabled={refreshTarget !== null}
-                                title="Atualizar nome, imagem e preços pelos links salvos"
-                                className="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-lg border border-dark-border text-text-secondary text-xs font-medium hover:border-amber-500/45 hover:text-amber-400 disabled:opacity-50"
+                                title={
+                                  mlHasIncomplete
+                                    ? `${mlIncompleteCount} item(ns) sem dados completos. Atualiza toda a lista pelos links salvos (meli.la / página do produto).`
+                                    : "Atualizar nome, imagem e preços pelos links salvos"
+                                }
+                                className={`shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-lg border text-xs font-medium disabled:opacity-50 relative overflow-hidden ${
+                                  mlHasIncomplete
+                                    ? "ml-refresh-errors border-shopee-orange bg-shopee-orange/15 text-shopee-orange hover:bg-shopee-orange/25 hover:border-shopee-orange"
+                                    : "border-dark-border text-text-secondary hover:border-shopee-orange/45 hover:text-shopee-orange"
+                                }`}
                               >
                                 {refreshTarget === `lista:${lista.id}` ? (
-                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin relative z-[1]" />
                                 ) : (
-                                  <RefreshCw className="h-3.5 w-3.5" />
+                                  <RefreshCw className="h-3.5 w-3.5 relative z-[1]" />
                                 )}
-                                Atualizar preços
+                                <span className="relative z-[1]">{mlHasIncomplete ? "Atualizar erros" : "Atualizar preços"}</span>
                               </button>
                             </div>
                             <ul className="space-y-4">
@@ -1066,7 +1583,7 @@ export default function MinhaListaOfertasMlPage() {
                                         {item.priceOriginal != null ? formatCurrency(item.priceOriginal) : "—"}
                                       </span>
                                       {" por "}
-                                      <span className="text-emerald-400 font-medium">{displayPrecoPorLista(item)}</span>
+                                      <span className="text-shopee-orange font-medium">{displayPrecoPorLista(item)}</span>
                                     </p>
                                     <p className="text-[11px] font-medium text-text-secondary uppercase tracking-wide mt-2">
                                       Link de afiliado
@@ -1083,7 +1600,7 @@ export default function MinhaListaOfertasMlPage() {
                                         href={item.converterLink}
                                         target="_blank"
                                         rel="noopener noreferrer"
-                                        className="text-xs text-amber-400 hover:underline flex items-center gap-1"
+                                        className="text-xs text-emerald-400/90 hover:underline flex items-center gap-1"
                                       >
                                         <ExternalLink className="h-3 w-3 shrink-0" /> Abrir link
                                       </a>
@@ -1091,22 +1608,39 @@ export default function MinhaListaOfertasMlPage() {
                                         type="button"
                                         onClick={() => handleRefreshItem(item.id, lista.id)}
                                         disabled={refreshTarget !== null}
-                                        className="text-xs text-text-secondary hover:text-amber-400 hover:underline flex items-center gap-1 disabled:opacity-50"
+                                        className={`text-xs flex items-center gap-1 disabled:opacity-50 relative overflow-hidden rounded px-0.5 -mx-0.5 ${
+                                          mlItemLooksIncomplete(item)
+                                            ? "ml-refresh-errors text-shopee-orange font-medium hover:underline"
+                                            : "text-text-secondary hover:text-shopee-orange hover:underline"
+                                        }`}
                                       >
                                         {refreshTarget === `item:${item.id}` ? (
-                                          <Loader2 className="h-3 w-3 animate-spin shrink-0" />
+                                          <Loader2 className="h-3 w-3 animate-spin shrink-0 relative z-[1]" />
                                         ) : (
-                                          <RefreshCw className="h-3 w-3 shrink-0" />
+                                          <RefreshCw className="h-3 w-3 shrink-0 relative z-[1]" />
                                         )}
-                                        Atualizar
+                                        <span className="relative z-[1]">
+                                          {mlItemLooksIncomplete(item) ? "Atualizar erro" : "Atualizar"}
+                                        </span>
                                       </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => handleDeleteItemClick(item.id, lista.id)}
-                                        className="text-xs text-red-400 hover:underline flex items-center gap-1 ml-auto"
-                                      >
-                                        <Trash2 className="h-3 w-3 shrink-0" /> Remover
-                                      </button>
+                                      <span className="ml-auto flex items-center gap-0.5 shrink-0">
+                                        <button
+                                          type="button"
+                                          onClick={() => openEditItemModal(item, lista.id)}
+                                          className="p-1.5 rounded-md text-text-secondary hover:text-shopee-orange hover:bg-shopee-orange/10 transition-colors"
+                                          title="Editar nome, preços e desconto"
+                                        >
+                                          <Pencil className="h-4 w-4 shrink-0" aria-hidden />
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleDeleteItemClick(item.id, lista.id)}
+                                          className="p-1.5 rounded-md text-red-400 hover:bg-red-500/10 transition-colors"
+                                          title="Remover da lista"
+                                        >
+                                          <Trash2 className="h-4 w-4 shrink-0" aria-hidden />
+                                        </button>
+                                      </span>
                                     </div>
                                   </div>
                                 </li>
@@ -1132,7 +1666,7 @@ export default function MinhaListaOfertasMlPage() {
             </ul>
 
             {listas.length > 0 && (
-              <div className="rounded-xl border border-dark-border bg-dark-card px-3 sm:px-5 py-3.5">
+              <div className="rounded-xl border border-dark-border/60 bg-dark-card/80 px-3 py-3">
                 <GeradorPaginationBar
                   page={listasPage}
                   totalPages={totalListasPages}
@@ -1144,6 +1678,45 @@ export default function MinhaListaOfertasMlPage() {
             )}
           </div>
         )}
+          </aside>
+        </div>
+
+        {bulkSaving && typeof document !== "undefined"
+          ? createPortal(
+              <div
+                className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 backdrop-blur-[2px] px-4"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="ml-bulk-loading-warn"
+                aria-describedby="ml-bulk-loading-desc"
+              >
+                <div className="w-full max-w-md flex flex-col rounded-2xl border border-dark-border bg-dark-card shadow-2xl overflow-hidden">
+                  <div className="px-4 py-3 border-b border-shopee-orange/30 bg-shopee-orange/10">
+                    <p
+                      id="ml-bulk-loading-warn"
+                      className="text-sm font-semibold text-shopee-orange text-center leading-snug"
+                    >
+                      Não saia da página até carregar todos seus produtos
+                    </p>
+                  </div>
+                  <div className="px-6 py-5 flex items-center gap-5">
+                    <div className="shrink-0 h-12 w-12 rounded-xl bg-shopee-orange/10 flex items-center justify-center border border-shopee-orange/20">
+                      <Loader2 className="h-5 w-5 text-shopee-orange animate-spin" aria-hidden />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="font-semibold text-text-primary text-sm leading-snug">Adicionando à lista…</p>
+                      <p id="ml-bulk-loading-desc" className="text-sm text-text-secondary mt-1 leading-snug">
+                        {bulkProgress
+                          ? `${bulkProgress.done} de ${bulkProgress.total} produto(s) — consultando o Mercado Livre`
+                          : "Preparando…"}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>,
+              document.body,
+            )
+          : null}
 
         {listasMenuModalOpen && typeof document !== "undefined"
           ? createPortal(
@@ -1388,6 +1961,132 @@ export default function MinhaListaOfertasMlPage() {
                       className="rounded-xl bg-shopee-orange px-4 py-2 text-sm font-semibold text-white hover:opacity-90 shadow-[0_2px_12px_rgba(238,77,45,0.25)] disabled:opacity-50"
                     >
                       Confirmar
+                    </button>
+                  </div>
+                </div>
+              </div>,
+              document.body,
+            )
+          : null}
+
+        {editItemModal && typeof document !== "undefined"
+          ? createPortal(
+              <div
+                className={mlModalOverlayClass}
+                role="presentation"
+                onClick={() => {
+                  if (!savingEditItem) setEditItemModal(null);
+                }}
+              >
+                <div
+                  role="dialog"
+                  aria-modal="true"
+                  aria-labelledby={editItemTitleId}
+                  className={`${mlModalShellClass} max-w-md max-h-[min(90vh,640px)]`}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className={`${mlModalHeaderClass} flex items-start justify-between gap-3`}>
+                    <div className="min-w-0">
+                      <h2 id={editItemTitleId} className="text-sm font-bold text-text-primary flex items-center gap-2">
+                        <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-shopee-orange/15 border border-shopee-orange/25 shrink-0">
+                          <Pencil className="h-4 w-4 text-shopee-orange" aria-hidden />
+                        </span>
+                        Editar produto
+                      </h2>
+                      <p className="text-[11px] text-text-secondary/80 mt-1.5 leading-relaxed">
+                        Ajuste manual do nome e dos preços exibidos na lista. O link de afiliado não muda aqui.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!savingEditItem) setEditItemModal(null);
+                      }}
+                      className="shrink-0 rounded-lg p-1.5 text-text-secondary hover:bg-dark-bg hover:text-text-primary"
+                      aria-label="Fechar"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                  <div className="p-4 space-y-3 overflow-y-auto scrollbar-thin flex-1 min-h-0">
+                    <div>
+                      <label className={mlFieldLabelClass} htmlFor="ml-edit-name">
+                        Nome do produto
+                      </label>
+                      <input
+                        id="ml-edit-name"
+                        value={editItemForm.productName}
+                        onChange={(e) => setEditItemForm((f) => ({ ...f, productName: e.target.value }))}
+                        className={mlInputClass}
+                        autoComplete="off"
+                      />
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div>
+                        <label className={mlFieldLabelClass} htmlFor="ml-edit-po">
+                          Preço original (riscado)
+                        </label>
+                        <input
+                          id="ml-edit-po"
+                          inputMode="decimal"
+                          value={editItemForm.priceOriginal}
+                          onChange={(e) => setEditItemForm((f) => ({ ...f, priceOriginal: e.target.value }))}
+                          placeholder="Ex.: 199,90"
+                          className={mlInputClass}
+                        />
+                      </div>
+                      <div>
+                        <label className={mlFieldLabelClass} htmlFor="ml-edit-pp">
+                          Preço final (por)
+                        </label>
+                        <input
+                          id="ml-edit-pp"
+                          inputMode="decimal"
+                          value={editItemForm.pricePromo}
+                          onChange={(e) => setEditItemForm((f) => ({ ...f, pricePromo: e.target.value }))}
+                          placeholder="Ex.: 149,90"
+                          className={mlInputClass}
+                        />
+                      </div>
+                    </div>
+                    <div className="sm:max-w-[200px]">
+                      <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
+                        <label className={mlFieldLabelInlineClass} htmlFor="ml-edit-dr">
+                          Desconto % (opcional)
+                        </label>
+                        <Toolist
+                          variant="floating"
+                          text="Se preencher e o preço final coincidir com o original, o app recalcula o valor em destaque (por) com o desconto."
+                        />
+                      </div>
+                      <input
+                        id="ml-edit-dr"
+                        inputMode="decimal"
+                        value={editItemForm.discountRate}
+                        onChange={(e) => setEditItemForm((f) => ({ ...f, discountRate: e.target.value }))}
+                        placeholder="Ex.: 10"
+                        className={mlInputClass}
+                      />
+                    </div>
+                  </div>
+                  <div className={mlModalFooterClass}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!savingEditItem) setEditItemModal(null);
+                      }}
+                      className="rounded-xl border border-dark-border px-4 py-2 text-sm font-medium text-text-secondary hover:bg-dark-bg transition-colors"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void submitEditItemModal()}
+                      disabled={savingEditItem}
+                      className="rounded-xl bg-shopee-orange px-4 py-2 text-sm font-semibold text-white hover:opacity-90 shadow-[0_2px_12px_rgba(238,77,45,0.25)] disabled:opacity-50 inline-flex items-center gap-2"
+                    >
+                      {savingEditItem ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                      Salvar
                     </button>
                   </div>
                 </div>

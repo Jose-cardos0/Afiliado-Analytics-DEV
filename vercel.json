@@ -4,6 +4,9 @@
     "src/app/api/remotion/render-mp4/route.ts": {
       "includeFiles": "remotion/static-bundle/**",
       "maxDuration": 300
+    },
+    "src/app/api/mercadolivre/minha-lista-ofertas/refresh/route.ts": {
+      "maxDuration": 300
     }
   },
   "crons": [
