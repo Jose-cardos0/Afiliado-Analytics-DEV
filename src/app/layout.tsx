@@ -1,8 +1,9 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter, Space_Grotesk } from "next/font/google";
 import "./globals.css";
 import SupabaseProvider from "./components/auth/AuthProvider";
 import SessionLogic from "./components/cleanDate/SessionLogic";
+import { PwaServiceWorker } from "./components/PwaServiceWorker";
 import { Providers } from "./providers";
 
 const inter = Inter({
@@ -20,7 +21,7 @@ export const metadata: Metadata = {
   title: {
     template: "%s | Afiliado Analytics",
     default:
-      "Afiliado Analytics – Análise de relatórios da Shopee para afiliados",
+      "Afiliado Analytics",
   },
   description:
     "Afiliado Analytics é uma ferramenta para afiliados da Shopee que transforma seus relatórios em dashboards, gráficos e métricas claras de desempenho. Faça upload do arquivo de vendas e veja seus resultados em segundos.",
@@ -32,7 +33,7 @@ export const metadata: Metadata = {
   },
   openGraph: {
     title:
-      "Afiliado Analytics – Análise de relatórios da Shopee para afiliados",
+      "Afiliado Analytics",
     description:
       "Transforme seus relatórios em dashboards e métricas claras. Upload rápido e visualização em segundos.",
     url: "https://www.afiliadoanalytics.com.br/",
@@ -49,6 +50,17 @@ export const metadata: Metadata = {
     ],
     apple: "/apple-touch-icon.png",
   },
+  appleWebApp: {
+    capable: true,
+    title: "Afiliado Analytics",
+    statusBarStyle: "black-translucent",
+  },
+  manifest: "/manifest.webmanifest",
+};
+
+export const viewport: Viewport = {
+  themeColor: "#ea580c",
+  colorScheme: "dark",
 };
 
 export default function RootLayout({
@@ -62,6 +74,7 @@ export default function RootLayout({
         <Providers>
           <SupabaseProvider>
             <SessionLogic />
+            <PwaServiceWorker />
             {children}
           </SupabaseProvider>
         </Providers>
