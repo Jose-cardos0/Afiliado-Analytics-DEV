@@ -1,17 +1,29 @@
 /**
  * Disparar ofertas: envia ao webhook n8n (Evolution → grupos).
  * - Modo keywords: para cada keyword busca 1 produto na Shopee e gera link.
- * - Modo lista: listaOfertasId + keywords vazio — um disparo por item de Minha Lista de Ofertas.
- * POST { listaId | instanceId, keywords?: string[], listaOfertasId?, subId1?, subId2?, subId3? }
+ * - Modo lista Shopee: listaOfertasId e sem keywords — um envio por item salvo.
+ * - Modo lista ML: listaOfertasMlId e sem keywords — um envio por item (link de afiliado já convertido).
+ * POST { listaId | instanceId, keywords?: string[], listaOfertasId?, listaOfertasMlId?, subId1?, subId2?, subId3? }
  */
 
 import { NextResponse } from "next/server";
 import { createClient } from "../../../../../utils/supabase/server";
+import { buildListaOfferWebhookPayload } from "@/lib/grupos-venda-webhook";
+import { effectiveListaOfferPromoPrice } from "@/lib/lista-ofertas-effective-promo";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 const WEBHOOK_URL = "https://n8n.iacodenxt.online/webhook/achadinhoN1";
+
+type SavedOfferRow = {
+  product_name: string;
+  image_url: string;
+  price_original: number | null;
+  price_promo: number | null;
+  discount_rate: number | null;
+  converter_link: string;
+};
 
 export async function POST(req: Request) {
   try {
@@ -32,11 +44,21 @@ export async function POST(req: Request) {
     const subId2 = typeof body.subId2 === "string" ? body.subId2.trim() : "";
     const subId3 = typeof body.subId3 === "string" ? body.subId3.trim() : "";
     const listaOfertasId = typeof body.listaOfertasId === "string" ? body.listaOfertasId.trim() : "";
+    const listaOfertasMlId = typeof body.listaOfertasMlId === "string" ? body.listaOfertasMlId.trim() : "";
 
     if (!listaId && !instanceId) return NextResponse.json({ error: "Informe listaId ou instanceId." }, { status: 400 });
-    if (!listaOfertasId && keywords.length === 0) {
+    if (listaOfertasId && listaOfertasMlId) {
+      return NextResponse.json({ error: "Use apenas uma lista de ofertas por disparo (Shopee ou Mercado Livre)." }, { status: 400 });
+    }
+    if (!listaOfertasId && !listaOfertasMlId && keywords.length === 0) {
       return NextResponse.json(
-        { error: "Informe ao menos uma keyword ou uma lista de ofertas (listaOfertasId)." },
+        { error: "Informe ao menos uma keyword ou uma lista de ofertas (Shopee ou Mercado Livre)." },
+        { status: 400 },
+      );
+    }
+    if ((listaOfertasId || listaOfertasMlId) && keywords.length > 0) {
+      return NextResponse.json(
+        { error: "Remova as keywords ao disparar por lista de ofertas, ou remova a lista e use só keywords." },
         { status: 400 },
       );
     }
@@ -78,15 +100,93 @@ export async function POST(req: Request) {
     const cookie = req.headers.get("cookie") ?? "";
 
     const subIds = [subId1, subId2, subId3].filter(Boolean);
+    const userId = user.id;
 
     const sent: { keyword: string; productName: string; link: string }[] = [];
     const errors: { keyword: string; error: string }[] = [];
+
+    const dispararListaSalva = async (table: "minha_lista_ofertas" | "minha_lista_ofertas_ml", fk: string) => {
+      const { data: itens, error: qErr } = await supabase
+        .from(table)
+        .select("product_name, image_url, price_original, price_promo, discount_rate, converter_link")
+        .eq("lista_id", fk)
+        .eq("user_id", userId)
+        .order("created_at", { ascending: true });
+      if (qErr) {
+        errors.push({ keyword: "(lista)", error: qErr.message });
+        return;
+      }
+      const items = (itens ?? []) as SavedOfferRow[];
+      if (items.length === 0) {
+        errors.push({ keyword: "(lista)", error: "Lista vazia" });
+        return;
+      }
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        const linkAfiliado = item.converter_link?.trim() || "";
+        const label = item.product_name?.trim() || `item ${i + 1}`;
+        if (!linkAfiliado) {
+          errors.push({ keyword: label, error: "Sem link de afiliado" });
+          continue;
+        }
+        const rate = item.discount_rate ?? 0;
+        const precoPorResolved =
+          effectiveListaOfferPromoPrice(item.price_original, item.price_promo, item.discount_rate) ??
+          item.price_promo ??
+          0;
+        const precoPor = precoPorResolved || 0;
+        let precoRiscado = (item.price_original ?? 0) || 0;
+        if (precoRiscado <= 0 && precoPor > 0) precoRiscado = precoPor;
+        const payload = buildListaOfferWebhookPayload({
+          instanceName,
+          hash,
+          groupIds,
+          nomeProduto: item.product_name ?? "",
+          imageUrl: item.image_url ?? "",
+          precoPor,
+          precoRiscado,
+          discountRate: rate,
+          linkAfiliado,
+        });
+        const whRes = await fetch(WEBHOOK_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!whRes.ok) {
+          const whText = await whRes.text();
+          errors.push({ keyword: label, error: `Webhook ${whRes.status}: ${whText.slice(0, 100)}` });
+          continue;
+        }
+        sent.push({ keyword: label.slice(0, 40), productName: label.slice(0, 50), link: linkAfiliado });
+      }
+    };
+
+    if (listaOfertasId) {
+      await dispararListaSalva("minha_lista_ofertas", listaOfertasId);
+      return NextResponse.json({
+        success: true,
+        sent: sent.length,
+        sentDetail: sent,
+        errors: errors.length ? errors : undefined,
+      });
+    }
+
+    if (listaOfertasMlId) {
+      await dispararListaSalva("minha_lista_ofertas_ml", listaOfertasMlId);
+      return NextResponse.json({
+        success: true,
+        sent: sent.length,
+        sentDetail: sent,
+        errors: errors.length ? errors : undefined,
+      });
+    }
 
     for (const keyword of keywords) {
       try {
         const searchRes = await fetch(
           `${baseUrl}/api/shopee/product-search?keyword=${encodeURIComponent(keyword)}&limit=1&sortType=2`,
-          { headers: { cookie } }
+          { headers: { cookie } },
         );
         const searchData = await searchRes.json();
         if (!searchRes.ok) throw new Error(searchData?.error ?? "Falha ao buscar produto");
@@ -120,7 +220,6 @@ export async function POST(req: Request) {
           rate > 0 && rate < 100 && priceMin > 0
             ? Math.round((priceMin / (1 - rate / 100)) * 100) / 100
             : priceMax || 0;
-        const valor = precoPor;
         const formatBRL = (n: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 2 }).format(n);
         const nomeProduto = product.productName ?? "";
         const descricao =
@@ -129,6 +228,7 @@ export async function POST(req: Request) {
           `🏷️ PROMOÇÃO - CLIQUE NO LINK 👇` +
           linkAfiliado;
         const imagem = product.imageUrl ?? "";
+        const valor = precoPor;
 
         const payload = {
           instanceName,

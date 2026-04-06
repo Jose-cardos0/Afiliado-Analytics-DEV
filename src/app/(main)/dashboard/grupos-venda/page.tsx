@@ -22,6 +22,7 @@ type ListaGrupos = { id: string; instanceId: string; nomeLista: string; createdA
 type ContinuoItem = {
   id: string; listaId: string | null; listaNome: string;
   listaOfertasId: string | null; listaOfertasNome: string | null;
+  listaOfertasMlId: string | null; listaOfertasMlNome: string | null;
   instanceId: string; keywords: string[]; subId1: string; subId2: string; subId3: string;
   ativo: boolean; proximoIndice: number; ultimoDisparoAt: string | null; updatedAt: string;
   proximaKeyword: string | null;
@@ -174,7 +175,15 @@ function DisparoCard({ c, togglingId, onToggle, onRemove }: {
           <div className="flex items-start md:items-center gap-1.5 text-[9px] text-[#a0a0a0] min-w-0">
             <Layers className="w-2.5 h-2.5 text-[#e24c30] shrink-0 mt-0.5 md:mt-0" />
             <span className="min-w-0 max-md:break-words md:truncate">
-              Lista: <span className="text-white">{c.listaOfertasNome}</span>
+              Lista Shopee: <span className="text-white">{c.listaOfertasNome}</span>
+            </span>
+          </div>
+        )}
+        {c.listaOfertasMlNome && (
+          <div className="flex items-start md:items-center gap-1.5 text-[9px] text-[#a0a0a0] min-w-0">
+            <Layers className="w-2.5 h-2.5 text-amber-400 shrink-0 mt-0.5 md:mt-0" />
+            <span className="min-w-0 max-md:break-words md:truncate">
+              Lista ML: <span className="text-white">{c.listaOfertasMlNome}</span>
             </span>
           </div>
         )}
@@ -247,6 +256,10 @@ export default function GruposVendaPage() {
   const [listasOfertas, setListasOfertas] = useState<ListaOfertasItem[]>([]);
   const [loadingListasOfertas, setLoadingListasOfertas] = useState(false);
   const [selectedListaOfertasId, setSelectedListaOfertasId] = useState("");
+  const [listasOfertasMl, setListasOfertasMl] = useState<ListaOfertasItem[]>([]);
+  const [loadingListasOfertasMl, setLoadingListasOfertasMl] = useState(false);
+  const [selectedListaOfertasMlId, setSelectedListaOfertasMlId] = useState("");
+  const [offerListSource, setOfferListSource] = useState<"shopee" | "ml">("shopee");
   const [horaInicio, setHoraInicio] = useState("");
   const [horaFim, setHoraFim] = useState("");
 
@@ -311,10 +324,21 @@ export default function GruposVendaPage() {
     finally { setLoadingListasOfertas(false); }
   }, []);
 
+  const loadListasOfertasMl = useCallback(async () => {
+    setLoadingListasOfertasMl(true);
+    try {
+      const res = await fetch("/api/mercadolivre/minha-lista-ofertas/listas");
+      const data = await res.json();
+      if (res.ok) setListasOfertasMl(Array.isArray(data.data) ? data.data : []);
+    } catch { setListasOfertasMl([]); }
+    finally { setLoadingListasOfertasMl(false); }
+  }, []);
+
   useEffect(() => { loadInstances(); }, [loadInstances]);
   useEffect(() => { loadListas(); }, [loadListas]);
   useEffect(() => { loadContinuo(); }, [loadContinuo]);
   useEffect(() => { loadListasOfertas(); }, [loadListasOfertas]);
+  useEffect(() => { loadListasOfertasMl(); }, [loadListasOfertasMl]);
 
   const handleConfirmGroups = useCallback(async (payload: BuscarGruposPayload) => {
     const instance = instances.find((i) => i.nome_instancia === payload.nomeInstancia);
@@ -351,10 +375,16 @@ export default function GruposVendaPage() {
   const handleDisparar = useCallback(async () => {
     if (!selectedListaId) { setError("Selecione uma lista de grupos."); return; }
     const kwList = keywords.split(/[\n,;]+/).map((s) => s.trim()).filter(Boolean);
-    const useListaOfertas = contentMode === "list" && !!selectedListaOfertasId;
+    const useListaShopee = contentMode === "list" && offerListSource === "shopee" && !!selectedListaOfertasId;
+    const useListaMl = contentMode === "list" && offerListSource === "ml" && !!selectedListaOfertasMlId;
+    const useListaOfertas = useListaShopee || useListaMl;
     if (contentMode === "list") {
-      if (!selectedListaOfertasId) {
-        setError("Selecione uma lista de ofertas.");
+      if (offerListSource === "shopee" && !selectedListaOfertasId) {
+        setError("Selecione uma lista de ofertas Shopee.");
+        return;
+      }
+      if (offerListSource === "ml" && !selectedListaOfertasMlId) {
+        setError("Selecione uma lista de ofertas Mercado Livre.");
         return;
       }
     } else if (kwList.length === 0) {
@@ -368,7 +398,8 @@ export default function GruposVendaPage() {
         body: JSON.stringify({
           listaId: selectedListaId,
           keywords: useListaOfertas ? [] : kwList,
-          listaOfertasId: useListaOfertas ? selectedListaOfertasId : undefined,
+          listaOfertasId: useListaShopee ? selectedListaOfertasId : undefined,
+          listaOfertasMlId: useListaMl ? selectedListaOfertasMlId : undefined,
           subId1, subId2, subId3,
         }),
       });
@@ -381,7 +412,7 @@ export default function GruposVendaPage() {
       if (errList.length > 0) setError(errList.map((e: { keyword: string; error: string }) => `${e.keyword}: ${e.error}`).join("; "));
     } catch (e) { setError(e instanceof Error ? e.message : "Erro ao disparar"); }
     finally { setDisparando(false); }
-  }, [selectedListaId, contentMode, selectedListaOfertasId, keywords, subId1, subId2, subId3]);
+  }, [selectedListaId, contentMode, offerListSource, selectedListaOfertasId, selectedListaOfertasMlId, keywords, subId1, subId2, subId3]);
 
   const handleContinuoToggle = useCallback(async (configId: string, ativar: boolean) => {
     setError(null);
@@ -405,7 +436,7 @@ export default function GruposVendaPage() {
       } else {
         const c = continuoList.find((x) => x.id === configId);
         if (!c?.listaId) throw new Error("Config sem lista");
-        const res = await fetch("/api/grupos-venda/continuo", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: configId, listaId: c.listaId, listaOfertasId: c.listaOfertasId || undefined, keywords: c.keywords, subId1: c.subId1, subId2: c.subId2, subId3: c.subId3, horarioInicio: c.horarioInicio, horarioFim: c.horarioFim, ativo: true }) });
+        const res = await fetch("/api/grupos-venda/continuo", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: configId, listaId: c.listaId, listaOfertasId: c.listaOfertasId || undefined, listaOfertasMlId: c.listaOfertasMlId || undefined, keywords: c.keywords, subId1: c.subId1, subId2: c.subId2, subId3: c.subId3, horarioInicio: c.horarioInicio, horarioFim: c.horarioFim, ativo: true }) });
         const data = await res.json();
         if (!res.ok) throw new Error(data?.error ?? "Erro ao ativar");
         setFeedback("Automação ativada.");
@@ -418,7 +449,9 @@ export default function GruposVendaPage() {
 
   const handleAddContinuo = useCallback(async () => {
     if (!selectedListaId) { setError("Selecione uma lista de grupos."); return; }
-    const useListaOfertas = contentMode === "list" && !!selectedListaOfertasId;
+    const useListaShopee = contentMode === "list" && offerListSource === "shopee" && !!selectedListaOfertasId;
+    const useListaMl = contentMode === "list" && offerListSource === "ml" && !!selectedListaOfertasMlId;
+    const useListaOfertas = useListaShopee || useListaMl;
     const kwList = keywords.split(/[\n,;]+/).map((s) => s.trim()).filter(Boolean);
     if (!useListaOfertas && kwList.length === 0) { setError("Digite ao menos uma keyword ou selecione uma lista de ofertas."); return; }
     const jErr = mensagemErroJanela(horaInicio, horaFim);
@@ -427,19 +460,25 @@ export default function GruposVendaPage() {
     try {
       const res = await fetch("/api/grupos-venda/continuo", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ listaId: selectedListaId, listaOfertasId: useListaOfertas ? selectedListaOfertasId : undefined, keywords: useListaOfertas ? [] : kwList, subId1, subId2, subId3, horarioInicio: horaInicio.trim(), horarioFim: horaFim.trim(), ativo: true }),
+        body: JSON.stringify({
+          listaId: selectedListaId,
+          listaOfertasId: useListaShopee ? selectedListaOfertasId : undefined,
+          listaOfertasMlId: useListaMl ? selectedListaOfertasMlId : undefined,
+          keywords: useListaOfertas ? [] : kwList,
+          subId1, subId2, subId3, horarioInicio: horaInicio.trim(), horarioFim: horaFim.trim(), ativo: true,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error ?? "Erro");
       const horarioMsg = ` Janela ${horaInicio} – ${horaFim}.`;
       setFeedback(useListaOfertas ? `Automação por lista de ofertas criada.${horarioMsg}` : `Automação criada.${horarioMsg}`);
       setTimeout(() => setFeedback(""), 5000);
-      setSelectedListaId(""); setKeywords(""); setSelectedListaOfertasId(""); setSubId1(""); setSubId2(""); setSubId3(""); setHoraInicio(""); setHoraFim("");
+      setSelectedListaId(""); setKeywords(""); setSelectedListaOfertasId(""); setSelectedListaOfertasMlId(""); setSubId1(""); setSubId2(""); setSubId3(""); setHoraInicio(""); setHoraFim("");
       setView("panel");
       await loadContinuo();
     } catch (e) { setError(e instanceof Error ? e.message : "Erro ao criar automação"); }
     finally { setContinuoTogglingId(null); }
-  }, [selectedListaId, contentMode, selectedListaOfertasId, keywords, subId1, subId2, subId3, horaInicio, horaFim, loadContinuo]);
+  }, [selectedListaId, contentMode, offerListSource, selectedListaOfertasId, selectedListaOfertasMlId, keywords, subId1, subId2, subId3, horaInicio, horaFim, loadContinuo]);
 
   const handleRemoveContinuo = useCallback(async (id: string) => {
     try {
@@ -594,6 +633,22 @@ export default function GruposVendaPage() {
       })),
     ],
     [listasOfertas],
+  );
+
+  const listaOfertasMlPickerOptions = useMemo(
+    () => [
+      {
+        value: "",
+        label: "Selecione uma lista ML",
+        description: "Crie em Lista de Ofertas — Mercado Livre",
+      },
+      ...listasOfertasMl.map((l) => ({
+        value: l.id,
+        label: l.nome,
+        description: `${l.totalItens} ${l.totalItens === 1 ? "item" : "itens"}`,
+      })),
+    ],
+    [listasOfertasMl],
   );
 
   function openWizard() { setWizardStep(1); setShowStepInfo(false); setView("wizard"); }
@@ -946,27 +1001,78 @@ export default function GruposVendaPage() {
                     </div>
                   ) : (
                     <div className="min-w-0">
-                      <FieldLabel>Lista de Ofertas</FieldLabel>
-                      {loadingListasOfertas ? (
+                      <FieldLabel>Origem da lista</FieldLabel>
+                      <div className="flex flex-col sm:flex-row rounded-xl overflow-hidden border border-[#2c2c32] mb-3">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setOfferListSource("shopee");
+                            setSelectedListaOfertasMlId("");
+                          }}
+                          className={cn(
+                            "flex-1 flex items-center justify-start sm:justify-center gap-2 px-3 py-2.5 text-[10px] font-bold transition-all sm:border-r border-[#2c2c32]",
+                            offerListSource === "shopee" ? "bg-[#e24c30]/15 text-[#e24c30]" : "bg-[#222228] text-[#a0a0a0] hover:text-white",
+                          )}
+                        >
+                          Shopee
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setOfferListSource("ml");
+                            setSelectedListaOfertasId("");
+                          }}
+                          className={cn(
+                            "flex-1 flex items-center justify-start sm:justify-center gap-2 px-3 py-2.5 text-[10px] font-bold transition-all border-t sm:border-t-0 border-[#2c2c32]",
+                            offerListSource === "ml" ? "bg-amber-500/15 text-amber-400" : "bg-[#222228] text-[#a0a0a0] hover:text-white",
+                          )}
+                        >
+                          Mercado Livre
+                        </button>
+                      </div>
+                      <FieldLabel>{offerListSource === "shopee" ? "Lista Shopee" : "Lista Mercado Livre"}</FieldLabel>
+                      {offerListSource === "shopee" ? (
+                        loadingListasOfertas ? (
+                          <div className="flex items-center gap-2 text-[#a0a0a0] text-xs py-2">
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" /> Carregando listas…
+                          </div>
+                        ) : (
+                          <MetaSearchablePicker
+                            value={selectedListaOfertasId}
+                            onChange={setSelectedListaOfertasId}
+                            options={listaOfertasPickerOptions}
+                            modalTitle="Lista de ofertas Shopee"
+                            modalDescription="Lista salva em Minha Lista de Ofertas (Shopee)."
+                            searchPlaceholder="Filtrar listas…"
+                            emptyButtonLabel="Escolher lista de ofertas"
+                            emptyAsTag
+                            emptyTagLabel="Selecionar Lista"
+                            emptyOptionsMessage="Nenhuma lista cadastrada."
+                            className="w-full max-w-full"
+                          />
+                        )
+                      ) : loadingListasOfertasMl ? (
                         <div className="flex items-center gap-2 text-[#a0a0a0] text-xs py-2">
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" /> Carregando listas…
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" /> Carregando listas ML…
                         </div>
                       ) : (
                         <MetaSearchablePicker
-                          value={selectedListaOfertasId}
-                          onChange={setSelectedListaOfertasId}
-                          options={listaOfertasPickerOptions}
-                          modalTitle="Lista de ofertas"
-                          modalDescription="Escolha uma lista salva em Minha Lista de Ofertas ou use apenas keywords."
+                          value={selectedListaOfertasMlId}
+                          onChange={setSelectedListaOfertasMlId}
+                          options={listaOfertasMlPickerOptions}
+                          modalTitle="Lista de ofertas Mercado Livre"
+                          modalDescription="Listas com links de afiliado já convertidos (página Lista de Ofertas — ML)."
                           searchPlaceholder="Filtrar listas…"
-                          emptyButtonLabel="Escolher lista de ofertas"
+                          emptyButtonLabel="Escolher lista ML"
                           emptyAsTag
-                          emptyTagLabel="Selecionar Lista"
-                          emptyOptionsMessage="Nenhuma lista cadastrada."
+                          emptyTagLabel="Selecionar Lista ML"
+                          emptyOptionsMessage="Nenhuma lista ML cadastrada."
                           className="w-full max-w-full"
                         />
                       )}
-                      <p className="text-[9px] text-[#a0a0a0] mt-2 leading-relaxed">A lista de ofertas substitui as keywords e envia produtos fixos em rotação.</p>
+                      <p className="text-[9px] text-[#a0a0a0] mt-2 leading-relaxed">
+                        A lista substitui as keywords: na automação, um produto por vez em rotação; no disparo manual, todos os itens são enviados em sequência.
+                      </p>
                     </div>
                   )}
                 </div>
@@ -1090,7 +1196,9 @@ export default function GruposVendaPage() {
                         ·{" "}
                         {contentMode === "keywords"
                           ? `${keywordCount} keyword${keywordCount !== 1 ? "s" : ""}`
-                          : "Lista de ofertas"}{" "}
+                          : offerListSource === "ml"
+                            ? "Lista ML"
+                            : "Lista Shopee"}{" "}
                         · {horaInicio && horaFim ? `${horaInicio}–${horaFim}` : "Definir janela"}
                       </p>
                     </div>
@@ -1117,7 +1225,7 @@ export default function GruposVendaPage() {
                     {[
                       { icon: <Smartphone className="w-3.5 h-3.5 text-[#e24c30] shrink-0" />, label: "Canal", value: instances.find((i) => i.id === selectedInstanceId)?.nome_instancia ?? "Não selecionado", warn: !selectedInstanceId },
                       { icon: <ListIcon className="w-3.5 h-3.5 text-[#e24c30] shrink-0" />, label: "Lista", value: selectedList?.nomeLista ?? null, warn: !selectedList },
-                      { icon: <Hash className="w-3.5 h-3.5 text-[#e24c30] shrink-0" />, label: "Conteúdo", value: contentMode === "keywords" ? `${keywordCount} keyword${keywordCount !== 1 ? "s" : ""}` : "Lista de ofertas", warn: false },
+                      { icon: <Hash className="w-3.5 h-3.5 text-[#e24c30] shrink-0" />, label: "Conteúdo", value: contentMode === "keywords" ? `${keywordCount} keyword${keywordCount !== 1 ? "s" : ""}` : offerListSource === "ml" ? "Lista Mercado Livre" : "Lista Shopee", warn: false },
                       { icon: <Clock className="w-3.5 h-3.5 text-[#e24c30] shrink-0" />, label: "Horário", value: horaInicio && horaFim ? `${horaInicio} – ${horaFim} (máx. 14 h)` : "Defina início e fim da janela", warn: false },
                     ].map(({ icon, label, value, warn }) => (
                       <div key={label} className="flex items-start gap-3 py-2 border-b border-[#2c2c32] last:border-0 min-w-0">

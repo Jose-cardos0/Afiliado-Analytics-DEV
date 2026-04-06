@@ -8,6 +8,8 @@ import { createClient } from "@supabase/supabase-js";
 import { createClient as createServerClient } from "utils/supabase/server";
 import crypto from "crypto";
 import { mensagemErroJanela } from "@/lib/grupos-venda-janela";
+import { buildListaOfferWebhookPayload } from "@/lib/grupos-venda-webhook";
+import { effectiveListaOfferPromoPrice } from "@/lib/lista-ofertas-effective-promo";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 55;
@@ -54,7 +56,7 @@ async function runCronDisparo(): Promise<CronResultBody> {
 
   const { data: configs, error: configError } = await supabase
     .from("grupos_venda_continuo")
-    .select("id, user_id, instance_id, lista_id, lista_ofertas_id, keywords, sub_id_1, sub_id_2, sub_id_3, proximo_indice, keyword_pool_indices, horario_inicio, horario_fim")
+    .select("id, user_id, instance_id, lista_id, lista_ofertas_id, lista_ofertas_ml_id, keywords, sub_id_1, sub_id_2, sub_id_3, proximo_indice, keyword_pool_indices, horario_inicio, horario_fim")
     .eq("ativo", true);
 
   if (configError || !configs?.length) {
@@ -68,6 +70,7 @@ async function runCronDisparo(): Promise<CronResultBody> {
     const instanceId = cfg.instance_id as string;
     const listaId = (cfg as { lista_id?: string | null }).lista_id ?? null;
     const listaOfertasId = (cfg as { lista_ofertas_id?: string | null }).lista_ofertas_id ?? null;
+    const listaOfertasMlId = (cfg as { lista_ofertas_ml_id?: string | null }).lista_ofertas_ml_id ?? null;
     const keywords = (cfg.keywords as string[]) ?? [];
     const proximoIndice = Number(cfg.proximo_indice) ?? 0;
     const subIds = [cfg.sub_id_1, cfg.sub_id_2, cfg.sub_id_3].filter(Boolean) as string[];
@@ -89,7 +92,9 @@ async function runCronDisparo(): Promise<CronResultBody> {
       continue;
     }
 
-    const isListaOfertasMode = !!listaOfertasId;
+    const isListaMlMode = !!listaOfertasMlId;
+    const isListaShopeeMode = !!listaOfertasId && !isListaMlMode;
+    const isListaOfertasMode = isListaShopeeMode || isListaMlMode;
     if (!isListaOfertasMode && keywords.length === 0) {
       results.push({ userId, ok: false, error: "Sem keywords" });
       continue;
@@ -110,10 +115,12 @@ async function runCronDisparo(): Promise<CronResultBody> {
       }
 
       if (isListaOfertasMode) {
+        const table = isListaMlMode ? "minha_lista_ofertas_ml" : "minha_lista_ofertas";
+        const listaFk = isListaMlMode ? listaOfertasMlId! : listaOfertasId!;
         const { data: itens } = await supabase
-          .from("minha_lista_ofertas")
+          .from(table)
           .select("id, product_name, image_url, price_original, price_promo, discount_rate, converter_link")
-          .eq("lista_id", listaOfertasId)
+          .eq("lista_id", listaFk)
           .eq("user_id", userId)
           .order("created_at", { ascending: true });
         const items = (itens ?? []) as { product_name: string; image_url: string; price_original: number | null; price_promo: number | null; discount_rate: number | null; converter_link: string }[];
@@ -131,35 +138,29 @@ async function runCronDisparo(): Promise<CronResultBody> {
           continue;
         }
         const nomeProduto = item.product_name ?? "";
-        const priceMin = item.price_promo ?? 0;
-        const priceMax = item.price_promo ?? 0;
         const rate = item.discount_rate ?? 0;
-        const precoPor = priceMin || priceMax;
-        const precoRiscado = (item.price_original ?? priceMax) || 0;
-        const valor = precoPor;
-        const formatBRL = (n: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 2 }).format(n);
-        const descricao =
-          `✨ ${nomeProduto}\n\n` +
-          `💰 APROVEITE:${rate > 0 ? ` _${Math.round(rate)}% de DESCONTO!!!!_` : ""} \n  🔴 De: ~${formatBRL(precoRiscado)}~ \n 🔥 Por: *${formatBRL(precoPor)}* 😱\n` +
-          `🏷️ PROMOÇÃO - CLIQUE NO LINK 👇\n` +
-          linkAfiliado;
-        const imagem = item.image_url ?? "";
+        const precoPorResolved =
+          effectiveListaOfferPromoPrice(item.price_original, item.price_promo, item.discount_rate) ??
+          item.price_promo ??
+          0;
+        const precoPor = precoPorResolved || 0;
+        const precoRiscado = (item.price_original ?? precoPor) || 0;
+        const payloadBody = buildListaOfferWebhookPayload({
+          instanceName,
+          hash,
+          groupIds,
+          nomeProduto,
+          imageUrl: item.image_url ?? "",
+          precoPor,
+          precoRiscado,
+          discountRate: rate,
+          linkAfiliado,
+        });
 
         const whRes = await fetch(WEBHOOK_URL, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            instanceName,
-            hash,
-            groupIds,
-            imagem,
-            descricao,
-            valor,
-            linkAfiliado,
-            desconto: rate > 0 ? Math.round(rate) : null,
-            precoRiscado: precoRiscado > 0 ? precoRiscado : null,
-            precoPor: precoPor > 0 ? precoPor : null,
-          }),
+          body: JSON.stringify(payloadBody),
         });
 
         if (!whRes.ok) {

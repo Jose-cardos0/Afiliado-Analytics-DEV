@@ -107,6 +107,11 @@ const sidebarNavItems: NavItem[] = [
     icon: <ListChecks className="h-5 w-5" />,
   },
   {
+    title: "Lista de Ofertas — Mercado Livre",
+    href: "/dashboard/minha-lista-ofertas-ml",
+    icon: <ListChecks className="h-5 w-5 text-amber-400" />,
+  },
+  {
     title: "Gerador de Criativos",
     href: "/dashboard/video-editor",
     icon: <Film className="h-5 w-5" />,

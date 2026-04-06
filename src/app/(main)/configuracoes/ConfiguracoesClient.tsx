@@ -1,17 +1,21 @@
 "use client";
 
 import { useState } from "react";
-import { IdCard, Megaphone, MessageCircle, ChevronRight } from "lucide-react";
+import { IdCard, Megaphone, MessageCircle, ChevronRight, ShoppingBag } from "lucide-react";
 import ShopeeIntegrationCard from "./ShopeeIntegrationCard";
 import MetaIntegrationCard from "./MetaIntegrationCard";
 import EvolutionIntegrationCard from "./EvolutionIntegrationCard";
+import MercadoLivreIntegrationCard from "./MercadoLivreIntegrationCard";
 
-export type SectionKey = "shopee" | "meta" | "evolution" | null;
+export type SectionKey = "shopee" | "mercadolivre" | "meta" | "evolution" | null;
 
 type ConfiguracoesClientProps = {
   initialAppId: string;
   initialHasKey: boolean;
   initialLast4: string | null;
+  mlInitialClientId: string;
+  mlInitialHasSecret: boolean;
+  mlInitialLast4: string | null;
   metaHasToken: boolean;
   metaLast4: string | null;
 };
@@ -22,6 +26,12 @@ const CARDS: { key: SectionKey; title: string; description: string; icon: React.
     title: "Integração Shopee",
     description: "App ID e API Key para comissões e relatórios",
     icon: IdCard,
+  },
+  {
+    key: "mercadolivre",
+    title: "Mercado Livre API",
+    description: "Client ID e Secret — dados de anúncios",
+    icon: ShoppingBag,
   },
   {
     key: "meta",
@@ -41,6 +51,9 @@ export default function ConfiguracoesClient({
   initialAppId,
   initialHasKey,
   initialLast4,
+  mlInitialClientId,
+  mlInitialHasSecret,
+  mlInitialLast4,
   metaHasToken,
   metaLast4,
 }: ConfiguracoesClientProps) {
@@ -49,7 +62,7 @@ export default function ConfiguracoesClient({
   return (
     <div className="space-y-6">
       {/* Grid de cards */}
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {CARDS.map(({ key, title, description, icon: Icon }) => (
           <button
             key={key ?? "null"}
@@ -59,7 +72,11 @@ export default function ConfiguracoesClient({
               openSection === key ? "border-shopee-orange/60 ring-1 ring-shopee-orange/20" : "border-dark-border"
             }`}
           >
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-dark-bg text-shopee-orange">
+            <div
+              className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-dark-bg ${
+                key === "mercadolivre" ? "text-amber-400" : "text-shopee-orange"
+              }`}
+            >
               <Icon className="h-5 w-5" />
             </div>
             <div className="min-w-0 flex-1">
@@ -80,6 +97,15 @@ export default function ConfiguracoesClient({
             initialAppId={initialAppId}
             initialHasKey={initialHasKey}
             initialLast4={initialLast4}
+          />
+        </div>
+      )}
+      {openSection === "mercadolivre" && (
+        <div className="animate-in fade-in duration-200">
+          <MercadoLivreIntegrationCard
+            initialClientId={mlInitialClientId}
+            initialHasSecret={mlInitialHasSecret}
+            initialLast4={mlInitialLast4}
           />
         </div>
       )}

@@ -1,8 +1,3 @@
-/**
- * Minha Lista de Ofertas: GET (listar listas com itens ou itens de uma lista),
- * POST (adicionar item à lista), DELETE (remover item ou esvaziar lista).
- */
-
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
 import { effectiveListaOfferPromoPrice } from "@/lib/lista-ofertas-effective-promo";
@@ -34,7 +29,7 @@ export async function GET(req: Request) {
 
     if (listaId) {
       const { data: rows, error } = await supabase
-        .from("minha_lista_ofertas")
+        .from("minha_lista_ofertas_ml")
         .select("id, lista_id, image_url, product_name, price_original, price_promo, discount_rate, converter_link, created_at")
         .eq("user_id", user.id)
         .eq("lista_id", listaId)
@@ -45,15 +40,14 @@ export async function GET(req: Request) {
     }
 
     const { data: rows, error } = await supabase
-      .from("minha_lista_ofertas")
+      .from("minha_lista_ofertas_ml")
       .select("id, lista_id, image_url, product_name, price_original, price_promo, discount_rate, converter_link, created_at")
       .eq("user_id", user.id)
       .order("created_at", { ascending: false });
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-    const data = (rows ?? []).map(mapItem);
-    return NextResponse.json({ data });
+    return NextResponse.json({ data: (rows ?? []).map(mapItem) });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Erro" }, { status: 500 });
   }
@@ -70,28 +64,28 @@ export async function POST(req: Request) {
     const converterLink = String(body?.converterLink ?? body?.converter_link ?? "").trim();
 
     if (!listaId) return NextResponse.json({ error: "listaId é obrigatório" }, { status: 400 });
-    if (!converterLink) return NextResponse.json({ error: "converterLink é obrigatório" }, { status: 400 });
+    if (!converterLink) return NextResponse.json({ error: "converterLink é obrigatório (seu link de afiliado já gerado)" }, { status: 400 });
 
     const priceOriginal = body?.priceOriginal != null ? Number(body.priceOriginal) : null;
     let pricePromo = body?.pricePromo != null ? Number(body.pricePromo) : null;
     const discountRate = body?.discountRate != null ? Number(body.discountRate) : null;
 
-    const poFin = priceOriginal != null && Number.isFinite(priceOriginal) ? priceOriginal : null;
-    const ppFin = pricePromo != null && Number.isFinite(pricePromo) ? pricePromo : null;
-    const drFin = discountRate != null && Number.isFinite(discountRate) ? discountRate : null;
+    const poFin = Number.isFinite(priceOriginal as number) ? priceOriginal : null;
+    const ppFin = Number.isFinite(pricePromo as number) ? pricePromo : null;
+    const drFin = Number.isFinite(discountRate as number) ? discountRate : null;
     const normalizedPromo = effectiveListaOfferPromoPrice(poFin, ppFin, drFin);
     if (normalizedPromo != null) pricePromo = normalizedPromo;
 
     const { data: row, error } = await supabase
-      .from("minha_lista_ofertas")
+      .from("minha_lista_ofertas_ml")
       .insert({
         user_id: user.id,
         lista_id: listaId,
         image_url: String(body?.imageUrl ?? body?.image_url ?? "").trim(),
         product_name: String(body?.productName ?? body?.product_name ?? "").trim(),
-        price_original: priceOriginal,
-        price_promo: pricePromo,
-        discount_rate: discountRate,
+        price_original: Number.isFinite(priceOriginal as number) ? priceOriginal : null,
+        price_promo: Number.isFinite(pricePromo as number) ? pricePromo : null,
+        discount_rate: Number.isFinite(discountRate as number) ? discountRate : null,
         converter_link: converterLink,
       })
       .select("id, lista_id, image_url, product_name, price_original, price_promo, discount_rate, converter_link, created_at")
@@ -117,22 +111,14 @@ export async function DELETE(req: Request) {
     const empty = url.searchParams.get("empty") === "1";
 
     if (listaId && empty) {
-      const { error } = await supabase
-        .from("minha_lista_ofertas")
-        .delete()
-        .eq("lista_id", listaId)
-        .eq("user_id", user.id);
+      const { error } = await supabase.from("minha_lista_ofertas_ml").delete().eq("lista_id", listaId).eq("user_id", user.id);
       if (error) return NextResponse.json({ error: error.message }, { status: 500 });
       return NextResponse.json({ ok: true });
     }
 
     if (!id) return NextResponse.json({ error: "id é obrigatório" }, { status: 400 });
 
-    const { error } = await supabase
-      .from("minha_lista_ofertas")
-      .delete()
-      .eq("id", id)
-      .eq("user_id", user.id);
+    const { error } = await supabase.from("minha_lista_ofertas_ml").delete().eq("id", id).eq("user_id", user.id);
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 

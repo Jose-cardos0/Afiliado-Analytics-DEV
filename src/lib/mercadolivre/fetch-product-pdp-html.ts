@@ -1,0 +1,183 @@
+/**
+ * Fallback quando api.mercadolibre.com/items retorna 403 (PolicyAgent) ou 401.
+ * Lê o JSON-LD (schema.org Product) da página pública do anúncio.
+ */
+
+import { extractMlbIdFromUrl } from "@/lib/mercadolivre/extract-mlb-id";
+
+/** Mesmo formato que MlProductMeta em fetch-product-meta (evita import circular). */
+export type MlPdpProductMeta = {
+  resolvedId: string;
+  productName: string;
+  imageUrl: string;
+  pricePromo: number | null;
+  priceOriginal: number | null;
+  discountRate: number | null;
+  permalink?: string | null;
+  subtitle?: string | null;
+  condition?: string | null;
+  currencyId?: string | null;
+  availableQuantity?: number | null;
+  soldQuantity?: number | null;
+  warranty?: string | null;
+  listingTypeId?: string | null;
+};
+
+const BROWSER_HEADERS: HeadersInit = {
+  "User-Agent":
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+  Accept: "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
+  "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.5",
+};
+
+const ALLOWED_PDP_HOSTS = new Set([
+  "produto.mercadolivre.com.br",
+  "www.mercadolivre.com.br",
+  "mercadolivre.com.br",
+  "articulo.mercadolibre.com.br",
+  "www.mercadolibre.com.br",
+]);
+
+/** Alinhar com expand-affiliate-link: listas, click, landing etc. também carregam PDP ou redirecionam. */
+function isAllowedMlPdpHost(hostname: string): boolean {
+  const h = hostname.toLowerCase();
+  if (ALLOWED_PDP_HOSTS.has(h)) return true;
+  if (h === "mercadolivre.com.br" || h.endsWith(".mercadolivre.com.br")) return true;
+  if (h.includes("mercadolibre.com")) return true;
+  return false;
+}
+
+function parsePrice(v: unknown): number | null {
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  if (typeof v === "string") {
+    const n = parseFloat(v.replace(",", "."));
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
+}
+
+function firstImage(image: unknown): string {
+  if (typeof image === "string") return image.trim();
+  if (Array.isArray(image) && image.length > 0 && typeof image[0] === "string") return String(image[0]).trim();
+  return "";
+}
+
+function isProductNode(obj: Record<string, unknown>): boolean {
+  const t = obj["@type"];
+  if (t === "Product") return true;
+  if (Array.isArray(t)) return t.includes("Product");
+  return false;
+}
+
+function mapLdProduct(obj: Record<string, unknown>, sourceUrl: string, resolvedId: string): MlPdpProductMeta {
+  const name = String(obj.name ?? "").trim();
+  const imageUrl = firstImage(obj.image);
+  const offersRaw = obj.offers;
+  let pricePromo: number | null = null;
+  let priceOriginal: number | null = null;
+
+  const takeOffer = (o: Record<string, unknown>) => {
+    const p = parsePrice(o.price);
+    if (p != null) pricePromo = p;
+  };
+
+  if (offersRaw && typeof offersRaw === "object" && !Array.isArray(offersRaw)) {
+    takeOffer(offersRaw as Record<string, unknown>);
+  } else if (Array.isArray(offersRaw) && offersRaw[0] && typeof offersRaw[0] === "object") {
+    takeOffer(offersRaw[0] as Record<string, unknown>);
+  }
+
+  if (pricePromo != null) priceOriginal = pricePromo;
+
+  return {
+    resolvedId,
+    productName: name,
+    imageUrl,
+    pricePromo,
+    priceOriginal,
+    discountRate: null,
+    permalink: typeof sourceUrl === "string" ? sourceUrl.split("#")[0] : null,
+    subtitle: null,
+    condition: null,
+    currencyId: "BRL",
+    availableQuantity: null,
+    soldQuantity: null,
+    warranty: null,
+    listingTypeId: null,
+  };
+}
+
+function tryParseLdJsonBlock(jsonStr: string, sourceUrl: string, resolvedId: string): MlPdpProductMeta | null {
+  const trimmed = jsonStr.trim();
+  if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) return null;
+  let data: unknown;
+  try {
+    data = JSON.parse(trimmed);
+  } catch {
+    return null;
+  }
+
+  const tryNode = (node: unknown): MlPdpProductMeta | null => {
+    if (!node || typeof node !== "object") return null;
+    const o = node as Record<string, unknown>;
+    if (isProductNode(o)) return mapLdProduct(o, sourceUrl, resolvedId);
+    return null;
+  };
+
+  const direct = tryNode(data);
+  if (direct) return direct;
+
+  const root = data as Record<string, unknown>;
+  const graph = root["@graph"];
+  if (Array.isArray(graph)) {
+    for (const node of graph) {
+      const m = tryNode(node);
+      if (m) return m;
+    }
+  }
+  return null;
+}
+
+/**
+ * Busca metadados na página HTML do PDP (JSON-LD).
+ */
+export async function fetchMlProductMetaFromPdpHtml(productUrl: string): Promise<MlPdpProductMeta | null> {
+  let u: URL;
+  try {
+    u = new URL(productUrl.trim());
+  } catch {
+    return null;
+  }
+  if (u.protocol !== "https:" && u.protocol !== "http:") return null;
+  if (!isAllowedMlPdpHost(u.hostname)) return null;
+
+  const resolvedId = extractMlbIdFromUrl(productUrl) ?? "MLB";
+
+  const res = await fetch(u.toString(), {
+    headers: BROWSER_HEADERS,
+    redirect: "follow",
+    next: { revalidate: 300 },
+  });
+  if (!res.ok) return null;
+
+  const html = await res.text();
+  if (html.length > 2_500_000) return null;
+
+  const re = /<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html)) !== null) {
+    const block = m[1]?.trim();
+    if (!block) continue;
+    const meta = tryParseLdJsonBlock(block, u.toString(), resolvedId);
+    if (meta?.productName || meta?.imageUrl || meta?.pricePromo != null) return meta;
+  }
+
+  return null;
+}
+
+export function buildProdutoMercadolivreShortUrl(mlbId: string): string | null {
+  const id = mlbId.trim().toUpperCase();
+  const match = id.match(/^MLB(\d{6,})$/);
+  if (!match) return null;
+  return `https://produto.mercadolivre.com.br/MLB-${match[1]}`;
+}

@@ -21,13 +21,13 @@ export async function GET() {
 
     const { data: rows, error } = await supabase
       .from("grupos_venda_continuo")
-      .select("id, lista_id, instance_id, lista_ofertas_id, keywords, sub_id_1, sub_id_2, sub_id_3, ativo, proximo_indice, ultimo_disparo_at, updated_at, horario_inicio, horario_fim")
+      .select("id, lista_id, instance_id, lista_ofertas_id, lista_ofertas_ml_id, keywords, sub_id_1, sub_id_2, sub_id_3, ativo, proximo_indice, ultimo_disparo_at, updated_at, horario_inicio, horario_fim")
       .eq("user_id", user.id)
       .order("updated_at", { ascending: false });
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-    type Row = { id: string; lista_id: string | null; instance_id: string; lista_ofertas_id?: string | null; keywords: string[]; sub_id_1: string; sub_id_2: string; sub_id_3: string; ativo: boolean; proximo_indice: number; ultimo_disparo_at: string | null; updated_at: string; horario_inicio: string | null; horario_fim: string | null };
+    type Row = { id: string; lista_id: string | null; instance_id: string; lista_ofertas_id?: string | null; lista_ofertas_ml_id?: string | null; keywords: string[]; sub_id_1: string; sub_id_2: string; sub_id_3: string; ativo: boolean; proximo_indice: number; ultimo_disparo_at: string | null; updated_at: string; horario_inicio: string | null; horario_fim: string | null };
     const list = (rows ?? []) as Row[];
     const listaIds = [...new Set(list.map((r) => r.lista_id).filter(Boolean))] as string[];
     const listasMap: Record<string, string> = {};
@@ -41,17 +41,26 @@ export async function GET() {
       const { data: listasOfertas } = await supabase.from("listas_ofertas").select("id, nome").in("id", listaOfertasIds);
       (listasOfertas ?? []).forEach((l: { id: string; nome: string }) => { listasOfertasMap[l.id] = l.nome ?? ""; });
     }
+    const listaOfertasMlIds = [...new Set(list.map((r) => r.lista_ofertas_ml_id).filter(Boolean))] as string[];
+    const listasOfertasMlMap: Record<string, string> = {};
+    if (listaOfertasMlIds.length > 0) {
+      const { data: listasMl } = await supabase.from("listas_ofertas_ml").select("id, nome").in("id", listaOfertasMlIds);
+      (listasMl ?? []).forEach((l: { id: string; nome: string }) => { listasOfertasMlMap[l.id] = l.nome ?? ""; });
+    }
 
     const data = list.map((r) => {
       const keywords = Array.isArray(r.keywords) ? r.keywords : [];
       const idx = r.proximo_indice ?? 0;
       const listaOfertasId = r.lista_ofertas_id ?? null;
+      const listaOfertasMlId = r.lista_ofertas_ml_id ?? null;
       return {
         id: r.id,
         listaId: r.lista_id,
         listaNome: (r.lista_id && listasMap[r.lista_id]) || "—",
         listaOfertasId,
         listaOfertasNome: (listaOfertasId && listasOfertasMap[listaOfertasId]) || null,
+        listaOfertasMlId,
+        listaOfertasMlNome: (listaOfertasMlId && listasOfertasMlMap[listaOfertasMlId]) || null,
         instanceId: r.instance_id,
         keywords,
         subId1: r.sub_id_1 ?? "",
@@ -83,6 +92,7 @@ export async function POST(req: Request) {
     const id = typeof body.id === "string" ? body.id.trim() : "";
     const listaId = typeof body.listaId === "string" ? body.listaId.trim() : "";
     const listaOfertasId = typeof body.listaOfertasId === "string" ? body.listaOfertasId.trim() || null : null;
+    const listaOfertasMlId = typeof body.listaOfertasMlId === "string" ? body.listaOfertasMlId.trim() || null : null;
     const ativo = body.ativo === true || body.ativo === "true";
     const keywordsRaw = body.keywords;
     const keywords: string[] = Array.isArray(keywordsRaw)
@@ -131,13 +141,24 @@ export async function POST(req: Request) {
     }
 
     if (!listaId) return NextResponse.json({ error: "Lista de grupos é obrigatória." }, { status: 400 });
-    const isListaOfertasMode = !!listaOfertasId;
+    if (listaOfertasId && listaOfertasMlId) {
+      return NextResponse.json({ error: "Use apenas uma lista de ofertas por vez: Shopee ou Mercado Livre." }, { status: 400 });
+    }
+    const isListaShopeeMode = !!listaOfertasId;
+    const isListaMlMode = !!listaOfertasMlId;
+    const isListaOfertasMode = isListaShopeeMode || isListaMlMode;
     if (!isListaOfertasMode && keywords.length === 0) return NextResponse.json({ error: "Informe ao menos uma keyword ou selecione uma lista de ofertas." }, { status: 400 });
-    if (isListaOfertasMode) {
+    if (isListaShopeeMode) {
       const { data: listaOferta } = await supabase.from("listas_ofertas").select("id").eq("id", listaOfertasId).eq("user_id", user.id).single();
       if (!listaOferta) return NextResponse.json({ error: "Lista de ofertas não encontrada." }, { status: 404 });
       const { count } = await supabase.from("minha_lista_ofertas").select("id", { count: "exact", head: true }).eq("lista_id", listaOfertasId).eq("user_id", user.id);
       if (!count || count < 1) return NextResponse.json({ error: "A lista de ofertas está vazia. Adicione produtos à lista primeiro." }, { status: 400 });
+    }
+    if (isListaMlMode) {
+      const { data: listaMl } = await supabase.from("listas_ofertas_ml").select("id").eq("id", listaOfertasMlId).eq("user_id", user.id).single();
+      if (!listaMl) return NextResponse.json({ error: "Lista Mercado Livre não encontrada." }, { status: 404 });
+      const { count } = await supabase.from("minha_lista_ofertas_ml").select("id", { count: "exact", head: true }).eq("lista_id", listaOfertasMlId).eq("user_id", user.id);
+      if (!count || count < 1) return NextResponse.json({ error: "A lista ML está vazia. Adicione produtos primeiro." }, { status: 400 });
     }
 
     const { data: lista } = await supabase
@@ -163,7 +184,8 @@ export async function POST(req: Request) {
       lista_id: listaId,
       instance_id: instanceId,
       keywords: isListaOfertasMode ? [] : keywords,
-      lista_ofertas_id: listaOfertasId || null,
+      lista_ofertas_id: isListaMlMode ? null : listaOfertasId || null,
+      lista_ofertas_ml_id: isListaShopeeMode ? null : listaOfertasMlId || null,
       sub_id_1: subId1,
       sub_id_2: subId2,
       sub_id_3: subId3,

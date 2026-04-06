@@ -16,6 +16,7 @@ import {
   Search,
 } from "lucide-react";
 import ConfirmModal from "@/app/components/ui/ConfirmModal";
+import { effectiveListaOfferPromoPrice } from "@/lib/lista-ofertas-effective-promo";
 
 type Lista = {
   id: string;
@@ -42,6 +43,12 @@ function formatCurrency(value: number) {
     currency: "BRL",
     minimumFractionDigits: 2,
   }).format(value);
+}
+
+function displayPrecoPorLista(item: Item): string {
+  const por =
+    effectiveListaOfferPromoPrice(item.priceOriginal, item.pricePromo, item.discountRate) ?? item.pricePromo;
+  return por != null ? formatCurrency(por) : "—";
 }
 
 export default function MinhaListaOfertasPage() {
@@ -227,7 +234,11 @@ export default function MinhaListaOfertasPage() {
           >
             <ArrowLeft className="h-5 w-5" />
           </Link>
-          <h1 className="text-xl font-semibold">Minha Lista de Ofertas</h1>
+          <img src="/shop.webp" alt="Shopee" className="w-12  object-contain" />
+          <h1 className="text-xl font-semibold">
+          
+             Minha Lista de Ofertas 
+          </h1>
         </div>
 
    
@@ -351,7 +362,7 @@ export default function MinhaListaOfertasPage() {
                                     <span className="text-text-secondary">🔴</span>{" "}
                                     <span className="line-through">{item.priceOriginal != null ? formatCurrency(item.priceOriginal) : "—"}</span>
                                     {" por "}
-                                    <span className="text-emerald-400 font-medium">✅ {item.pricePromo != null ? formatCurrency(item.pricePromo) : "—"}</span>
+                                    <span className="text-emerald-400 font-medium">✅ {displayPrecoPorLista(item)}</span>
                                   </p>
                                   <p className="text-sm font-medium text-text-primary mt-1">🏷️ PROMOÇÃO - CLIQUE NO LINK 👇</p>
                                   <button

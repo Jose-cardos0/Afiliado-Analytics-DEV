@@ -38,6 +38,20 @@ export default async function ConfiguracoesPage() {
     metaLast4 = metaRow.meta_access_token_last4;
   }
 
+  let mlClientId = "";
+  let mlHasSecret = false;
+  let mlLast4: string | null = null;
+  const { data: mlRow, error: mlError } = await supabase
+    .from("profiles")
+    .select("mercadolivre_client_id, mercadolivre_client_secret_last4")
+    .eq("id", user.id)
+    .single();
+  if (!mlError && mlRow) {
+    mlClientId = (mlRow as { mercadolivre_client_id?: string }).mercadolivre_client_id ?? "";
+    mlHasSecret = !!(mlRow as { mercadolivre_client_secret_last4?: string }).mercadolivre_client_secret_last4;
+    mlLast4 = (mlRow as { mercadolivre_client_secret_last4?: string }).mercadolivre_client_secret_last4 ?? null;
+  }
+
   return (
     <div className="bg-dark-bg min-h-[calc(100vh-4rem)] text-text-secondary">
       <div className="container mx-auto px-4 py-8">
@@ -59,6 +73,9 @@ export default async function ConfiguracoesPage() {
           initialAppId={profile.shopee_app_id ?? ""}
           initialHasKey={!!profile.shopee_api_key_last4}
           initialLast4={profile.shopee_api_key_last4 ?? null}
+          mlInitialClientId={mlClientId}
+          mlInitialHasSecret={mlHasSecret}
+          mlInitialLast4={mlLast4}
           metaHasToken={metaHasToken}
           metaLast4={metaLast4}
         />
