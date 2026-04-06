@@ -64,7 +64,7 @@ function discountFromPrices(promo: number, original: number): number | null {
 function mapItem(j: ItemJson, resolvedId: string): MlProductMeta {
   const price = typeof j.price === "number" ? j.price : null;
   const orig = typeof j.original_price === "number" ? j.original_price : null;
-  let pricePromo = price;
+  const pricePromo = price;
   let priceOriginal = orig;
   let discountRate: number | null = null;
   if (pricePromo != null && priceOriginal != null && priceOriginal > pricePromo) {
@@ -94,7 +94,7 @@ function mapProduct(j: ProductJson, resolvedId: string): MlProductMeta {
   const bb = j.buy_box_winner;
   const price = typeof bb?.price === "number" ? bb.price : null;
   const orig = typeof bb?.original_price === "number" ? bb.original_price : null;
-  let pricePromo = price;
+  const pricePromo = price;
   let priceOriginal = orig;
   let discountRate: number | null = null;
   if (pricePromo != null && priceOriginal != null && priceOriginal > pricePromo) {

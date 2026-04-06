@@ -121,7 +121,7 @@ export async function PATCH(req: Request) {
     if (!id) return NextResponse.json({ error: "id é obrigatório" }, { status: 400 });
 
     const priceOriginal = body?.priceOriginal != null ? Number(body.priceOriginal) : null;
-    let pricePromo = body?.pricePromo != null ? Number(body.pricePromo) : null;
+    const pricePromo = body?.pricePromo != null ? Number(body.pricePromo) : null;
     const discountRate = body?.discountRate != null ? Number(body.discountRate) : null;
 
     const poFin = Number.isFinite(priceOriginal as number) ? priceOriginal : null;

@@ -31,7 +31,7 @@ function extractMlProductUrlFromMeliBody(html: string, baseUrl: string): string 
   const candidates: string[] = [];
   const push = (s: string | undefined | null) => {
     if (!s) return;
-    let t = s.trim().replace(/&amp;/g, "&").replace(/^['"]|['"]$/g, "");
+    const t = s.trim().replace(/&amp;/g, "&").replace(/^['"]|['"]$/g, "");
     if (!t) return;
     if (t.startsWith("http")) candidates.push(t);
     else if (t.startsWith("//")) candidates.push(`https:${t}`);

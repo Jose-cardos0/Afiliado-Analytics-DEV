@@ -43,7 +43,7 @@ async function refreshOneMlRow(
     };
   }
 
-  let po = meta.priceOriginal;
+  const po = meta.priceOriginal;
   let pp = meta.pricePromo;
   const dr = meta.discountRate;
   const adj = effectiveListaOfferPromoPrice(po, pp, dr);

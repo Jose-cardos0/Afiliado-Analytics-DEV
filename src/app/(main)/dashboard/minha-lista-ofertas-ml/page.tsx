@@ -660,7 +660,12 @@ export default function MinhaListaOfertasMlPage() {
     async (listaIdTarget: string, rows: { productUrl: string; affiliateUrl: string }[]) => {
       for (let i = 0; i < rows.length; i++) {
         const { productUrl: pUrl, affiliateUrl: aff } = rows[i];
-        let { nome, img, po, pp, dr } = await resolveRowMeta(rows[i]);
+        const metaRow = await resolveRowMeta(rows[i]);
+        let nome = metaRow.nome;
+        const img = metaRow.img;
+        const po = metaRow.po;
+        let pp = metaRow.pp;
+        const dr = metaRow.dr;
         if (!nome && pUrl) nome = fallbackNameFromProductUrl(pUrl, i);
         if (!nome) nome = `Produto (linha ${i + 1})`;
         const adj = effectiveListaOfferPromoPrice(po, pp, dr);
