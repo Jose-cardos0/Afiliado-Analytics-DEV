@@ -27,6 +27,7 @@ import { usePlanEntitlements } from "../PlanEntitlementsContext";
 import type { CaptureSiteRow, LayoutVariant, PageTemplate } from "./_lib/types";
 import { PAGE_TEMPLATE_OPTIONS, pageTemplateLabel } from "./_lib/captureTemplates";
 import { normalizeCapturePageTemplate } from "@/lib/capture-page-template";
+import { isValidOptionalYoutubeUrl } from "@/lib/youtube-embed";
 import { formatDateTimePtBR, isExpired, sanitizeSlug } from "./_lib/captureUtils";
 
 import CapturePreviewCard from "./_components/CapturePreviewCard";
@@ -162,6 +163,7 @@ export default function CapturaClient() {
   const [whatsappUrl, setWhatsappUrl] = useState(""); // Link do botão (mantive nome para não quebrar esquema/coluna)
   const [buttonColor, setButtonColor] = useState("#25D366");
   const [metaPixelId, setMetaPixelId] = useState("");
+  const [youtubeUrl, setYoutubeUrl] = useState("");
 
   // layout variant (icons | scarcity) — só página classic
   const [layoutVariant, setLayoutVariant] = useState<LayoutVariant>("icons");
@@ -359,6 +361,7 @@ export default function CapturaClient() {
     setButtonColor("#25D366");
     setLayoutVariant(t === "classic" ? "icons" : "scarcity");
     setMetaPixelId("");
+    setYoutubeUrl("");
 
     setLogoFile(null);
     setLogoPendingAction("keep");
@@ -383,6 +386,7 @@ export default function CapturaClient() {
     setLayoutVariant((row.layout_variant ?? "icons") as LayoutVariant);
     setPageTemplate(((row as CaptureSiteRow).page_template ?? "classic") as PageTemplate);
     setMetaPixelId(row.meta_pixel_id ?? "");
+    setYoutubeUrl(row.youtube_url ?? "");
 
     setLogoFile(null);
     setLogoPendingAction("keep");
@@ -414,6 +418,7 @@ export default function CapturaClient() {
       setLayoutVariant((site.layout_variant ?? "icons") as LayoutVariant);
       setPageTemplate(((site as CaptureSiteRow).page_template ?? "classic") as PageTemplate);
       setMetaPixelId(site.meta_pixel_id ?? "");
+      setYoutubeUrl(site.youtube_url ?? "");
 
       originalButtonUrlRef.current = (site.whatsapp_url ?? "").trim();
 
@@ -428,12 +433,14 @@ export default function CapturaClient() {
       setMode("view");
       setLogoUrl(null);
       setMetaPixelId("");
+      setYoutubeUrl("");
     } else {
       originalButtonUrlRef.current = "";
       modeRef.current = "empty";
       setMode("empty");
       setLogoUrl(null);
       setMetaPixelId("");
+      setYoutubeUrl("");
     }
   }
 
@@ -563,6 +570,12 @@ export default function CapturaClient() {
       return;
     }
 
+    if (!isValidOptionalYoutubeUrl(youtubeUrl)) {
+      setError("Link do YouTube inválido. Use um URL de vídeo ou o ID de 11 caracteres, ou deixe vazio.");
+      setSaving(false);
+      return;
+    }
+
     const fileToUploadAfterCreate = logoFile;
 
     const res = await fetch("/api/captura/site-create", {
@@ -579,6 +592,7 @@ export default function CapturaClient() {
         layout_variant: layoutVariant,
         meta_pixel_id: metaPixelId.trim() || null,
         page_template: pageTemplateRef.current,
+        youtube_url: youtubeUrl.trim() || null,
       }),
     });
     const created = (await res.json()) as { id?: string; error?: string; page_template?: unknown };
@@ -659,6 +673,12 @@ export default function CapturaClient() {
       return;
     }
 
+    if (!isValidOptionalYoutubeUrl(youtubeUrl)) {
+      setError("Link do YouTube inválido. Use um URL de vídeo ou o ID de 11 caracteres, ou deixe vazio.");
+      setSaving(false);
+      return;
+    }
+
     const wantedTpl = normalizeCapturePageTemplate(pageTemplateRef.current);
 
     const { data: updatedRow, error: upErr } = await supabase
@@ -672,6 +692,7 @@ export default function CapturaClient() {
         layout_variant: layoutVariant,
         meta_pixel_id: metaPixelId.trim() || null,
         page_template: wantedTpl,
+        youtube_url: youtubeUrl.trim() || null,
         updated_at: new Date().toISOString(),
       })
       .eq("id", site.id)
@@ -804,6 +825,7 @@ export default function CapturaClient() {
       setButtonColor("#25D366");
       setLayoutVariant("icons");
       setMetaPixelId("");
+      setYoutubeUrl("");
       setLogoFile(null);
       setLogoUrl(null);
       setLogoPendingAction("keep");
@@ -824,7 +846,8 @@ export default function CapturaClient() {
 
   if (saving && (mode === "create" || mode === "edit")) return <LoadingOverlay message="Salvando..." />;
 
-  const isVipPreview = pageTemplate === "vip_rosa" || pageTemplate === "vip_terroso";
+  const isVipPreview =
+    pageTemplate === "vip_rosa" || pageTemplate === "vip_terroso" || pageTemplate === "vinho_rose";
 
   const canCreateAnotherSite = sites.length < captureLimit;
 
@@ -897,7 +920,7 @@ export default function CapturaClient() {
             </button>
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             {PAGE_TEMPLATE_OPTIONS.map((opt) => (
               <button
                 key={opt.id}
@@ -1434,6 +1457,24 @@ export default function CapturaClient() {
                       <div className="mt-2 text-xs text-red-400">Pixel ID inválido (use 5–20 dígitos).</div>
                     )}
                   </div>
+
+                  <div>
+                    <label className={labelClass}>Vídeo do YouTube (opcional)</label>
+                    <input
+                      value={youtubeUrl}
+                      onChange={(e) => setYoutubeUrl(e.target.value)}
+                      className={inputClass}
+                      placeholder="https://www.youtube.com/watch?v=… ou youtu.be/…"
+                    />
+                    <p className="mt-1.5 text-xs text-text-secondary/80">
+                      Se preencher, o player aparece na página pública acima do primeiro botão (todos os modelos).
+                    </p>
+                    {!!youtubeUrl.trim() && !isValidOptionalYoutubeUrl(youtubeUrl) && (
+                      <div className="mt-2 text-xs text-red-400">
+                        URL ou ID do YouTube inválido.
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -1502,13 +1543,20 @@ export default function CapturaClient() {
                 <div className="p-3 bg-dark-bg max-h-[min(78vh,820px)] overflow-y-auto scrollbar-thin">
                   <div className="origin-top scale-[0.72] sm:scale-[0.78] mx-auto w-[min(100%,420px)]">
                     <CaptureVipLanding
-                      variant={pageTemplate === "vip_terroso" ? "vip_terroso" : "vip_rosa"}
+                      variant={
+                        pageTemplate === "vip_terroso"
+                          ? "vip_terroso"
+                          : pageTemplate === "vinho_rose"
+                            ? "vinho_rose"
+                            : "vip_rosa"
+                      }
                       title={previewTitle}
                       description={previewDesc}
                       buttonText={previewButtonText}
                       ctaHref={previewButtonUrl.trim() ? previewButtonUrl : "#"}
                       logoUrl={previewLogoSrc}
                       buttonColor={previewColor}
+                      youtubeUrl={youtubeUrl.trim() || null}
                       previewMode
                     />
                   </div>
@@ -1523,6 +1571,7 @@ export default function CapturaClient() {
                 logoSrc={previewLogoSrc}
                 buttonText={previewButtonText}
                 buttonUrl={previewButtonUrl}
+                youtubeUrl={youtubeUrl}
               />
             )}
           </div>

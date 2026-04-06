@@ -1,6 +1,6 @@
 import type { PageTemplate } from "@/app/(main)/dashboard/captura/_lib/types";
 
-const ALLOWED = new Set<PageTemplate>(["classic", "vip_rosa", "vip_terroso"]);
+const ALLOWED = new Set<PageTemplate>(["classic", "vip_rosa", "vip_terroso", "vinho_rose"]);
 
 /**
  * Normaliza o valor vindo do JSON (snake_case / camelCase / legado) para o CHECK do Postgres.
@@ -13,6 +13,7 @@ export function normalizeCapturePageTemplate(raw: unknown): PageTemplate {
     .replace(/_+/g, "_");
   if (s === "elegante" || s === "elegante_rosa" || s === "viprosa") return "vip_rosa";
   if (s === "terroso" || s === "vip_terroso_minimal") return "vip_terroso";
+  if (s === "vinhorose" || s === "vinho" || s === "rose" || s === "vip_vinho_rose") return "vinho_rose";
   if (ALLOWED.has(s as PageTemplate)) return s as PageTemplate;
   return "classic";
 }

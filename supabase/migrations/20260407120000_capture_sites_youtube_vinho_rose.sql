@@ -1,0 +1,10 @@
+-- Vídeo YouTube opcional em qualquer página de captura + novo modelo vinho rose.
+ALTER TABLE public.capture_sites
+  ADD COLUMN IF NOT EXISTS youtube_url text NULL;
+
+ALTER TABLE public.capture_sites
+  DROP CONSTRAINT IF EXISTS capture_sites_page_template_check;
+
+ALTER TABLE public.capture_sites
+  ADD CONSTRAINT capture_sites_page_template_check
+  CHECK (page_template IN ('classic', 'vip_rosa', 'vip_terroso', 'vinho_rose'));

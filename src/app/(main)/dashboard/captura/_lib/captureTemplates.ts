@@ -26,6 +26,13 @@ export const PAGE_TEMPLATE_OPTIONS: {
     description:
       "Mesma estrutura do VIP elegante com visual bege e marrom, CTA em destaque e cards de benefícios — ideal para público mais sóbrio.",
   },
+  {
+    id: "vinho_rose",
+    title: "Vinho rose",
+    description:
+      "Fundo rosa claro, CTA verde estilo WhatsApp, selo de urgência, lista com ✓ vermelho e marcas parceiras — ideal para grupos de achadinhos.",
+    badge: "Novo",
+  },
 ];
 
 export function pageTemplateLabel(t: PageTemplate | null | undefined): string {

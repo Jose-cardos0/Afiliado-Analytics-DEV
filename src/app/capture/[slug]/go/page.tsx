@@ -2,11 +2,11 @@ import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
 import { detectBot } from "../../../../lib/bot-detection";
-
+import { CAPTURE_PUBLIC_DOMAIN, loadCaptureSiteRow } from "@/lib/capture-load-site";
 
 export const dynamic = "force-dynamic";
 
-const DOMAIN = "s.afiliadoanalytics.com.br";
+const DOMAIN = CAPTURE_PUBLIC_DOMAIN;
 const LOGO_BUCKET = "capture-logos";
 
 function admin() {
@@ -72,12 +72,12 @@ export default async function WhatsAppRedirectPage({
   const referer = h.get("referer") ?? "";
   const ip = getIpFromHeaders(h);
 
-  const { data: site } = await supabase
-    .from("capture_sites")
-    .select("id, title, whatsapp_url, button_color, active, expiresat, logopath")
-    .eq("domain", DOMAIN)
-    .eq("slug", slug)
-    .maybeSingle();
+  const { data: site, error: loadErr } = await loadCaptureSiteRow(supabase, DOMAIN, slug);
+  if (loadErr) {
+    throw new Error(
+      "Não foi possível carregar o site de captura. Confirme NEXT_PUBLIC_SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY na Vercel.",
+    );
+  }
 
   if (!site) return notFound();
   if (!site.active) return notFound();

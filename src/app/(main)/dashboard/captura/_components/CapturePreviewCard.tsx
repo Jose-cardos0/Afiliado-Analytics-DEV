@@ -6,6 +6,7 @@ import { FaWhatsapp } from "react-icons/fa";
 import ScarcityPreview from "./ScarcityPreview";
 import { LayoutVariant } from "../_lib/types";
 import { parseColorToRgb } from "../_lib/captureUtils";
+import CaptureYoutubeEmbed from "@/app/capture/[slug]/CaptureYoutubeEmbed";
 
 function isWhatsAppLink(rawUrl: string) {
   const s = (rawUrl || "").trim().toLowerCase();
@@ -28,8 +29,10 @@ export default function CapturePreviewCard(props: {
   logoSrc: string | null; // pode ser blob:... ou URL pública
   buttonText: string;
   buttonUrl: string;
+  youtubeUrl?: string;
 }) {
-  const { title, description, buttonColor, layoutVariant, logoSrc, buttonText, buttonUrl } = props;
+  const { title, description, buttonColor, layoutVariant, logoSrc, buttonText, buttonUrl, youtubeUrl } =
+    props;
 
   const safeTitle = title.trim() || "Grupo VIP";
   const safeDesc = description.trim() || "Clique no botão abaixo para acessar.";
@@ -40,6 +43,7 @@ export default function CapturePreviewCard(props: {
 
   const { r, g, b } = parseColorToRgb(safeColor);
   const isBlobLogo = !!logoSrc && logoSrc.startsWith("blob:");
+  const yt = (youtubeUrl ?? "").trim();
 
   return (
     <div className="rounded-lg border border-dark-border overflow-hidden bg-dark-card">
@@ -134,6 +138,12 @@ export default function CapturePreviewCard(props: {
                   </div>
                 </div>
               )}
+
+              {yt ? (
+                <div className="mt-6 sm:mt-7 w-full">
+                  <CaptureYoutubeEmbed url={yt} />
+                </div>
+              ) : null}
 
               {/* 5) Botão */}
               <div className="flex justify-center mt-7 sm:mt-8">

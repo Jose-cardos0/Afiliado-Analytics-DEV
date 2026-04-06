@@ -1,0 +1,353 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import Image from "next/image";
+import {
+  Ticket,
+  Home,
+  ShoppingBag,
+  Zap,
+  CheckCircle,
+  Flame,
+} from "lucide-react";
+import { FaWhatsapp } from "react-icons/fa";
+import type { CaptureVipLandingProps } from "./capture-vip-types";
+import { parseColorToRgb } from "@/app/(main)/dashboard/captura/_lib/captureUtils";
+import { isWhatsAppUrl, useCaptureVipFonts } from "./capture-vip-shared";
+import CaptureVipEntradaToasts from "./CaptureVipEntradaToasts";
+import CaptureYoutubeEmbed from "./CaptureYoutubeEmbed";
+
+const BENEFITS: { Icon: typeof Ticket; title: string; body: string }[] = [
+  {
+    Icon: Ticket,
+    title: "Cupons que funcionam",
+    body: "Cupons testados e atualizados pra você economizar na finalização da compra.",
+  },
+  {
+    Icon: Home,
+    title: "Casa e decoração",
+    body: "Organização, cozinha, utilidades e decoração com preço bom e qualidade.",
+  },
+  {
+    Icon: ShoppingBag,
+    title: "Moda e beleza",
+    body: "Achados de roupas, acessórios e beleza com desconto real pra aproveitar.",
+  },
+  {
+    Icon: Zap,
+    title: "Ofertas relâmpago",
+    body: "Promoções que acabam rápido — você recebe antes e pega as melhores.",
+  },
+  {
+    Icon: CheckCircle,
+    title: "Links verificados",
+    body: "Somente oportunidades de lojas confiáveis, pra comprar com segurança.",
+  },
+];
+
+function hexToRgbTriplet(hex: string): string {
+  const h = hex.replace("#", "");
+  if (h.length !== 6) return "182, 93, 120";
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  return `${r}, ${g}, ${b}`;
+}
+
+type VipTheme = {
+  primary: string;
+  deep: string;
+  bg: string;
+  textMain: string;
+  textSoft: string;
+  cardBorder: string;
+  progressTrackBorder: string;
+  cardBg: string;
+  benefitCardBg: string;
+  topBarBg: string;
+  headingFont: string;
+  showDotPattern: boolean;
+  containerRadius: string;
+  ctaRadius: string;
+  cardShadow: string;
+  footerMuted: string;
+};
+
+const VIP_ROSA_THEME: VipTheme = {
+  primary: "#B65D78",
+  deep: "#3B1E2A",
+  bg: "#F6EFEA",
+  textMain: "#2f2527",
+  textSoft: "#6f6064",
+  cardBorder: "rgba(182, 93, 120, 0.22)",
+  progressTrackBorder: "rgba(59, 30, 42, 0.10)",
+  cardBg: "#ffffff",
+  benefitCardBg: "#ffffff",
+  topBarBg: "linear-gradient(135deg, #3B1E2A 0%, #1a0f14 100%)",
+  headingFont: "'Playfair Display', serif",
+  showDotPattern: true,
+  containerRadius: "24px",
+  ctaRadius: "9999px",
+  cardShadow: "0 10px 30px rgba(59, 30, 42, 0.12)",
+  footerMuted: "#9e8a8a",
+};
+
+const TOTAL_SPOTS = 60;
+
+export default function CaptureVipRosa(props: CaptureVipLandingProps) {
+  const {
+    title,
+    description,
+    buttonText,
+    ctaHref,
+    logoUrl,
+    buttonColor,
+    youtubeUrl,
+    previewMode = false,
+  } = props;
+
+  const safeTitle = title.trim() || "Grupo VIP";
+  const safeDesc =
+    description.trim() ||
+    "Entre no grupo e receba promoções, ofertas e descontos reais — antes de acabar.";
+  const safeBtn = buttonText.trim() || "Quero entrar agora";
+  const color = buttonColor || "#25D366";
+  const { r, g, b } = parseColorToRgb(color);
+  const showWa =
+    previewMode || isWhatsAppUrl(ctaHref) || /\/go\/?(\?.*)?$/i.test(ctaHref.trim());
+
+  const yt = (youtubeUrl ?? "").trim();
+
+  const [eleganteFilledPct, setEleganteFilledPct] = useState(70);
+
+  useCaptureVipFonts();
+
+  useEffect(() => {
+    if (previewMode) return;
+    if (typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      return;
+    }
+    const t = setInterval(() => {
+      setEleganteFilledPct((p) => Math.min(100, p + 1));
+    }, 5000);
+    return () => clearInterval(t);
+  }, [previewMode]);
+
+  const theme = VIP_ROSA_THEME;
+  const rosaPct = previewMode ? 70 : eleganteFilledPct;
+  const rosaSpotsRemaining = Math.max(0, Math.round((TOTAL_SPOTS * (100 - rosaPct)) / 100));
+
+  return (
+    <>
+      <CaptureVipEntradaToasts disabled={previewMode} intervalMs={2000} />
+      <style
+        dangerouslySetInnerHTML={{
+          __html: `
+          @keyframes capture-vip-rosa-sweep {
+            0% { transform: translateX(-130%) skewX(-12deg); }
+            100% { transform: translateX(230%) skewX(-12deg); }
+          }
+          @keyframes capture-vip-rosa-blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.35; }
+          }
+          .capture-vip-rosa-cta-sheen {
+            position: absolute;
+            inset: -2px;
+            z-index: 0;
+            width: 42%;
+            pointer-events: none;
+            background: linear-gradient(
+              105deg,
+              transparent 0%,
+              rgba(255, 255, 255, 0) 35%,
+              rgba(255, 255, 255, 0.55) 50%,
+              rgba(255, 255, 255, 0) 65%,
+              transparent 100%
+            );
+            animation: capture-vip-rosa-sweep 2.6s ease-in-out infinite;
+          }
+          .capture-vip-rosa-ultimas {
+            animation: capture-vip-rosa-blink 0.9s ease-in-out infinite;
+          }
+          @media (prefers-reduced-motion: reduce) {
+            .capture-vip-rosa-cta-sheen { animation: none !important; }
+            .capture-vip-rosa-ultimas { animation: none !important; }
+          }
+        `,
+        }}
+      />
+      <div
+        className="min-h-screen"
+        style={{
+          fontFamily: "'Lato', sans-serif",
+          backgroundColor: theme.bg,
+          backgroundImage: theme.showDotPattern
+            ? `radial-gradient(rgba(${hexToRgbTriplet(theme.primary)}, 0.12) 1px, transparent 1px)`
+            : undefined,
+          backgroundSize: theme.showDotPattern ? "20px 20px" : undefined,
+          color: theme.textMain,
+          padding: "58px 16px 110px",
+        }}
+      >
+        <div
+          className="fixed top-0 left-0 z-[1001] flex w-full items-center justify-center gap-2 py-2.5 text-xs font-black uppercase tracking-wide text-white shadow-md"
+          style={{
+            background: theme.topBarBg,
+          }}
+        >
+          <Flame className="h-3.5 w-3.5 shrink-0" style={{ color: theme.primary }} aria-hidden />
+          Últimas vagas disponíveis
+          <Flame className="h-3.5 w-3.5 shrink-0" style={{ color: theme.primary }} aria-hidden />
+        </div>
+
+        <div
+          className="mx-auto w-full max-w-[420px] border px-5 pb-6 pt-7 text-center"
+          style={{
+            borderRadius: theme.containerRadius,
+            background: theme.cardBg,
+            borderColor: theme.cardBorder,
+            boxShadow: theme.cardShadow,
+          }}
+        >
+          <div
+            className="mx-auto mb-3.5 flex h-[115px] w-[115px] items-center justify-center overflow-hidden rounded-full border-[3px] bg-white shadow-md"
+            style={{ borderColor: `${theme.primary}8c` }}
+          >
+            {logoUrl ? (
+              <Image
+                src={logoUrl}
+                alt=""
+                width={115}
+                height={115}
+                className="h-full w-full object-cover"
+                unoptimized={logoUrl.startsWith("blob:")}
+              />
+            ) : (
+              <span className="text-sm font-bold text-neutral-400">Logo</span>
+            )}
+          </div>
+
+          <h1
+            className="mb-2.5 text-2xl leading-snug md:text-[26px] font-bold"
+            style={{
+              fontFamily: theme.headingFont,
+              color: theme.textMain,
+            }}
+          >
+            {safeTitle}
+          </h1>
+
+          <p className="mb-3.5 px-0.5 text-sm font-normal leading-relaxed" style={{ color: theme.textSoft }}>
+            {safeDesc}
+          </p>
+
+          {yt ? (
+            <div className="mb-3.5 w-full text-left">
+              <CaptureYoutubeEmbed url={yt} />
+            </div>
+          ) : null}
+
+          <div className="my-2">
+            <a
+              href={ctaHref}
+              className="relative isolate flex w-full items-center justify-center overflow-hidden py-4 text-base font-black uppercase tracking-wide text-white no-underline shadow-lg transition-transform hover:-translate-y-0.5"
+              style={{
+                borderRadius: theme.ctaRadius,
+                backgroundColor: color,
+                boxShadow: `0 6px 20px rgba(${r},${g},${b},0.4)`,
+              }}
+            >
+              <span className="capture-vip-rosa-cta-sheen" aria-hidden />
+              <span className="relative z-[1] flex items-center justify-center">
+                {showWa ? <FaWhatsapp className="mr-2.5 text-xl" aria-hidden /> : null}
+                {safeBtn}
+              </span>
+            </a>
+            <p className="mt-2.5 text-xs font-extrabold" style={{ color: theme.deep }}>
+              ✅ Grupo seguro — ofertas novas todos os dias
+            </p>
+          </div>
+
+          {rosaPct >= 100 ? (
+            <p
+              className="capture-vip-rosa-ultimas mb-2 text-center text-sm font-black uppercase tracking-widest text-red-600"
+              role="status"
+            >
+              ÚLTIMAS VAGAS
+            </p>
+          ) : null}
+
+          <div
+            className="mb-4 mt-4 rounded-xl border px-4 py-3.5 text-left shadow-sm"
+            style={{
+              background: `${theme.bg}b3`,
+              borderColor: `${theme.primary}47`,
+            }}
+          >
+            <div className="mb-2 flex justify-between text-sm font-black" style={{ color: theme.textMain }}>
+              <span>Vagas preenchidas</span>
+              <span style={{ color: theme.deep }}>{rosaPct}%</span>
+            </div>
+            <div
+              className="mb-2.5 h-2.5 w-full overflow-hidden rounded-full border bg-white"
+              style={{ borderColor: theme.progressTrackBorder }}
+            >
+              <div
+                className="h-full rounded-full transition-[width] duration-700 ease-out"
+                style={{
+                  width: `${rosaPct}%`,
+                  background: `linear-gradient(90deg, ${theme.deep} 0%, ${theme.primary} 100%)`,
+                }}
+              />
+            </div>
+            <div className="text-right text-[13px] font-bold" style={{ color: theme.textSoft }}>
+              Restam apenas <span style={{ color: theme.textMain }}>{rosaSpotsRemaining}</span> vagas
+            </div>
+          </div>
+
+          <p className="mb-3 text-left text-[13px] font-black uppercase tracking-wide" style={{ color: theme.textMain }}>
+            O que você vai encontrar:
+          </p>
+
+          <div className="mb-4 space-y-3.5 text-left">
+            {BENEFITS.map(({ Icon, title: bt, body }) => (
+              <div
+                key={bt}
+                className="flex items-start gap-3 rounded-xl p-3 shadow-sm border border-black/5"
+                style={{
+                  borderLeft: `3px solid ${theme.primary}`,
+                  backgroundColor: theme.benefitCardBg,
+                }}
+              >
+                <Icon className="mt-0.5 h-[18px] w-[18px] shrink-0" style={{ color: theme.deep }} aria-hidden />
+                <div>
+                  <h3 className="mb-1 text-[13px] font-black uppercase" style={{ color: theme.textMain }}>
+                    {bt}
+                  </h3>
+                  <p className="text-[13px] leading-snug" style={{ color: theme.textSoft }}>
+                    {body}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <footer
+            className="mt-4 flex flex-col items-center gap-3 border-t pt-4 text-[11px]"
+            style={{ borderColor: `${theme.primary}40`, color: theme.footerMuted }}
+          >
+            <div>
+              <a href="https://afiliadoanalytics.com.br" className="font-extrabold no-underline" style={{ color: theme.textMain }}>
+                Política e termos
+              </a>
+            </div>
+            <span className="rounded-full px-3.5 py-1.5 text-[11px] font-black text-white shadow-md" style={{ background: theme.deep }}>
+              Feito com ❤️ por Afiliado Analytics
+            </span>
+          </footer>
+        </div>
+      </div>
+    </>
+  );
+}

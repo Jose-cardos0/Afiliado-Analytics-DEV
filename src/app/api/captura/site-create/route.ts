@@ -3,6 +3,7 @@ import { createClient as createSupabaseAdmin } from "@supabase/supabase-js";
 import { createClient as createServerSupabase } from "../../../../../utils/supabase/server";
 import { getEntitlementsForUser, getUsageSnapshot } from "@/lib/plan-server";
 import { normalizeCapturePageTemplate } from "@/lib/capture-page-template";
+import { isValidOptionalYoutubeUrl } from "@/lib/youtube-embed";
 
 /** INSERT com service role evita RLS/policies que às vezes ignoram colunas novas (ex.: page_template). */
 function supabaseServiceRole() {
@@ -76,6 +77,19 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Link do botão obrigatório." }, { status: 400 });
   }
 
+  const youtubeRaw =
+    typeof body.youtube_url === "string"
+      ? body.youtube_url.trim()
+      : typeof body.youtubeUrl === "string"
+        ? body.youtubeUrl.trim()
+        : "";
+  if (youtubeRaw && !isValidOptionalYoutubeUrl(youtubeRaw)) {
+    return NextResponse.json(
+      { error: "Link do YouTube inválido. Use um URL de vídeo ou o ID de 11 caracteres." },
+      { status: 400 },
+    );
+  }
+
   const insertRow = {
     domain:
       (typeof body.domain === "string" && body.domain.trim()) || "s.afiliadoanalytics.com.br",
@@ -94,6 +108,7 @@ export async function POST(req: Request) {
       "icons",
     meta_pixel_id: trimOrNull(body.meta_pixel_id ?? body.metaPixelId),
     page_template,
+    youtube_url: youtubeRaw ? youtubeRaw : null,
     userid: user.id,
   };
 

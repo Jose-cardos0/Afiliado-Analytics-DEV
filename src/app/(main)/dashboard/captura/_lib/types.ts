@@ -1,7 +1,7 @@
 export type LayoutVariant = "icons" | "scarcity";
 
-/** classic = fluxo atual (ícones / escassez). vip_* = landing longa (template2 + variação terrosa). */
-export type PageTemplate = "classic" | "vip_rosa" | "vip_terroso";
+/** classic = fluxo atual (ícones / escassez). vip_* + vinho_rose = landings longas. */
+export type PageTemplate = "classic" | "vip_rosa" | "vip_terroso" | "vinho_rose";
 
 export type CaptureSiteRow = {
   id: string;
@@ -27,8 +27,11 @@ export type CaptureSiteRow = {
 
   // NEW
   layout_variant: LayoutVariant | null;
-  meta_pixel_id: string | null; // 👈 ADICIONAR ESTA LINHA
-  buttontext?: string | null;
+  meta_pixel_id: string | null;
+  button_text: string | null;
   page_template: PageTemplate | null;
+
+  /** URL ou ID do YouTube; opcional — embed acima do 1.º CTA quando preenchido. */
+  youtube_url: string | null;
 
 };

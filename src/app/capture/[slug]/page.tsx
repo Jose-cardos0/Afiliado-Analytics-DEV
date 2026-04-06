@@ -9,13 +9,15 @@ import ScarcityBlock from "./ScarcityBlock";
 import { detectBot } from "../../../lib/bot-detection";
 import CTAButton from "./CTAButton";
 import CaptureVipLanding from "./CaptureVipLanding";
+import CaptureYoutubeEmbed from "./CaptureYoutubeEmbed";
 import type { PageTemplate } from "@/app/(main)/dashboard/captura/_lib/types";
 import { normalizeCapturePageTemplate } from "@/lib/capture-page-template";
+import { CAPTURE_PUBLIC_DOMAIN, loadCaptureSiteRow } from "@/lib/capture-load-site";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-const DOMAIN = "s.afiliadoanalytics.com.br";
+const DOMAIN = CAPTURE_PUBLIC_DOMAIN;
 const PUBLIC_BASE = `https://${DOMAIN}`;
 const LOGO_BUCKET = "capture-logos";
 
@@ -117,12 +119,8 @@ export async function generateMetadata(props: {
 
   const supabase = admin();
 
-  const { data: site } = await supabase
-    .from("capture_sites")
-    .select("title, description, active, expiresat, logopath")
-    .eq("domain", DOMAIN)
-    .eq("slug", slug)
-    .maybeSingle();
+  const { data: site, error: metaErr } = await loadCaptureSiteRow(supabase, DOMAIN, slug);
+  if (metaErr) return {};
 
   if (!site) return {};
   if (!site.active) return {};
@@ -180,12 +178,12 @@ export default async function CapturePage(props: { params: Promise<{ slug: strin
   const referer = h.get("referer") ?? "";
   const ip = getIpFromHeaders(h);
 
-  const { data: site } = await supabase
-    .from("capture_sites")
-    .select("*")
-    .eq("domain", DOMAIN)
-    .eq("slug", slug)
-    .maybeSingle();
+  const { data: site, error: loadErr } = await loadCaptureSiteRow(supabase, DOMAIN, slug);
+  if (loadErr) {
+    throw new Error(
+      "Não foi possível carregar o site de captura. Confirme na Vercel o mesmo projeto Supabase do dashboard: NEXT_PUBLIC_SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY.",
+    );
+  }
 
   if (!site) return notFound();
   if (!site.active) return notFound();
@@ -243,11 +241,10 @@ export default async function CapturePage(props: { params: Promise<{ slug: strin
 
   const metaPixelId = site.meta_pixel_id;
 
-  const siteRow = site as Record<string, unknown>;
-  const pageTemplate = normalizeCapturePageTemplate(
-    siteRow.page_template ?? siteRow.pageTemplate,
-  );
-  const isVipTemplate = pageTemplate === "vip_rosa" || pageTemplate === "vip_terroso";
+  const pageTemplate = normalizeCapturePageTemplate(site.page_template);
+  const isVipTemplate =
+    pageTemplate === "vip_rosa" || pageTemplate === "vip_terroso" || pageTemplate === "vinho_rose";
+  const youtubeUrl = (site.youtube_url ?? "").trim();
 
   return (
     <>
@@ -292,6 +289,7 @@ export default async function CapturePage(props: { params: Promise<{ slug: strin
           ctaHref={`/${slug}/go`}
           logoUrl={logoUrl}
           buttonColor={buttonColor}
+          youtubeUrl={youtubeUrl || null}
         />
       ) : null}
 
@@ -417,6 +415,12 @@ export default async function CapturePage(props: { params: Promise<{ slug: strin
                 </div>
               </div>
             )}
+
+            {youtubeUrl ? (
+              <div className="mt-6 sm:mt-7 w-full">
+                <CaptureYoutubeEmbed url={youtubeUrl} />
+              </div>
+            ) : null}
 
             {/* ✅ CORRIGIDO: removida div duplicada */}
             <div className="flex justify-center mt-7 sm:mt-8">
