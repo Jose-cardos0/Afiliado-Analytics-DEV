@@ -139,7 +139,7 @@ export default function CaptureVipRosa(props: CaptureVipLandingProps) {
 
   return (
     <>
-      <CaptureVipEntradaToasts disabled={previewMode} intervalMs={2000} />
+      <CaptureVipEntradaToasts />
       <style
         dangerouslySetInnerHTML={{
           __html: `

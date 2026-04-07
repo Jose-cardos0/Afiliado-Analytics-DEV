@@ -243,7 +243,10 @@ export default async function CapturePage(props: { params: Promise<{ slug: strin
 
   const pageTemplate = normalizeCapturePageTemplate(site.page_template);
   const isVipTemplate =
-    pageTemplate === "vip_rosa" || pageTemplate === "vip_terroso" || pageTemplate === "vinho_rose";
+    pageTemplate === "vip_rosa" ||
+    pageTemplate === "vip_terroso" ||
+    pageTemplate === "vinho_rose" ||
+    pageTemplate === "the_new_chance";
   const youtubeUrl = (site.youtube_url ?? "").trim();
 
   return (

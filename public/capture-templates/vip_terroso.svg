@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 420" fill="none">
+  <rect width="280" height="420" rx="20" fill="#14110d"/>
+  <rect x="16" y="16" width="248" height="388" rx="14" fill="url(#earthBg)"/>
+  <rect x="32" y="36" width="216" height="22" rx="6" fill="#78350f" opacity="0.25"/>
+  <circle cx="140" cy="118" r="42" fill="#fef3c7" stroke="#92400e" stroke-width="2"/>
+  <rect x="52" y="186" width="176" height="10" rx="3" fill="#d6d3d1" opacity="0.45"/>
+  <rect x="52" y="204" width="148" height="8" rx="2" fill="#a8a29e" opacity="0.4"/>
+  <rect x="52" y="220" width="164" height="8" rx="2" fill="#a8a29e" opacity="0.35"/>
+  <rect x="44" y="264" width="192" height="40" rx="10" fill="#b45309"/>
+  <rect x="44" y="316" width="192" height="52" rx="8" fill="#fff" fill-opacity="0.1"/>
+  <defs>
+    <linearGradient id="earthBg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#fafaf9"/>
+      <stop offset="100%" stop-color="#e7e5e4"/>
+    </linearGradient>
+  </defs>
+</svg>

@@ -1,7 +1,12 @@
 export type LayoutVariant = "icons" | "scarcity";
 
 /** classic = fluxo atual (ícones / escassez). vip_* + vinho_rose = landings longas. */
-export type PageTemplate = "classic" | "vip_rosa" | "vip_terroso" | "vinho_rose";
+export type PageTemplate =
+  | "classic"
+  | "vip_rosa"
+  | "vip_terroso"
+  | "vinho_rose"
+  | "the_new_chance";
 
 export type CaptureSiteRow = {
   id: string;

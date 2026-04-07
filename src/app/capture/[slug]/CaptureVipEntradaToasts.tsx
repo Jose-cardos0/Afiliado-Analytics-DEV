@@ -1,103 +1,220 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 
-const NOMES = [
-  "Ana",
-  "Carlos",
-  "Juliana",
-  "Pedro",
-  "Mariana",
-  "Lucas",
-  "Fernanda",
-  "Rafael",
-  "Beatriz",
-  "Bruno",
-  "Camila",
-  "Gabriel",
-  "Larissa",
-  "Diego",
-  "Patrícia",
-  "Rodrigo",
-  "Amanda",
-  "Felipe",
-  "Letícia",
-  "Gustavo",
-  "Priscila",
-  "Thiago",
-  "Vanessa",
-  "André",
-  "Renata",
-  "Paulo",
-  "Tatiane",
-  "Ricardo",
-  "Daniela",
-  "Marcelo",
-  "Aline",
-  "Vinícius",
-  "Cristina",
-  "Fábio",
-  "Simone",
-  "Eduardo",
-  "Adriana",
-  "Henrique",
-  "Eliane",
-  "Roberto",
-  "Sandra",
-  "Alexandre",
-  "Cláudia",
+/** Homens: só números, h1.webp, Jordan. */
+const NOTIFI_MALE = [
+  "/notifi/01.jpg",
+  "/notifi/02.jpg",
+  "/notifi/03.jpg",
+  "/notifi/04.jpg",
+  "/notifi/05.jpg",
+  "/notifi/06.jpg",
+  "/notifi/07.jpg",
+  "/notifi/08.jpg",
+  "/notifi/09.jpg",
+  "/notifi/10.jpg",
+  "/notifi/11.jpg",
+  "/notifi/12.jpg",
+  "/notifi/13.jpg",
+  "/notifi/14.jpg",
+  "/notifi/15.jpg",
+  "/notifi/h1.webp",
+  "/notifi/Jordan.jpg",
 ] as const;
 
+/** Mulheres: w*, m*, nomes tipicamente femininos nos ficheiros. */
+const NOTIFI_FEMALE = [
+  "/notifi/w1.jpg",
+  "/notifi/w2.jpg",
+  "/notifi/w3.jpg",
+  "/notifi/w4.jpg",
+  "/notifi/w5.jpg",
+  "/notifi/w6.jpg",
+  "/notifi/w7.jpg",
+  "/notifi/w9.jpg",
+  "/notifi/w10.jpg",
+  "/notifi/w11.jpg",
+  "/notifi/w12.jpg",
+  "/notifi/w13.jpg",
+  "/notifi/w14.jpg",
+  "/notifi/w15.jpg",
+  "/notifi/w100.jpg",
+  "/notifi/m1.jpg",
+  "/notifi/m2.jpg",
+  "/notifi/m3.jpg",
+  "/notifi/m4.jpg",
+  "/notifi/Jenifer.webp",
+  "/notifi/Rachel.webp",
+  "/notifi/Alyssa.webp",
+  "/notifi/stephanie.webp",
+  "/notifi/abigail.webp",
+  "/notifi/samantha.webp",
+  "/notifi/katherine.webp",
+  "/notifi/victoria.webp",
+] as const;
+
+const FEMALE_NAMES = [
+  "Ana",
+  "Juliana",
+  "Mariana",
+  "Fernanda",
+  "Beatriz",
+  "Camila",
+  "Larissa",
+  "Patrícia",
+  "Amanda",
+  "Letícia",
+  "Priscila",
+  "Vanessa",
+  "Renata",
+  "Tatiane",
+  "Daniela",
+  "Aline",
+  "Cristina",
+  "Adriana",
+  "Jenifer",
+  "Rachel",
+  "Alyssa",
+  "Stephanie",
+  "Abigail",
+  "Samantha",
+  "Katherine",
+  "Victoria",
+  "Bruna",
+  "Luana",
+  "Isabela",
+  "Natália",
+] as const;
+
+const MALE_NAMES = [
+  "Carlos",
+  "Pedro",
+  "Lucas",
+  "Rafael",
+  "Bruno",
+  "Gabriel",
+  "Diego",
+  "Rodrigo",
+  "Felipe",
+  "Gustavo",
+  "Thiago",
+  "André",
+  "Paulo",
+  "Ricardo",
+  "Marcelo",
+  "Vinícius",
+  "Fábio",
+  "Eduardo",
+  "Henrique",
+  "Roberto",
+  "Alexandre",
+  "Jordan",
+  "Leonardo",
+  "Matheus",
+  "Guilherme",
+] as const;
+
+const HOLD_VISIBLE_MS = 5000;
+const GAP_AFTER_EXIT_MS = 2000;
+const FIRST_DELAY_MS = 800;
+const ENTER_ANIM_MS = 500;
+const EXIT_ANIM_MS = 600;
+
+function randomCouponPct(): number {
+  return Math.floor(Math.random() * (60 - 30 + 1)) + 30;
+}
+
+function pick<T extends readonly unknown[]>(arr: T): T[number] {
+  return arr[Math.floor(Math.random() * arr.length)]!;
+}
+
 export type CaptureVipEntradaToastsProps = {
-  /** Desliga no preview do dashboard */
+  /** Se `true`, não mostra toasts. */
   disabled?: boolean;
-  /** Intervalo entre novas notificações (ms) */
+  /** @deprecated O ritmo é sequencial (5s visível + saída + 2s pausa); ignorado. */
   intervalMs?: number;
-  /** Quanto tempo cada toast fica visível antes de sumir (ms) */
-  visibleMs?: number;
-  /** Máximo de toasts empilhados */
+  /** @deprecated Uma notificação de cada vez; ignorado. */
   maxVisible?: number;
+  /** @deprecated Usar HOLD_VISIBLE_MS interno; ignorado. */
+  visibleMs?: number;
+  /**
+   * `default` — “entrou no grupo”.
+   * `coupon` — só The New Chance: cupom X% Off.
+   */
+  variant?: "default" | "coupon";
 };
 
-type ToastItem = { id: number; name: string };
+type ToastData = {
+  id: number;
+  name: string;
+  avatarSrc: string;
+  pct?: number;
+};
+
+type Phase = "enter" | "visible" | "exit";
 
 /**
- * Toasts no topo (abaixo da barra fixa VIP): “Fulana entrou no grupo”.
+ * Uma notificação de cada vez: entra da direita, fica 5s, desaparece com fade (sem sair pela esquerda), pausa 2s.
  */
 export default function CaptureVipEntradaToasts({
   disabled = false,
-  intervalMs = 2000,
-  visibleMs = 4500,
-  maxVisible = 3,
+  variant = "default",
 }: CaptureVipEntradaToastsProps) {
-  const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const [toast, setToast] = useState<ToastData | null>(null);
+  const [phase, setPhase] = useState<Phase | null>(null);
   const idRef = useRef(0);
 
   useEffect(() => {
     if (disabled) return;
-    if (typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      return;
-    }
 
-    const pickName = () => NOMES[Math.floor(Math.random() * NOMES.length)]!;
+    let cancelled = false;
+    const reduceMotion =
+      typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-    const pushToast = () => {
-      const id = ++idRef.current;
-      const name = pickName();
-      setToasts((prev) => [...prev, { id, name }].slice(-maxVisible));
-      window.setTimeout(() => {
-        setToasts((prev) => prev.filter((t) => t.id !== id));
-      }, visibleMs);
+    const enterMs = reduceMotion ? 0 : ENTER_ANIM_MS;
+    const exitMs = reduceMotion ? 0 : EXIT_ANIM_MS;
+
+    const nextToast = (): ToastData => {
+      const female = Math.random() < 0.5;
+      const name = female ? pick(FEMALE_NAMES) : pick(MALE_NAMES);
+      const avatarSrc = (female ? pick(NOTIFI_FEMALE) : pick(NOTIFI_MALE)) as string;
+      const pct = variant === "coupon" ? randomCouponPct() : undefined;
+      return {
+        id: ++idRef.current,
+        name: String(name),
+        avatarSrc,
+        pct,
+      };
     };
 
-    const t = window.setInterval(pushToast, intervalMs);
-    const first = window.setTimeout(pushToast, 800);
+    const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+    (async () => {
+      await sleep(FIRST_DELAY_MS);
+      while (!cancelled) {
+        const data = nextToast();
+        setToast(data);
+        setPhase("enter");
+        await sleep(enterMs);
+        if (cancelled) break;
+        setPhase("visible");
+        await sleep(HOLD_VISIBLE_MS);
+        if (cancelled) break;
+        setPhase("exit");
+        await sleep(exitMs);
+        if (cancelled) break;
+        setToast(null);
+        setPhase(null);
+        await sleep(GAP_AFTER_EXIT_MS);
+      }
+    })();
 
     return () => {
-      window.clearInterval(t);
-      window.clearTimeout(first);
+      cancelled = true;
     };
-  }, [disabled, intervalMs, visibleMs, maxVisible]);
+  }, [disabled, variant]);
 
   if (disabled) return null;
 
@@ -106,42 +223,88 @@ export default function CaptureVipEntradaToasts({
       <style
         dangerouslySetInnerHTML={{
           __html: `
-          @keyframes capture-vip-entrada-drop {
+          @keyframes capture-notifi-enter-rl {
             from {
               opacity: 0;
-              transform: translateY(-100%);
+              transform: translateX(calc(100% + 28px));
             }
             to {
               opacity: 1;
-              transform: translateY(0);
+              transform: translateX(0);
             }
           }
-          .capture-vip-entrada-toast {
-            animation: capture-vip-entrada-drop 0.45s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+          @keyframes capture-notifi-exit-fade {
+            from {
+              opacity: 1;
+              transform: translateX(0);
+            }
+            to {
+              opacity: 0;
+              transform: translateX(0);
+            }
+          }
+          .capture-notifi-card[data-phase="enter"] {
+            animation: capture-notifi-enter-rl ${ENTER_ANIM_MS}ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+          }
+          .capture-notifi-card[data-phase="visible"] {
+            transform: translateX(0);
+            opacity: 1;
+          }
+          .capture-notifi-card[data-phase="exit"] {
+            animation: capture-notifi-exit-fade ${EXIT_ANIM_MS}ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
           }
           @media (prefers-reduced-motion: reduce) {
-            .capture-vip-entrada-toast { animation: none !important; opacity: 1; transform: none; }
+            .capture-notifi-card[data-phase="enter"],
+            .capture-notifi-card[data-phase="exit"] {
+              animation: none !important;
+              opacity: 1;
+              transform: translateX(0);
+            }
           }
         `,
         }}
       />
       <div
-        className="pointer-events-none fixed left-0 right-0 z-[1002] flex flex-col items-center gap-2 px-3"
-        style={{ top: "3.25rem" }}
+        className="pointer-events-none fixed inset-x-0 top-[3.25rem] z-[1002] flex max-w-full justify-end overflow-x-hidden pr-3 sm:pr-4"
         aria-live="polite"
-        aria-atomic="false"
+        aria-atomic="true"
       >
-        {toasts.map((t) => (
+        {toast && phase ? (
           <div
-            key={t.id}
-            className="capture-vip-entrada-toast max-w-[min(100%,20rem)] rounded-xl border border-black/10 bg-white/95 px-4 py-2.5 text-center text-sm font-semibold text-neutral-800 shadow-lg backdrop-blur-sm"
+            key={toast.id}
+            data-phase={phase}
+            className={`capture-notifi-card flex max-w-[min(calc(100vw-1.5rem),21rem)] items-center gap-3 rounded-xl border border-black/10 bg-white/95 py-2.5 pl-2.5 pr-3 shadow-xl backdrop-blur-sm ${
+              variant === "coupon" ? "border-orange-200/90" : ""
+            }`}
           >
-            <span className="text-emerald-600" aria-hidden>
-              ✓
-            </span>{" "}
-            <span className="font-bold text-neutral-900">{t.name}</span> entrou no grupo
+            <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-full ring-2 ring-white shadow-md">
+              <Image
+                src={toast.avatarSrc}
+                alt=""
+                fill
+                className="object-cover"
+                sizes="48px"
+                unoptimized
+              />
+            </div>
+            <div className="min-w-0 flex-1 text-left">
+              <p className="truncate text-sm font-extrabold text-neutral-900">{toast.name}</p>
+              {variant === "coupon" ? (
+                <p className="mt-0.5 text-xs font-medium leading-snug text-neutral-600">
+                  resgatou um cupom de{" "}
+                  <span className="font-black text-orange-600">{toast.pct ?? 0}%</span> Off em produtos
+                </p>
+              ) : (
+                <p className="mt-0.5 text-xs font-semibold text-neutral-600">
+                  <span className="text-emerald-600" aria-hidden>
+                    ✓
+                  </span>{" "}
+                  entrou no grupo
+                </p>
+              )}
+            </div>
           </div>
-        ))}
+        ) : null}
       </div>
     </>
   );

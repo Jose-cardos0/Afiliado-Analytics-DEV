@@ -6,6 +6,8 @@ export const PAGE_TEMPLATE_OPTIONS: {
   title: string;
   description: string;
   badge?: string;
+  /** Miniatura em `/public/capture-templates/` (SVG ou imagem). */
+  previewSrc: string;
 }[] = [
   {
     id: "classic",
@@ -13,18 +15,21 @@ export const PAGE_TEMPLATE_OPTIONS: {
     description:
       "Card claro com gradiente, logo opcional e bloco abaixo do texto: ícones (ofertas, descontos, cupons) ou escassez animada.",
     badge: "Atual",
+    previewSrc: "/capture-templates/classic.svg",
   },
   {
     id: "vip_rosa",
     title: "VIP elegante (rosa)",
     description:
       "Página longa estilo landing: faixa de urgência, foto redonda, barra de vagas, lista de benefícios e rodapé — paleta rosa e vinho.",
+    previewSrc: "/capture-templates/vip_rosa.svg",
   },
   {
     id: "vip_terroso",
     title: "VIP minimal (terroso)",
     description:
       "Mesma estrutura do VIP elegante com visual bege e marrom, CTA em destaque e cards de benefícios — ideal para público mais sóbrio.",
+    previewSrc: "/capture-templates/vip_terroso.svg",
   },
   {
     id: "vinho_rose",
@@ -32,6 +37,15 @@ export const PAGE_TEMPLATE_OPTIONS: {
     description:
       "Fundo rosa claro, CTA verde estilo WhatsApp, selo de urgência, lista com ✓ vermelho e marcas parceiras — ideal para grupos de achadinhos.",
     badge: "Novo",
+    previewSrc: "/capture-templates/vinho_rose.svg",
+  },
+  {
+    id: "the_new_chance",
+    title: "The New Chance",
+    description:
+      "Card branco com roleta: toque em CLICK para girar, parada em 90%, cupom em destaque e CTA verde — selo de urgência, benefícios e logos parceiras.",
+    badge: "Novo",
+    previewSrc: "/capture-templates/the_new_chance.svg",
   },
 ];
 

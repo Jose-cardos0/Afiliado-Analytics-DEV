@@ -1,0 +1,579 @@
+"use client";
+
+import Image from "next/image";
+import { useCallback, useEffect, useState } from "react";
+import { Check, Flame } from "lucide-react";
+import { FaWhatsapp } from "react-icons/fa";
+import type { CaptureVipLandingProps } from "./capture-vip-types";
+import { parseColorToRgb } from "@/app/(main)/dashboard/captura/_lib/captureUtils";
+import { isWhatsAppUrl } from "./capture-vip-shared";
+import CaptureVipEntradaToasts from "./CaptureVipEntradaToasts";
+import CaptureYoutubeEmbed from "./CaptureYoutubeEmbed";
+
+const CARD = "#ffffff";
+const TEXT = "#1c1917";
+const MUTED = "#6b7280";
+const RED = "#dc2626";
+const ORANGE = "#f97316";
+const ORANGE_50 = "rgba(249, 115, 22, 0.5)";
+const LOGO_TILE_BG = "#fff7ed";
+/** Sombra laranja em volta da roleta (drop-shadow). */
+const WHEEL_ORANGE_GLOW =
+  "drop-shadow(0 0 14px rgba(249, 115, 22, 0.55)) drop-shadow(0 0 28px rgba(249, 115, 22, 0.4)) drop-shadow(0 10px 36px rgba(234, 88, 12, 0.35))";
+
+const CLICK_IMG = "/click.png";
+/** Ficheiro em `public/90%.png` — codificar % na URL. */
+const COUPON_IMG = "/90%25.png";
+
+const SEGMENTS = 6;
+const WIN_INDEX = 2;
+const SEGMENT_DEG = 360 / SEGMENTS;
+/** Centro do segmento vencedor (90%) em graus a partir do topo, horário. */
+const WIN_CENTER_DEG = (WIN_INDEX + 0.5) * SEGMENT_DEG;
+const FULL_SPINS = 5;
+
+/** Distância do centro aos números (px), ao longo da bisetriz de cada fatia. */
+const LABEL_RADIUS_PX = 80;
+
+/** Tamanho da fonte dos números na roleta (px). */
+const WHEEL_NUMBER_FONT_PX = 20;
+
+/** Cores por fatia: laranja → amarelo → preto (ciclo). */
+const WHEEL_ORANGE = "#f97316";
+const WHEEL_YELLOW = "#facc15";
+const WHEEL_BLACK = "#171717";
+const SLICE_DIVIDER = "rgba(255, 250, 245, 0.95)";
+
+const WHEEL_SLICE_COLORS = [WHEEL_ORANGE, WHEEL_YELLOW, WHEEL_BLACK] as const;
+
+/** Fatias com finas “bordas” claras entre elas (efeito pizza). */
+function wheelConicGradient(): string {
+  const parts: string[] = [];
+  const gapDeg = 1.25;
+  for (let i = 0; i < SEGMENTS; i++) {
+    const a0 = i * SEGMENT_DEG;
+    const a1 = (i + 1) * SEGMENT_DEG - gapDeg;
+    const a2 = (i + 1) * SEGMENT_DEG;
+    const c = WHEEL_SLICE_COLORS[i % 3];
+    parts.push(`${c} ${a0}deg ${a1}deg`);
+    parts.push(`${SLICE_DIVIDER} ${a1}deg ${a2}deg`);
+  }
+  return `conic-gradient(from 0deg, ${parts.join(", ")})`;
+}
+
+/** Seis fatias; índice 2 = 90% (para no ponteiro). */
+const WHEEL_LABELS = ["15%", "25%", "90%", "10%", "20%", "8%"] as const;
+
+function labelTextClass(i: number): string {
+  const onBlack = i % 3 === 2;
+  const base =
+    "absolute left-1/2 top-1/2 z-[1] select-none whitespace-nowrap font-black leading-none tracking-tight";
+  const color = onBlack ? "text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.85)]" : "text-neutral-950 drop-shadow-sm";
+  return `${base} ${color}`;
+}
+
+const BENEFITS = [
+  "Ofertas relâmpago antes de qualquer um",
+  "Cupons exclusivos com até 80% OFF",
+  "Frete grátis nas melhores lojas",
+  "Alertas de promoções por tempo limitado",
+] as const;
+
+const PARTNER_LOGOS = [
+  { src: "/logo-shopee_ae8b716c.png", alt: "Shopee" },
+  { src: "/logo-mercadolivre_5d835dbf.png", alt: "Mercado Livre" },
+  { src: "/logo-amazon_99ccd542.png", alt: "Amazon" },
+] as const;
+
+const MARQUEE_BAR_BG = "#b91c1c";
+
+const MARQUEE_ITEMS = [
+  "DESCONTOS INCRÍVEIS",
+  "DESCONTOS REAIS",
+  "GRUPO QUASE LOTADO",
+  "ÚLTIMAS VAGAS",
+  "CUPOM LIBERADO",
+  "OFERTAS RELÂMPAGO",
+  "ACHADINHOS TODO DIA",
+  "FRETE GRÁTIS NA FAIXA",
+  "SÓ HOJE",
+  "ENTRA AGORA",
+] as const;
+
+function finalRotationDeg(): number {
+  return FULL_SPINS * 360 + (360 - WIN_CENTER_DEG);
+}
+
+function CtaBlock(props: {
+  ctaHref: string;
+  buttonColor: string;
+  safeBtn: string;
+  showWa: boolean;
+  r: number;
+  g: number;
+  b: number;
+  className?: string;
+}) {
+  const { ctaHref, buttonColor, safeBtn, showWa, r, g, b, className = "" } = props;
+  return (
+    <>
+      <a
+        href={ctaHref}
+        className={`newchance-cta-pulse flex w-full items-center justify-center gap-2 rounded-2xl py-4 text-base font-black uppercase tracking-wide text-white no-underline shadow-lg transition-transform hover:scale-[1.01] active:scale-[0.99] ${className}`}
+        style={{
+          backgroundColor: buttonColor,
+          boxShadow: `0 8px 24px rgba(${r},${g},${b},0.35)`,
+        }}
+      >
+        {showWa ? <FaWhatsapp className="text-2xl shrink-0" aria-hidden /> : null}
+        {safeBtn}
+      </a>
+      <p className="mt-2.5 text-center text-xs font-medium" style={{ color: MUTED }}>
+        100% gratuito • Sem spam • Saia quando quiser
+      </p>
+    </>
+  );
+}
+
+export default function CaptureTheNewChance(props: CaptureVipLandingProps) {
+  const {
+    title,
+    description,
+    buttonText,
+    ctaHref,
+    logoUrl,
+    buttonColor,
+    youtubeUrl,
+    previewMode = false,
+  } = props;
+
+  const safeTitle = title.trim() || "The New Chance";
+  const safeDesc =
+    description.trim() ||
+    "Gire a roleta e garanta seu benefício exclusivo antes que acabe.";
+  const safeBtn = (buttonText.trim() || "Entrar no grupo VIP").toUpperCase();
+  const color = buttonColor || "#25D366";
+  const { r, g, b } = parseColorToRgb(color);
+  const showWa =
+    previewMode || isWhatsAppUrl(ctaHref) || /\/go\/?(\?.*)?$/i.test(ctaHref.trim());
+
+  const yt = (youtubeUrl ?? "").trim();
+
+  const [phase, setPhase] = useState<"idle" | "spinning" | "won">("idle");
+  const [rotation, setRotation] = useState(0);
+  const [wheelVisible, setWheelVisible] = useState(true);
+  const [reduceMotion, setReduceMotion] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setReduceMotion(window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+  }, []);
+
+  useEffect(() => {
+    if (previewMode || !reduceMotion) return;
+    setWheelVisible(false);
+    setPhase("won");
+  }, [previewMode, reduceMotion]);
+
+  const spin = useCallback(() => {
+    if (phase !== "idle") return;
+    if (reduceMotion) {
+      setWheelVisible(false);
+      setPhase("won");
+      return;
+    }
+    setPhase("spinning");
+    requestAnimationFrame(() => {
+      setRotation(finalRotationDeg());
+    });
+  }, [phase, reduceMotion]);
+
+  useEffect(() => {
+    if (phase !== "spinning") return;
+    const id = window.setTimeout(() => {
+      setWheelVisible(false);
+      setPhase("won");
+    }, 3680);
+    return () => clearTimeout(id);
+  }, [phase]);
+
+  useEffect(() => {
+    if (phase !== "won" || reduceMotion) return;
+
+    let cancelled = false;
+    import("canvas-confetti")
+      .then((mod) => {
+        if (cancelled) return;
+        const confetti = mod.default;
+        const colors = ["#f97316", "#facc15", "#dc2626", "#ffffff", "#fbbf24", "#22c55e"];
+        const base = {
+          origin: { y: 0.32, x: 0.5 },
+          colors,
+          ticks: 220,
+          gravity: 1.05,
+        } as const;
+
+        void confetti({
+          ...base,
+          particleCount: 80,
+          spread: 100,
+          startVelocity: 38,
+          scalar: 1,
+        });
+        window.setTimeout(() => {
+          if (cancelled) return;
+          void confetti({
+            ...base,
+            particleCount: 55,
+            spread: 120,
+            startVelocity: 32,
+            angle: 60,
+            scalar: 0.95,
+          });
+        }, 180);
+        window.setTimeout(() => {
+          if (cancelled) return;
+          void confetti({
+            ...base,
+            particleCount: 55,
+            spread: 120,
+            startVelocity: 32,
+            angle: 120,
+            scalar: 0.95,
+          });
+        }, 320);
+      })
+      .catch(() => {
+        /* ignora se o chunk falhar */
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [phase, reduceMotion]);
+
+  const marqueeStrip = MARQUEE_ITEMS.join("     •     ");
+
+  return (
+    <>
+      <CaptureVipEntradaToasts variant="coupon" />
+      <style
+        dangerouslySetInnerHTML={{
+          __html: `
+          @keyframes newchance-click-pulse {
+            0%, 100% { transform: translate(-50%, -50%) scale(1); }
+            50% { transform: translate(-50%, -50%) scale(1.06); }
+          }
+          .newchance-click-pulse {
+            animation: newchance-click-pulse 1.25s ease-in-out infinite;
+            will-change: transform;
+          }
+          @keyframes newchance-coupon-pulse {
+            0%, 100% { transform: scale(1); filter: brightness(1); }
+            50% { transform: scale(1.03); filter: brightness(1.05); }
+          }
+          .newchance-coupon-pulse {
+            animation: newchance-coupon-pulse 1.4s ease-in-out infinite;
+            will-change: transform;
+          }
+          @keyframes newchance-cta-pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.045); }
+          }
+          .newchance-cta-pulse {
+            transform-origin: center;
+            animation: newchance-cta-pulse 1.6s ease-in-out infinite;
+          }
+          @keyframes newchance-fade-in {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+          }
+          .newchance-prize-wrap {
+            animation: newchance-fade-in 0.55s ease-out forwards;
+          }
+          @keyframes newchance-marquee {
+            from { transform: translateX(0); }
+            to { transform: translateX(-50%); }
+          }
+          .newchance-marquee-inner {
+            display: flex;
+            width: max-content;
+            animation: newchance-marquee 32s linear infinite;
+          }
+          @media (prefers-reduced-motion: reduce) {
+            .newchance-click-pulse, .newchance-coupon-pulse, .newchance-cta-pulse { animation: none !important; }
+            .newchance-prize-wrap { animation: none !important; opacity: 1; transform: none; }
+            .newchance-marquee-inner { animation: none !important; transform: none; }
+          }
+        `,
+        }}
+      />
+      <div
+        className="fixed left-0 right-0 top-0 z-[1002] overflow-hidden border-b border-red-900/30 shadow-md"
+        style={{ backgroundColor: MARQUEE_BAR_BG }}
+        role="presentation"
+      >
+        <div className="newchance-marquee-inner py-2.5">
+          <span className="shrink-0 px-6 text-xs font-black uppercase tracking-wider text-white sm:text-sm">
+            {marqueeStrip}
+          </span>
+          <span className="shrink-0 px-6 text-xs font-black uppercase tracking-wider text-white sm:text-sm" aria-hidden>
+            {marqueeStrip}
+          </span>
+        </div>
+      </div>
+
+      <div
+        className="min-h-screen px-4 pb-16 pt-[3.25rem] sm:pt-14"
+        style={{
+          fontFamily: 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
+          background: `linear-gradient(180deg, #ffffff 0%, ${ORANGE_50} 42%, rgba(253, 224, 71, 0.45) 100%)`,
+          color: TEXT,
+        }}
+      >
+        <div
+          className="mx-auto flex w-full max-w-md flex-col items-stretch gap-5 rounded-[28px] border px-4 py-8 shadow-xl sm:px-6 sm:py-10"
+          style={{
+            backgroundColor: CARD,
+            borderColor: "rgba(249, 115, 22, 0.22)",
+            boxShadow:
+              "0 25px 50px -12px rgba(249, 115, 22, 0.14), 0 0 0 1px rgba(255,255,255,0.95) inset",
+          }}
+        >
+          <div className="flex justify-center">
+            <div
+              className="flex h-[100px] w-[100px] items-center justify-center overflow-hidden rounded-2xl shadow-md ring-4 ring-white"
+              style={{ backgroundColor: LOGO_TILE_BG }}
+            >
+              {logoUrl ? (
+                <Image
+                  src={logoUrl}
+                  alt=""
+                  width={100}
+                  height={100}
+                  className="h-full w-full object-contain p-2"
+                  unoptimized={logoUrl.startsWith("blob:")}
+                />
+              ) : (
+                <span className="text-xs font-bold" style={{ color: ORANGE }}>
+                  Logo
+                </span>
+              )}
+            </div>
+          </div>
+
+          <h1 className="text-center text-[1.35rem] font-extrabold leading-snug sm:text-2xl">{safeTitle}</h1>
+
+          <p className="text-center text-[0.95rem] leading-relaxed" style={{ color: MUTED }}>
+            {safeDesc}
+          </p>
+
+          {yt ? (
+            <div className="w-full">
+              <CaptureYoutubeEmbed url={yt} className="shadow-md" />
+            </div>
+          ) : null}
+
+          {/* Roleta ou prêmio */}
+          <div className="relative py-2">
+            {wheelVisible ? (
+              <div
+                className="relative mx-auto w-[min(100%,280px)]"
+                style={{
+                  opacity: phase === "won" ? 0 : 1,
+                  transition: "opacity 0.45s ease",
+                  pointerEvents: phase === "won" ? "none" : "auto",
+                }}
+              >
+                <div
+                  className="pointer-events-none absolute left-1/2 top-0 z-30 -translate-x-1/2"
+                  style={{ marginTop: "-2px" }}
+                  aria-hidden
+                >
+                  <svg width="32" height="26" viewBox="0 0 32 26" fill="none">
+                    <path
+                      d="M16 26L2 5h28L16 26Z"
+                      fill="#f59e0b"
+                      stroke="#fef3c7"
+                      strokeWidth="2"
+                    />
+                    <path d="M16 8v6" stroke="#78350f" strokeWidth="1.5" strokeLinecap="round" />
+                  </svg>
+                </div>
+
+                <div
+                  className="relative mx-auto aspect-square w-full max-w-[308px] rounded-full"
+                  style={{ filter: WHEEL_ORANGE_GLOW }}
+                >
+                  <div
+                    className="absolute inset-0 rounded-full p-[5px]"
+                    style={{
+                      background: "linear-gradient(145deg, #fef08a 0%, #f97316 38%, #ea580c 72%, #fbbf24 100%)",
+                      boxShadow:
+                        "0 10px 36px rgba(0,0,0,0.28), 0 0 24px rgba(249, 115, 22, 0.45), inset 0 1px 0 rgba(255,255,255,0.5)",
+                    }}
+                  >
+                    <div
+                      className="h-full w-full rounded-full shadow-[inset_0_2px_8px_rgba(0,0,0,0.35)]"
+                      style={{
+                        transform: `rotate(${rotation}deg)`,
+                        transition:
+                          reduceMotion || phase !== "spinning"
+                            ? "none"
+                            : "transform 3.45s cubic-bezier(0.12, 0.85, 0.15, 1)",
+                        background: wheelConicGradient(),
+                        border: "3px solid #0a0a0a",
+                      }}
+                    >
+                      <div
+                        className="absolute left-1/2 top-1/2 z-[5] h-[3.25rem] w-[3.25rem] -translate-x-1/2 -translate-y-1/2 rounded-full border-[3px] border-amber-100 bg-gradient-to-br from-amber-200 via-yellow-300 to-amber-500 shadow-[0_4px_14px_rgba(0,0,0,0.3),inset_0_2px_6px_rgba(255,255,255,0.45)]"
+                        aria-hidden
+                      />
+                      {WHEEL_LABELS.map((label, i) => {
+                        const angle = i * SEGMENT_DEG + SEGMENT_DEG / 2;
+                        const r = LABEL_RADIUS_PX;
+                        return (
+                          <span
+                            key={i}
+                            className={labelTextClass(i)}
+                            style={{
+                              transform: `translate(-50%, -50%) rotate(${angle}deg) translateY(-${r}px) rotate(90deg)`,
+                              fontSize: `${WHEEL_NUMBER_FONT_PX}px`,
+                            }}
+                          >
+                            {label}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {phase === "idle" ? (
+                    <button
+                      type="button"
+                      onClick={spin}
+                      className="newchance-click-pulse absolute left-1/2 top-1/2 z-20 -translate-x-1/2 -translate-y-1/2 cursor-pointer border-0 bg-transparent p-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 focus-visible:ring-offset-2"
+                      aria-label="Girar a roleta"
+                    >
+                      <Image
+                        src={CLICK_IMG}
+                        alt=""
+                        width={200}
+                        height={88}
+                        className="h-auto w-[min(200px,72vw)] max-w-[220px] object-contain drop-shadow-lg"
+                        priority
+                      />
+                    </button>
+                  ) : null}
+                </div>
+
+                <p className="mt-4 text-center text-xs font-semibold" style={{ color: MUTED }}>
+                  Toque em{" "}
+                  <span className="font-extrabold" style={{ color: ORANGE }}>
+                    CLICK
+                  </span>{" "}
+                  para girar — parece que a sorte está do seu lado…
+                </p>
+              </div>
+            ) : null}
+
+            {phase === "won" ? (
+              <div className="newchance-prize-wrap flex flex-col items-center gap-5 px-1">
+                <p className="text-center text-sm font-extrabold" style={{ color: RED }}>
+                  Você ganhou!
+                </p>
+                <div className="newchance-coupon-pulse relative w-full max-w-[300px]">
+                  <Image
+                    src={COUPON_IMG}
+                    alt="Cupom 90% de desconto"
+                    width={600}
+                    height={600}
+                    className="h-auto w-full object-contain drop-shadow-xl"
+                    priority
+                  />
+                </div>
+                <div className="w-full max-w-sm">
+                  <CtaBlock
+                    ctaHref={ctaHref}
+                    buttonColor={color}
+                    safeBtn={safeBtn}
+                    showWa={showWa}
+                    r={r}
+                    g={g}
+                    b={b}
+                  />
+                </div>
+              </div>
+            ) : null}
+          </div>
+
+          <div className="flex justify-center">
+            <div
+              className="inline-flex items-center gap-2 rounded-full px-4 py-2.5 text-sm font-bold text-white shadow-md"
+              style={{ backgroundColor: RED }}
+            >
+              <Flame className="h-4 w-4 shrink-0" aria-hidden />
+              Últimas vagas no grupo!
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-3">
+            {BENEFITS.map((line) => (
+              <div
+                key={line}
+                className="flex items-start gap-3 rounded-2xl border border-amber-200/90 bg-white px-4 py-3.5 shadow-sm"
+              >
+                <div
+                  className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full"
+                  style={{ backgroundColor: `${RED}14` }}
+                >
+                  <Check className="h-3.5 w-3.5" strokeWidth={3} style={{ color: RED }} aria-hidden />
+                </div>
+                <p className="text-left text-sm font-semibold leading-snug" style={{ color: TEXT }}>
+                  {line}
+                </p>
+              </div>
+            ))}
+          </div>
+
+          <div
+            className="flex flex-wrap items-center justify-center gap-x-8 gap-y-4 rounded-2xl border border-amber-200/80 bg-white/90 px-4 py-5"
+            style={{ boxShadow: "0 1px 0 rgba(253, 224, 71, 0.35) inset" }}
+          >
+            {PARTNER_LOGOS.map((p) => (
+              <div
+                key={p.src}
+                className="relative flex h-10 w-[7.25rem] items-center justify-center sm:h-11 sm:w-[8rem]"
+              >
+                <Image
+                  src={p.src}
+                  alt={p.alt}
+                  width={160}
+                  height={48}
+                  className="h-10 w-auto max-h-10 max-w-full object-contain object-center sm:h-11 sm:max-h-11"
+                  sizes="(max-width: 640px) 116px, 128px"
+                />
+              </div>
+            ))}
+          </div>
+
+          <div className="border-t border-amber-200/70 pt-6">
+            <CtaBlock
+              ctaHref={ctaHref}
+              buttonColor={color}
+              safeBtn={safeBtn}
+              showWa={showWa}
+              r={r}
+              g={g}
+              b={b}
+            />
+          </div>
+
+          <p className="text-center text-[11px]" style={{ color: "#9ca3af" }}>
+            © {new Date().getFullYear()} Afiliado Analytics
+          </p>
+        </div>
+      </div>
+    </>
+  );
+}

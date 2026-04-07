@@ -5,6 +5,7 @@ import type { CaptureVipLandingProps } from "./capture-vip-types";
 import CaptureVipRosa from "./CaptureVipRosa";
 import CaptureVipTerroso from "./CaptureVipTerroso";
 import CaptureVipVinhoRose from "./CaptureVipVinhoRose";
+import CaptureTheNewChance from "./CaptureTheNewChance";
 
 export type { CaptureVipLandingProps } from "./capture-vip-types";
 
@@ -22,6 +23,9 @@ export default function CaptureVipLanding({ variant, ...rest }: Props) {
   }
   if (variant === "vinho_rose") {
     return <CaptureVipVinhoRose {...rest} />;
+  }
+  if (variant === "the_new_chance") {
+    return <CaptureTheNewChance {...rest} />;
   }
   return <CaptureVipRosa {...rest} />;
 }

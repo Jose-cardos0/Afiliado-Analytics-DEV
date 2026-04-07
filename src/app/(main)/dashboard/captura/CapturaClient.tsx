@@ -847,7 +847,10 @@ export default function CapturaClient() {
   if (saving && (mode === "create" || mode === "edit")) return <LoadingOverlay message="Salvando..." />;
 
   const isVipPreview =
-    pageTemplate === "vip_rosa" || pageTemplate === "vip_terroso" || pageTemplate === "vinho_rose";
+    pageTemplate === "vip_rosa" ||
+    pageTemplate === "vip_terroso" ||
+    pageTemplate === "vinho_rose" ||
+    pageTemplate === "the_new_chance";
 
   const canCreateAnotherSite = sites.length < captureLimit;
 
@@ -920,24 +923,56 @@ export default function CapturaClient() {
             </button>
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
             {PAGE_TEMPLATE_OPTIONS.map((opt) => (
               <button
                 key={opt.id}
                 type="button"
                 onClick={() => confirmTemplateChoice(opt.id)}
-                className="text-left rounded-xl border border-dark-border bg-dark-bg/40 p-4 sm:p-5 hover:border-shopee-orange/45 hover:bg-shopee-orange/5 transition-all flex flex-col gap-2 min-h-[140px]"
+                className="group text-left rounded-2xl border border-dark-border bg-dark-bg/40 overflow-hidden shadow-lg shadow-black/25 hover:border-shopee-orange/50 hover:bg-shopee-orange/[0.06] hover:shadow-xl hover:shadow-black/30 transition-all flex flex-col lg:flex-row lg:items-stretch min-h-0"
               >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-semibold text-text-primary">{opt.title}</span>
-                  {opt.badge ? (
-                    <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-shopee-orange/15 text-shopee-orange border border-shopee-orange/25">
-                      {opt.badge}
-                    </span>
-                  ) : null}
+                <div className="flex flex-1 flex-col gap-2 p-4 sm:p-5 order-1 lg:min-w-0">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-semibold text-text-primary pr-1">{opt.title}</span>
+                    {opt.badge ? (
+                      <span className="shrink-0 text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-shopee-orange/15 text-shopee-orange border border-shopee-orange/25">
+                        {opt.badge}
+                      </span>
+                    ) : null}
+                  </div>
+                  <p className="text-xs text-text-secondary leading-relaxed flex-1">{opt.description}</p>
+                  <span className="text-xs font-semibold text-shopee-orange mt-1 group-hover:underline underline-offset-2">
+                    Usar este modelo →
+                  </span>
                 </div>
-                <p className="text-xs text-text-secondary leading-relaxed flex-1">{opt.description}</p>
-                <span className="text-xs font-semibold text-shopee-orange mt-1">Usar este modelo →</span>
+
+                <div
+                  className={
+                    "relative w-full shrink-0 border-t border-dark-border/80 lg:border-t-0 lg:border-l lg:border-dark-border/80 " +
+                    "aspect-[5/4] sm:aspect-[16/9] lg:aspect-auto lg:w-[42%] lg:min-w-[9.5rem] lg:max-w-[200px] lg:min-h-[11rem] order-2"
+                  }
+                >
+                  <Image
+                    src={opt.previewSrc}
+                    alt={`Prévia do modelo ${opt.title}`}
+                    fill
+                    className="object-cover object-top"
+                    sizes="(max-width: 1024px) 100vw, 200px"
+                    unoptimized
+                  />
+                  {/* Overlay estilo capa Netflix: vinheta escura */}
+                  <div
+                    className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/80 via-black/45 to-black/25"
+                    aria-hidden
+                  />
+                  <div
+                    className="pointer-events-none absolute inset-0 shadow-[inset_0_0_50px_rgba(0,0,0,0.5)]"
+                    aria-hidden
+                  />
+                  <span className="pointer-events-none absolute bottom-2.5 left-3 right-3 text-[10px] font-semibold tracking-wide text-white/90 drop-shadow-[0_1px_3px_rgba(0,0,0,0.9)]">
+                    Prévia do layout
+                  </span>
+                </div>
               </button>
             ))}
           </div>
@@ -1548,7 +1583,9 @@ export default function CapturaClient() {
                           ? "vip_terroso"
                           : pageTemplate === "vinho_rose"
                             ? "vinho_rose"
-                            : "vip_rosa"
+                            : pageTemplate === "the_new_chance"
+                              ? "the_new_chance"
+                              : "vip_rosa"
                       }
                       title={previewTitle}
                       description={previewDesc}
