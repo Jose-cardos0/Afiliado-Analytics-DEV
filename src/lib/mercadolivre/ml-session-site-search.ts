@@ -71,9 +71,16 @@ function dedupeByLink(items: MlSiteSearchProduct[]): MlSiteSearchProduct[] {
   return out;
 }
 
+/** Título gerado só para permalink solto no HTML — não é produto listável (evita cards "Anúncio MLB…"). */
+function isMlSyntheticSerpTitle(name: string): boolean {
+  const n = name.trim();
+  return /^Anúncio\s+MLB\d/i.test(n) || /^Produto\s+MLB\d+$/i.test(n);
+}
+
 function pushProduct(sink: MlSiteSearchProduct[], limit: number, p: MlSiteSearchProduct): void {
   if (sink.length >= limit) return;
   if (!p.productLink || !p.productName) return;
+  if (isMlSyntheticSerpTitle(p.productName)) return;
   sink.push(p);
 }
 
@@ -81,7 +88,7 @@ function pushProduct(sink: MlSiteSearchProduct[], limit: number, p: MlSiteSearch
 function scoreListingProduct(p: MlSiteSearchProduct): number {
   let s = 0;
   const name = p.productName.trim();
-  if (name && !/^Anúncio\s+MLB/i.test(name) && !/^Produto\s+MLB/i.test(name)) s += 4;
+  if (name && !isMlSyntheticSerpTitle(name)) s += 4;
   else if (name) s += 1;
   if (p.imageUrl?.trim()) s += 2;
   if (p.price != null) s += 2;
@@ -363,7 +370,7 @@ function mergeParseResults(html: string, limit: number): MlSiteSearchProduct[] {
 
 function needsPdpEnrich(p: MlSiteSearchProduct): boolean {
   const name = p.productName.trim();
-  if (/^Anúncio\s+MLB/i.test(name) || /^Produto\s+MLB/i.test(name)) return true;
+  if (isMlSyntheticSerpTitle(name)) return true;
   if (!p.imageUrl?.trim()) return true;
   if (p.price == null) return true;
   return false;
@@ -455,6 +462,21 @@ export async function enrichMlSiteSearchProductsFromPdp(
   return enriched;
 }
 
+/**
+ * Remove linhas que não são produto de verdade após o parse/enrich (perfil /social/, placeholders, ficha vazia).
+ */
+export function filterValidMlSiteSearchProducts(products: MlSiteSearchProduct[]): MlSiteSearchProduct[] {
+  return products.filter((p) => {
+    if (isMlSyntheticSerpTitle(p.productName)) return false;
+    const base = decodeMlUrlForParsing(p.productLink.split("#")[0]);
+    if (isMlSocialListsProfileUrl(base)) return false;
+    const hasImage = !!p.imageUrl?.trim();
+    const hasPrice = p.price != null;
+    if (!hasImage && !hasPrice) return false;
+    return true;
+  });
+}
+
 function categoryListingUrls(categorySlug: string): string[] {
   const s = categorySlug.trim().toLowerCase();
   if (!s) return [];
@@ -498,7 +520,11 @@ export async function fetchMlSiteCategoryWithSession(
       if (html.length > 2_800_000) continue;
 
       const items = mergeParseResults(html, lim);
-      if (items.length) return await enrichMlSiteSearchProductsFromPdp(items, cookieHeader);
+      if (items.length) {
+        const enriched = await enrichMlSiteSearchProductsFromPdp(items, cookieHeader);
+        const valid = filterValidMlSiteSearchProducts(enriched);
+        if (valid.length) return valid;
+      }
     } catch (e) {
       lastMessage = e instanceof Error ? e.message : String(e);
     }
@@ -542,7 +568,11 @@ export async function fetchMlSiteSearchWithSession(
       if (html.length > 2_800_000) continue;
 
       const items = mergeParseResults(html, lim);
-      if (items.length) return await enrichMlSiteSearchProductsFromPdp(items, cookieHeader);
+      if (items.length) {
+        const enriched = await enrichMlSiteSearchProductsFromPdp(items, cookieHeader);
+        const valid = filterValidMlSiteSearchProducts(enriched);
+        if (valid.length) return valid;
+      }
     } catch (e) {
       lastMessage = e instanceof Error ? e.message : String(e);
     }

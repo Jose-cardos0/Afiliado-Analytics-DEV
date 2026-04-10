@@ -8,5 +8,6 @@ export {
   enrichMlSiteSearchProductsFromPdp,
   fetchMlSiteCategoryWithSession,
   fetchMlSiteSearchWithSession,
+  filterValidMlSiteSearchProducts,
   isMlSocialListsProfileUrl,
 } from "@/lib/mercadolivre/ml-session-site-search";
