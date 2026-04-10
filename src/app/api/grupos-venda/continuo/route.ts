@@ -141,20 +141,26 @@ export async function POST(req: Request) {
     }
 
     if (!listaId) return NextResponse.json({ error: "Lista de grupos é obrigatória." }, { status: 400 });
-    if (listaOfertasId && listaOfertasMlId) {
-      return NextResponse.json({ error: "Use apenas uma lista de ofertas por vez: Shopee ou Mercado Livre." }, { status: 400 });
-    }
-    const isListaShopeeMode = !!listaOfertasId;
-    const isListaMlMode = !!listaOfertasMlId;
-    const isListaOfertasMode = isListaShopeeMode || isListaMlMode;
+    const isListaShopee = !!listaOfertasId;
+    const isListaMl = !!listaOfertasMlId;
+    const isCrossover = isListaShopee && isListaMl;
+    const isListaOfertasMode = isListaShopee || isListaMl;
     if (!isListaOfertasMode && keywords.length === 0) return NextResponse.json({ error: "Informe ao menos uma keyword ou selecione uma lista de ofertas." }, { status: 400 });
-    if (isListaShopeeMode) {
+    if (isCrossover) {
+      const { data: listaOferta } = await supabase.from("listas_ofertas").select("id").eq("id", listaOfertasId).eq("user_id", user.id).single();
+      if (!listaOferta) return NextResponse.json({ error: "Lista de ofertas Shopee não encontrada." }, { status: 404 });
+      const { count: c1 } = await supabase.from("minha_lista_ofertas").select("id", { count: "exact", head: true }).eq("lista_id", listaOfertasId).eq("user_id", user.id);
+      if (!c1 || c1 < 1) return NextResponse.json({ error: "A lista Shopee está vazia." }, { status: 400 });
+      const { data: listaMl } = await supabase.from("listas_ofertas_ml").select("id").eq("id", listaOfertasMlId).eq("user_id", user.id).single();
+      if (!listaMl) return NextResponse.json({ error: "Lista Mercado Livre não encontrada." }, { status: 404 });
+      const { count: c2 } = await supabase.from("minha_lista_ofertas_ml").select("id", { count: "exact", head: true }).eq("lista_id", listaOfertasMlId).eq("user_id", user.id);
+      if (!c2 || c2 < 1) return NextResponse.json({ error: "A lista ML está vazia." }, { status: 400 });
+    } else if (isListaShopee) {
       const { data: listaOferta } = await supabase.from("listas_ofertas").select("id").eq("id", listaOfertasId).eq("user_id", user.id).single();
       if (!listaOferta) return NextResponse.json({ error: "Lista de ofertas não encontrada." }, { status: 404 });
       const { count } = await supabase.from("minha_lista_ofertas").select("id", { count: "exact", head: true }).eq("lista_id", listaOfertasId).eq("user_id", user.id);
       if (!count || count < 1) return NextResponse.json({ error: "A lista de ofertas está vazia. Adicione produtos à lista primeiro." }, { status: 400 });
-    }
-    if (isListaMlMode) {
+    } else if (isListaMl) {
       const { data: listaMl } = await supabase.from("listas_ofertas_ml").select("id").eq("id", listaOfertasMlId).eq("user_id", user.id).single();
       if (!listaMl) return NextResponse.json({ error: "Lista Mercado Livre não encontrada." }, { status: 404 });
       const { count } = await supabase.from("minha_lista_ofertas_ml").select("id", { count: "exact", head: true }).eq("lista_id", listaOfertasMlId).eq("user_id", user.id);
@@ -184,8 +190,8 @@ export async function POST(req: Request) {
       lista_id: listaId,
       instance_id: instanceId,
       keywords: isListaOfertasMode ? [] : keywords,
-      lista_ofertas_id: isListaMlMode ? null : listaOfertasId || null,
-      lista_ofertas_ml_id: isListaShopeeMode ? null : listaOfertasMlId || null,
+      lista_ofertas_id: listaOfertasId || null,
+      lista_ofertas_ml_id: listaOfertasMlId || null,
       sub_id_1: subId1,
       sub_id_2: subId2,
       sub_id_3: subId3,

@@ -8,7 +8,11 @@ import { createClient } from "@supabase/supabase-js";
 import { createClient as createServerClient } from "utils/supabase/server";
 import crypto from "crypto";
 import { mensagemErroJanela } from "@/lib/grupos-venda-janela";
-import { buildListaOfferWebhookPayload } from "@/lib/grupos-venda-webhook";
+import {
+  buildListaOfferWebhookPayload,
+  GRUPOS_VENDA_WEBHOOK_DEFAULT,
+  resolveGruposVendaListaWebhookUrl,
+} from "@/lib/grupos-venda-webhook";
 import { effectiveListaOfferPromoPrice } from "@/lib/lista-ofertas-effective-promo";
 
 export const dynamic = "force-dynamic";
@@ -34,7 +38,6 @@ function isWithinBrasiliaWindow(horarioInicio: string | null, horarioFim: string
 }
 
 const SHOPEE_GQL = "https://open-api.affiliate.shopee.com.br/graphql";
-const WEBHOOK_URL = "https://n8n.iacodenxt.online/webhook/achadinhoN1";
 
 function buildShopeeAuth(appId: string, secret: string, payload: string) {
   const timestamp = Math.floor(Date.now() / 1000);
@@ -92,9 +95,7 @@ async function runCronDisparo(): Promise<CronResultBody> {
       continue;
     }
 
-    const isListaMlMode = !!listaOfertasMlId;
-    const isListaShopeeMode = !!listaOfertasId && !isListaMlMode;
-    const isListaOfertasMode = isListaShopeeMode || isListaMlMode;
+    const isListaOfertasMode = !!listaOfertasId || !!listaOfertasMlId;
     if (!isListaOfertasMode && keywords.length === 0) {
       results.push({ userId, ok: false, error: "Sem keywords" });
       continue;
@@ -115,15 +116,33 @@ async function runCronDisparo(): Promise<CronResultBody> {
       }
 
       if (isListaOfertasMode) {
-        const table = isListaMlMode ? "minha_lista_ofertas_ml" : "minha_lista_ofertas";
-        const listaFk = isListaMlMode ? listaOfertasMlId! : listaOfertasId!;
-        const { data: itens } = await supabase
-          .from(table)
-          .select("id, product_name, image_url, price_original, price_promo, discount_rate, converter_link")
-          .eq("lista_id", listaFk)
-          .eq("user_id", userId)
-          .order("created_at", { ascending: true });
-        const items = (itens ?? []) as { product_name: string; image_url: string; price_original: number | null; price_promo: number | null; discount_rate: number | null; converter_link: string }[];
+        type ListaRow = {
+          product_name: string;
+          image_url: string;
+          price_original: number | null;
+          price_promo: number | null;
+          discount_rate: number | null;
+          converter_link: string;
+        };
+        const items: ListaRow[] = [];
+        if (listaOfertasId) {
+          const { data: itensS } = await supabase
+            .from("minha_lista_ofertas")
+            .select("id, product_name, image_url, price_original, price_promo, discount_rate, converter_link")
+            .eq("lista_id", listaOfertasId)
+            .eq("user_id", userId)
+            .order("created_at", { ascending: true });
+          items.push(...((itensS ?? []) as ListaRow[]));
+        }
+        if (listaOfertasMlId) {
+          const { data: itensM } = await supabase
+            .from("minha_lista_ofertas_ml")
+            .select("id, product_name, image_url, price_original, price_promo, discount_rate, converter_link")
+            .eq("lista_id", listaOfertasMlId)
+            .eq("user_id", userId)
+            .order("created_at", { ascending: true });
+          items.push(...((itensM ?? []) as ListaRow[]));
+        }
         if (items.length === 0) {
           results.push({ userId, ok: false, error: "Lista de ofertas vazia" });
           continue;
@@ -157,7 +176,8 @@ async function runCronDisparo(): Promise<CronResultBody> {
           linkAfiliado,
         });
 
-        const whRes = await fetch(WEBHOOK_URL, {
+        const listaWebhookUrl = resolveGruposVendaListaWebhookUrl(!!listaOfertasId && !!listaOfertasMlId);
+        const whRes = await fetch(listaWebhookUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payloadBody),
@@ -275,7 +295,7 @@ async function runCronDisparo(): Promise<CronResultBody> {
         linkAfiliado;
       const imagem = product.imageUrl ?? "";
 
-      const whRes = await fetch(WEBHOOK_URL, {
+      const whRes = await fetch(GRUPOS_VENDA_WEBHOOK_DEFAULT, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

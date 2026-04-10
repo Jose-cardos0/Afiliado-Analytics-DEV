@@ -8,13 +8,15 @@
 
 import { NextResponse } from "next/server";
 import { createClient } from "../../../../../utils/supabase/server";
-import { buildListaOfferWebhookPayload } from "@/lib/grupos-venda-webhook";
+import {
+  buildListaOfferWebhookPayload,
+  GRUPOS_VENDA_WEBHOOK_DEFAULT,
+  resolveGruposVendaListaWebhookUrl,
+} from "@/lib/grupos-venda-webhook";
 import { effectiveListaOfferPromoPrice } from "@/lib/lista-ofertas-effective-promo";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
-
-const WEBHOOK_URL = "https://n8n.iacodenxt.online/webhook/achadinhoN1";
 
 type SavedOfferRow = {
   product_name: string;
@@ -47,12 +49,9 @@ export async function POST(req: Request) {
     const listaOfertasMlId = typeof body.listaOfertasMlId === "string" ? body.listaOfertasMlId.trim() : "";
 
     if (!listaId && !instanceId) return NextResponse.json({ error: "Informe listaId ou instanceId." }, { status: 400 });
-    if (listaOfertasId && listaOfertasMlId) {
-      return NextResponse.json({ error: "Use apenas uma lista de ofertas por disparo (Shopee ou Mercado Livre)." }, { status: 400 });
-    }
     if (!listaOfertasId && !listaOfertasMlId && keywords.length === 0) {
       return NextResponse.json(
-        { error: "Informe ao menos uma keyword ou uma lista de ofertas (Shopee ou Mercado Livre)." },
+        { error: "Informe ao menos uma keyword ou uma lista de ofertas (Shopee e/ou Mercado Livre)." },
         { status: 400 },
       );
     }
@@ -105,7 +104,14 @@ export async function POST(req: Request) {
     const sent: { keyword: string; productName: string; link: string }[] = [];
     const errors: { keyword: string; error: string }[] = [];
 
-    const dispararListaSalva = async (table: "minha_lista_ofertas" | "minha_lista_ofertas_ml", fk: string) => {
+    const crossoverLista = !!listaOfertasId && !!listaOfertasMlId;
+    const listaWebhookUrl = resolveGruposVendaListaWebhookUrl(crossoverLista);
+
+    const dispararListaSalva = async (
+      table: "minha_lista_ofertas" | "minha_lista_ofertas_ml",
+      fk: string,
+      webhookUrl: string,
+    ) => {
       const { data: itens, error: qErr } = await supabase
         .from(table)
         .select("product_name, image_url, price_original, price_promo, discount_rate, converter_link")
@@ -148,7 +154,7 @@ export async function POST(req: Request) {
           discountRate: rate,
           linkAfiliado,
         });
-        const whRes = await fetch(WEBHOOK_URL, {
+        const whRes = await fetch(webhookUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
@@ -163,17 +169,12 @@ export async function POST(req: Request) {
     };
 
     if (listaOfertasId) {
-      await dispararListaSalva("minha_lista_ofertas", listaOfertasId);
-      return NextResponse.json({
-        success: true,
-        sent: sent.length,
-        sentDetail: sent,
-        errors: errors.length ? errors : undefined,
-      });
+      await dispararListaSalva("minha_lista_ofertas", listaOfertasId, listaWebhookUrl);
     }
-
     if (listaOfertasMlId) {
-      await dispararListaSalva("minha_lista_ofertas_ml", listaOfertasMlId);
+      await dispararListaSalva("minha_lista_ofertas_ml", listaOfertasMlId, listaWebhookUrl);
+    }
+    if (listaOfertasId || listaOfertasMlId) {
       return NextResponse.json({
         success: true,
         sent: sent.length,
@@ -243,7 +244,7 @@ export async function POST(req: Request) {
           precoPor: precoPor > 0 ? precoPor : null,
         };
 
-        const whRes = await fetch(WEBHOOK_URL, {
+        const whRes = await fetch(GRUPOS_VENDA_WEBHOOK_DEFAULT, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
