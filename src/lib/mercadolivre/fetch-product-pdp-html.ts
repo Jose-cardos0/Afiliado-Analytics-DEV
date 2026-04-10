@@ -74,9 +74,65 @@ export function normalizeMercadoLivrePdpUrlForFetch(pageUrl: string): string {
   }
 }
 
+function parseAffiliatePctFragment(raw: string): number | null {
+  const n = parseFloat(String(raw).replace(",", "."));
+  if (Number.isFinite(n) && n > 0 && n <= 100) return Math.round(n * 100) / 100;
+  return null;
+}
+
 /**
- * Barra preta de afiliados no topo do anúncio (logado): texto "GANHOS 12%".
- * Removemos tags para juntar texto partido por nós do React.
+ * Porcentagem embutida em JSON/scripts do VPP (ex.: `"GANHOS 12%"` em estado React).
+ * Só existe com sessão de afiliado; não remove tags script (diferente do fallback em texto visível).
+ */
+export function extractMlAffiliateGanhosPctFromEmbeddedJson(html: string): number | null {
+  const quotedPatterns = [
+    /"GANHOS\s*(\d{1,2}(?:[.,]\d+)?)\s*%"/gi,
+    /'GANHOS\s*(\d{1,2}(?:[.,]\d+)?)\s*%'/gi,
+    /\\"GANHOS\s*(\d{1,2}(?:[.,]\d+)?)\s*%\\"/gi,
+    /"Ganhos\s*(\d{1,2}(?:[.,]\d+)?)\s*%"/gi,
+    /GANHOS\s+DE\s+(\d{1,2}(?:[.,]\d+)?)\s*%/gi,
+  ];
+  for (const re of quotedPatterns) {
+    re.lastIndex = 0;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(html)) !== null) {
+      const v = parseAffiliatePctFragment(m[1]);
+      if (v != null) return v;
+    }
+  }
+
+  const explicitKey =
+    /"(?:affiliate_commission_percentage|affiliate_gain_percentage|affiliate_program_commission)"\s*:\s*(\d{1,2}(?:\.\d+)?)/gi;
+  let em: RegExpExecArray | null;
+  while ((em = explicitKey.exec(html)) !== null) {
+    const v = parseAffiliatePctFragment(em[1]);
+    if (v != null) return v;
+  }
+
+  // "percentage": N próximo de affiliate / ganhos / vip affiliates (evita outros % da página)
+  const pctRe = /"percentage"\s*:\s*(\d{1,2}(?:\.\d+)?)/gi;
+  let pm: RegExpExecArray | null;
+  while ((pm = pctRe.exec(html)) !== null) {
+    const start = Math.max(0, pm.index - 220);
+    const ctx = html.slice(start, pm.index).toLowerCase();
+    if (
+      ctx.includes("affiliate") ||
+      ctx.includes("ganho") ||
+      ctx.includes("comiss") ||
+      ctx.includes("vip_affiliates") ||
+      ctx.includes("seller_rebate")
+    ) {
+      const v = parseAffiliatePctFragment(pm[1]);
+      if (v != null) return v;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Barra preta de afiliados no topo do anúncio (logado): texto "GANHOS 12%" no DOM renderizado.
+ * Removemos tags e scripts — útil quando o texto não está só em JSON dentro de script.
  */
 export function extractMlAffiliateGanhosPctFromHtml(html: string): number | null {
   const head = html.length > 180_000 ? html.slice(0, 180_000) : html;
@@ -87,18 +143,93 @@ export function extractMlAffiliateGanhosPctFromHtml(html: string): number | null
   const re = /GANHOS\s*(\d{1,2}(?:[.,]\d+)?)\s*%/gi;
   let m: RegExpExecArray | null;
   while ((m = re.exec(rough)) !== null) {
-    const n = parseFloat(String(m[1]).replace(",", "."));
-    if (Number.isFinite(n) && n > 0 && n <= 100) {
-      return Math.round(n * 100) / 100;
-    }
+    const v = parseAffiliatePctFragment(m[1]);
+    if (v != null) return v;
   }
   return null;
 }
 
 function mergeAffiliatePctFromHtml(meta: MlPdpProductMeta, html: string): MlPdpProductMeta {
-  const pct = extractMlAffiliateGanhosPctFromHtml(html);
+  const pct =
+    extractMlAffiliateGanhosPctFromEmbeddedJson(html) ?? extractMlAffiliateGanhosPctFromHtml(html);
   if (pct == null) return meta;
   return { ...meta, affiliateCommissionPct: pct };
+}
+
+const MAX_ML_PRICE = 9_999_999;
+
+function roundMoney(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+/**
+ * O VPP do ML embute preço de lista e preço atual em scripts (ex.: credit_view_components.pricing,
+ * melidata e promotions). O JSON-LD costuma trazer só um `price`.
+ */
+function extractMlPdpPricingFromEmbeddedHtml(html: string): {
+  pricePromo: number;
+  priceOriginal: number;
+  discountRate: number;
+} | null {
+  const tryPair = (original: number, promo: number) => {
+    if (!Number.isFinite(original) || !Number.isFinite(promo)) return null;
+    if (original <= 0 || promo <= 0 || original > MAX_ML_PRICE || promo > MAX_ML_PRICE) return null;
+    if (original <= promo) return null;
+    const discountRate = Math.round(((original - promo) / original) * 10000) / 100;
+    return {
+      pricePromo: roundMoney(promo),
+      priceOriginal: roundMoney(original),
+      discountRate,
+    };
+  };
+
+  const patterns: Array<{ re: RegExp; originalGroup: 1 | 2; promoGroup: 1 | 2 }> = [
+    {
+      re: /"original_price"\s*:\s*(\d+(?:\.\d+)?)\s*,\s*"actual_price"\s*:\s*(\d+(?:\.\d+)?)/,
+      originalGroup: 1,
+      promoGroup: 2,
+    },
+    {
+      re: /"price"\s*:\s*(\d+(?:\.\d+)?)\s*,\s*"original_price"\s*:\s*(\d+(?:\.\d+)?)/,
+      originalGroup: 2,
+      promoGroup: 1,
+    },
+    {
+      re: /"original_price"\s*:\s*(\d+(?:\.\d+)?)\s*,\s*"price"\s*:\s*(\d+(?:\.\d+)?)/,
+      originalGroup: 1,
+      promoGroup: 2,
+    },
+  ];
+
+  for (const { re, originalGroup, promoGroup } of patterns) {
+    const m = re.exec(html);
+    if (!m) continue;
+    const a = parseFloat(m[1]);
+    const b = parseFloat(m[2]);
+    const original = originalGroup === 1 ? a : b;
+    const promo = promoGroup === 1 ? a : b;
+    const r = tryPair(original, promo);
+    if (r) return r;
+  }
+
+  const vm = /"original_value"\s*:\s*(\d+(?:\.\d+)?)\s*,\s*"value"\s*:\s*(\d+(?:\.\d+)?)/.exec(html);
+  if (vm) {
+    const r = tryPair(parseFloat(vm[1]), parseFloat(vm[2]));
+    if (r) return r;
+  }
+
+  return null;
+}
+
+function mergePdpPricingFromEmbeddedHtml(meta: MlPdpProductMeta, html: string): MlPdpProductMeta {
+  const ext = extractMlPdpPricingFromEmbeddedHtml(html);
+  if (!ext) return meta;
+  return {
+    ...meta,
+    pricePromo: ext.pricePromo,
+    priceOriginal: ext.priceOriginal,
+    discountRate: ext.discountRate,
+  };
 }
 
 function parsePrice(v: unknown): number | null {
@@ -129,10 +260,30 @@ function mapLdProduct(obj: Record<string, unknown>, sourceUrl: string, resolvedI
   const offersRaw = obj.offers;
   let pricePromo: number | null = null;
   let priceOriginal: number | null = null;
+  let discountRate: number | null = null;
 
   const takeOffer = (o: Record<string, unknown>) => {
+    const types = o["@type"];
+    const typeStr = (Array.isArray(types) ? String(types[0]) : String(types ?? "")).toLowerCase();
+    const high = parsePrice(o.highPrice);
+    const low = parsePrice(o.lowPrice);
+    if (typeStr === "aggregateoffer" && high != null && low != null && high > low) {
+      priceOriginal = high;
+      pricePromo = low;
+      discountRate = Math.round(((high - low) / high) * 10000) / 100;
+      return;
+    }
     const p = parsePrice(o.price);
     if (p != null) pricePromo = p;
+    const spec = o.priceSpecification;
+    if (Array.isArray(spec) && spec[0] && typeof spec[0] === "object") {
+      const s0 = spec[0] as Record<string, unknown>;
+      const list = parsePrice(s0.price);
+      if (list != null && p != null && list > p) {
+        priceOriginal = list;
+        discountRate = Math.round(((list - p) / list) * 10000) / 100;
+      }
+    }
   };
 
   if (offersRaw && typeof offersRaw === "object" && !Array.isArray(offersRaw)) {
@@ -141,7 +292,7 @@ function mapLdProduct(obj: Record<string, unknown>, sourceUrl: string, resolvedI
     takeOffer(offersRaw[0] as Record<string, unknown>);
   }
 
-  if (pricePromo != null) priceOriginal = pricePromo;
+  if (pricePromo != null && priceOriginal == null) priceOriginal = pricePromo;
 
   return {
     resolvedId,
@@ -149,7 +300,7 @@ function mapLdProduct(obj: Record<string, unknown>, sourceUrl: string, resolvedI
     imageUrl,
     pricePromo,
     priceOriginal,
-    discountRate: null,
+    discountRate,
     permalink: typeof sourceUrl === "string" ? sourceUrl.split("#")[0] : null,
     subtitle: null,
     condition: null,
@@ -336,13 +487,13 @@ export async function fetchMlProductMetaFromPdpHtml(
     if (!block) continue;
     const meta = tryParseLdJsonBlock(block, u.toString(), resolvedId);
     if (meta?.productName || meta?.imageUrl || meta?.pricePromo != null) {
-      return mergeAffiliatePctFromHtml(meta, html);
+      return mergeAffiliatePctFromHtml(mergePdpPricingFromEmbeddedHtml(meta, html), html);
     }
   }
 
   const og = parsePdpMetaFromOpenGraph(html, u.toString(), resolvedId);
   if (og?.productName || og?.imageUrl || og?.pricePromo != null) {
-    return mergeAffiliatePctFromHtml(og, html);
+    return mergeAffiliatePctFromHtml(mergePdpPricingFromEmbeddedHtml(og, html), html);
   }
 
   return null;

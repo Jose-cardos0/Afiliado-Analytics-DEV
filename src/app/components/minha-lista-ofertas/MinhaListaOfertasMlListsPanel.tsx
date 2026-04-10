@@ -636,9 +636,6 @@ export function MinhaListaOfertasMlListsPanel({ className }: { className?: strin
                                       {" por "}
                                       <span className="text-emerald-400 font-medium">✅ {displayPrecoPorLista(item)}</span>
                                     </p>
-                                    <p className="text-[10px] text-text-secondary mt-1">
-                                      💸 Ganhos: veja o percentual na página do anúncio no ML (barra Afiliados).
-                                    </p>
                                     <p className="text-sm font-medium text-text-primary mt-1">🏷️ PROMOÇÃO - CLIQUE NO LINK 👇</p>
                                     <button
                                       type="button"

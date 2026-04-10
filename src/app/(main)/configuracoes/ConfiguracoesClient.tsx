@@ -15,6 +15,10 @@ type ConfiguracoesClientProps = {
   initialLast4: string | null;
   /** Abre o bloco Mercado Livre (ex.: link da Lista ML com ?ml=1). */
   initialOpenMl?: boolean;
+  /** Credenciais opcionais da API de desenvolvedor (profiles). */
+  initialMlClientId?: string;
+  initialMlHasSecret?: boolean;
+  initialMlSecretLast4?: string | null;
   metaHasToken: boolean;
   metaLast4: string | null;
 };
@@ -67,6 +71,9 @@ export default function ConfiguracoesClient({
   initialHasKey,
   initialLast4,
   initialOpenMl,
+  initialMlClientId = "",
+  initialMlHasSecret = false,
+  initialMlSecretLast4 = null,
   metaHasToken,
   metaLast4,
 }: ConfiguracoesClientProps) {
@@ -86,11 +93,7 @@ export default function ConfiguracoesClient({
               openSection === key ? "border-shopee-orange/60 ring-1 ring-shopee-orange/20" : "border-dark-border"
             }`}
           >
-            <div
-              className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-dark-bg ${
-                key === "mercadolivre" ? "text-amber-400" : "text-shopee-orange"
-              }`}
-            >
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-dark-bg text-shopee-orange">
               <Icon className="h-5 w-5" />
             </div>
             <div className="min-w-0 flex-1">
@@ -116,7 +119,11 @@ export default function ConfiguracoesClient({
       )}
       {openSection === "mercadolivre" && (
         <div className="animate-in fade-in duration-200">
-          <MercadoLivreIntegrationCard />
+          <MercadoLivreIntegrationCard
+            initialClientId={initialMlClientId}
+            initialHasSecret={initialMlHasSecret}
+            initialSecretLast4={initialMlSecretLast4}
+          />
         </div>
       )}
       {openSection === "meta" && (

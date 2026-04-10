@@ -13,6 +13,7 @@ import {
   TrendingUp,
   Megaphone,
   ShoppingBag,
+  Handshake,
   MessageCircle,
   ArrowLeftRight,
   ListChecks,
@@ -98,7 +99,7 @@ const sidebarNavItems: NavItem[] = [
   {
     title: "Gerador de Links ML",
     href: "/dashboard/minha-lista-ofertas-ml",
-    icon: <ShoppingBag className="h-5 w-5 text-amber-400" />,
+    icon: <Handshake className="h-5 w-5" />,
     hidden: false,
   },
   {

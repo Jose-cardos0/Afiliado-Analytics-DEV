@@ -24,7 +24,9 @@ export default async function ConfiguracoesPage({
   // Não incluir meta_access_token_last4 na query principal para não quebrar se a migração ainda não foi rodada
   const { data: profile, error } = await supabase
     .from("profiles")
-    .select("subscription_status, plan_name, email, shopee_app_id, shopee_api_key_last4")
+    .select(
+      "subscription_status, plan_name, email, shopee_app_id, shopee_api_key_last4, mercadolivre_client_id, mercadolivre_client_secret_last4",
+    )
     .eq("id", user.id)
     .single();
 
@@ -67,6 +69,9 @@ export default async function ConfiguracoesPage({
           initialHasKey={!!profile.shopee_api_key_last4}
           initialLast4={profile.shopee_api_key_last4 ?? null}
           initialOpenMl={initialOpenMl}
+          initialMlClientId={profile.mercadolivre_client_id ?? ""}
+          initialMlHasSecret={!!profile.mercadolivre_client_secret_last4}
+          initialMlSecretLast4={profile.mercadolivre_client_secret_last4 ?? null}
           metaHasToken={metaHasToken}
           metaLast4={metaLast4}
         />

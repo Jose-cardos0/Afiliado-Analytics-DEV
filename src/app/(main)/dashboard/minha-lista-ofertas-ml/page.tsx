@@ -43,7 +43,6 @@ import { effectiveListaOfferPromoPrice } from "@/lib/lista-ofertas-effective-pro
 import { mlEstCommissionFromPromoPrice } from "@/lib/mercadolivre/ml-lista-automation-text";
 import { useMlAffiliateLocalSettings } from "@/lib/mercadolivre/use-ml-affiliate-local-settings";
 
-
 type Lista = { id: string; nome: string; totalItens: number; createdAt?: string };
 
 function formatCurrency(value: number) {
@@ -102,9 +101,11 @@ function MlOfferRowCard({
   selected?: boolean;
   compact?: boolean;
 }) {
-  const pctForComm = p.affiliateCommissionPct;
-  const comm =
-    pctForComm != null && pctForComm > 0 ? mlEstCommissionFromPromoPrice(p.price, pctForComm) : null;
+  const pct = p.affiliateCommissionPct;
+  const commEst =
+    pct != null && pct > 0 && p.price != null ? mlEstCommissionFromPromoPrice(p.price, pct) : null;
+  const hasComm = commEst != null;
+
   return (
     <button
       type="button"
@@ -156,7 +157,7 @@ function MlOfferRowCard({
               {fmtMlDisc(p.discountRate)}
             </span>
           ) : null}
-          <span className={cn("text-[#9a9aa2] whitespace-nowrap", compact ? "text-[9px]" : "text-[10px]")}>
+          <span className={cn("text-[#d8d8d8] whitespace-nowrap", compact ? "text-[9px]" : "text-[10px]")}>
             {p.itemId}
           </span>
         </div>
@@ -170,21 +171,18 @@ function MlOfferRowCard({
         )}
       >
         <div className="text-left min-[420px]:text-right">
-          {comm != null && pctForComm != null && pctForComm > 0 ? (
-            <>
-              <p className={cn("font-bold text-emerald-400 leading-none", compact ? "text-[13px]" : "text-[15px] min-[360px]:text-sm")}>
-                {formatCurrency(comm)}
-              </p>
-              <p className={cn("text-[#bebebe] mt-2", compact ? "text-[9px]" : "text-[10px]")}>
-                {Math.abs(pctForComm - Math.round(pctForComm)) < 0.001
-                  ? String(Math.round(pctForComm))
-                  : pctForComm.toFixed(1)}
-                % GANHOS ML
-              </p>
-            </>
-          ) : (
-            <p className="text-[9px] text-[#7d7d86]">GANHOS no PDP</p>
-          )}
+          <p
+            className={cn(
+              "font-bold leading-none",
+              hasComm ? "text-emerald-400" : "text-emerald-400/35",
+              compact ? "text-[13px]" : "text-[15px] min-[360px]:text-sm",
+            )}
+          >
+            {hasComm ? formatCurrency(commEst) : "—"}
+          </p>
+          <p className={cn("text-[#bebebe] mt-2", compact ? "text-[9px]" : "text-[10px]")}>
+            {hasComm ? `${pct!.toFixed(1)}% comissão` : "Ganhos ML"}
+          </p>
         </div>
         <ExternalLink
           className={cn(
@@ -266,6 +264,14 @@ const mlPickerRowClass = (selected: boolean) =>
       ? "border-shopee-orange/50 bg-shopee-orange/10 text-text-primary"
       : "border-dark-border/60 bg-dark-bg/30 text-text-secondary hover:border-shopee-orange/30"
   }`;
+
+function normalizeMlModalSearch(s: string) {
+  return s
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
 
 function linesFromTextarea(s: string): string[] {
   return s.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
@@ -512,6 +518,9 @@ export default function MinhaListaOfertasMlPage() {
   const [mlGoldenSimilarPage, setMlGoldenSimilarPage] = useState(1);
   const [mlConvertLoading, setMlConvertLoading] = useState(false);
   const [categoryPickerOpen, setCategoryPickerOpen] = useState(false);
+  const [categoryPickerQuery, setCategoryPickerQuery] = useState("");
+  const [categoryDraftSlug, setCategoryDraftSlug] = useState<string | null>(null);
+  const mlCategoryPickerTitleId = useId();
   const mlSearchSeq = useRef(0);
 
   const [mlHistory, setMlHistory] = useState<MlHistoryEntry[]>([]);
@@ -726,10 +735,6 @@ export default function MinhaListaOfertasMlPage() {
               priceOriginal: d.priceOriginal != null ? Number(d.priceOriginal) : null,
               discountRate: d.discountRate != null ? Number(d.discountRate) : null,
               currencyId: String(d.currencyId ?? "BRL") || "BRL",
-              affiliateCommissionPct:
-                typeof d.affiliateCommissionPct === "number" && Number.isFinite(d.affiliateCommissionPct)
-                  ? d.affiliateCommissionPct
-                  : null,
             },
           ]);
           goProdutoOnMobile();
@@ -794,6 +799,7 @@ export default function MinhaListaOfertasMlPage() {
   const handleMlCategorySearch = useCallback(
     async (slug: string, label: string) => {
       setCategoryPickerOpen(false);
+      setCategoryPickerQuery("");
       if (!mlSessionToken.trim()) {
         setError("Configure o token da extensão em Minha Conta → Mercado Livre Afiliados.");
         return;
@@ -828,6 +834,13 @@ export default function MinhaListaOfertasMlPage() {
     },
     [mlSessionToken, goProdutoOnMobile],
   );
+
+  const confirmCategoryPicker = useCallback(() => {
+    if (!categoryDraftSlug || mlSearchLoading) return;
+    const opt = ML_LISTA_CATEGORY_OPTIONS.find((o) => o.slug === categoryDraftSlug);
+    if (!opt) return;
+    void handleMlCategorySearch(opt.slug, opt.label);
+  }, [categoryDraftSlug, mlSearchLoading, handleMlCategorySearch]);
 
   const resetMlMainPanel = useCallback(() => {
     setMlSearchQuery("");
@@ -1066,12 +1079,18 @@ export default function MinhaListaOfertasMlPage() {
     if (listas.length > 0 && !addListaId) setAddListaId(listas[0].id);
   }, [listas, addListaId]);
 
+  const closeCategoryPicker = useCallback(() => {
+    setCategoryPickerOpen(false);
+    setCategoryPickerQuery("");
+  }, []);
+
   useEffect(() => {
     const anyOpen =
       listasMenuModalOpen ||
       selecionarListaModalOpen ||
       criarListaModalOpen ||
-      mlAddToListModal.open;
+      mlAddToListModal.open ||
+      categoryPickerOpen;
     if (!anyOpen) return;
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -1083,6 +1102,7 @@ export default function MinhaListaOfertasMlPage() {
         setMlHistModalNovaLista("");
       } else if (criarListaModalOpen && !criandoLista && !bulkSaving) setCriarListaModalOpen(false);
       else if (selecionarListaModalOpen) setSelecionarListaModalOpen(false);
+      else if (categoryPickerOpen && !mlSearchLoading) closeCategoryPicker();
       else if (listasMenuModalOpen) setListasMenuModalOpen(false);
     };
     window.addEventListener("keydown", onKey);
@@ -1098,6 +1118,9 @@ export default function MinhaListaOfertasMlPage() {
     bulkSaving,
     mlAddToListModal.open,
     mlAddToListLoading,
+    categoryPickerOpen,
+    mlSearchLoading,
+    closeCategoryPicker,
   ]);
 
   useEffect(() => {
@@ -1117,6 +1140,16 @@ export default function MinhaListaOfertasMlPage() {
     if (!q) return listas;
     return listas.filter((l) => l.nome.toLowerCase().includes(q));
   }, [listas, listaPickerQuery]);
+
+  const categoriasFiltradasPicker = useMemo(() => {
+    const q = normalizeMlModalSearch(categoryPickerQuery);
+    if (!q) return ML_LISTA_CATEGORY_OPTIONS;
+    return ML_LISTA_CATEGORY_OPTIONS.filter((c) => {
+      const label = normalizeMlModalSearch(c.label);
+      const slug = c.slug.toLowerCase();
+      return label.includes(q) || slug.includes(q);
+    });
+  }, [categoryPickerQuery]);
 
   const resolveRowMeta = useCallback(async (
     row: { productUrl: string | null; affiliateUrl: string },
@@ -1594,7 +1627,7 @@ export default function MinhaListaOfertasMlPage() {
         </p>
       </nav>
 
-      <div className="flex items-stretch border-b border-[#2c2c32]">
+      <div className="flex items-start border-b border-[#2c2c32]">
         <aside
           className={cn(
             "w-full lg:w-60 lg:shrink-0 border-r border-[#2c2c32] bg-[#27272a] flex flex-col min-w-0 min-h-0",
@@ -1695,7 +1728,12 @@ export default function MinhaListaOfertasMlPage() {
             >
               <button
                 type="button"
-                onClick={() => setCategoryPickerOpen(true)}
+                onClick={() => {
+                  setCategoryPickerQuery("");
+                  const match = ML_LISTA_CATEGORY_OPTIONS.find((o) => o.label === mlListSourceLabel);
+                  setCategoryDraftSlug(match?.slug ?? null);
+                  setCategoryPickerOpen(true);
+                }}
                 disabled={!mlSessionToken.trim() || mlSearchLoading}
                 title={!mlSessionToken.trim() ? "Configure o token em Minha Conta." : undefined}
                 className="flex w-full items-center justify-center gap-2 bg-[#1c1c1f] border border-[#3e3e3e] text-[#d2d2d2] rounded-xl py-2.5 px-3 text-[11px] font-semibold hover:text-[#f0f0f2] hover:border-[#585858] disabled:opacity-40 transition min-h-[42px]"
@@ -1732,11 +1770,11 @@ export default function MinhaListaOfertasMlPage() {
 
         <main
           className={cn(
-            "flex-1 flex flex-col min-w-0 min-h-0 bg-[#1c1c1f] w-full",
+            "flex-1 flex flex-col min-w-0 min-h-0 overflow-y-auto bg-[#1c1c1f] w-full",
             mobileTab === "produto" ? "flex" : "hidden lg:flex",
           )}
         >
-          <div className="z-10 lg:sticky lg:top-12 lg:z-20 bg-[#1c1c1f]">
+          <div className="z-10 lg:sticky lg:top-0 lg:z-20 bg-[#1c1c1f] w-full shrink-0">
             <ColHeader
               step={2}
               active={
@@ -1745,8 +1783,16 @@ export default function MinhaListaOfertasMlPage() {
                 !!selectedMlProduct ||
                 mlSearchFocusMode
               }
-              label="Produto"
-              tooltip="Resultados da busca ou da categoria. Toque em um item para ver ofertas semelhantes; use Converter na barra lateral."
+              label={
+                mlSearchResults.length > 0 && !(selectedMlProduct && mlSearchFocusMode)
+                  ? "Resultados da Busca"
+                  : "Produto"
+              }
+              tooltip={
+                mlSearchResults.length > 0 && !(selectedMlProduct && mlSearchFocusMode)
+                  ? "Resultados da pesquisa. Clique em um produto para selecioná-lo."
+                  : "Resultados da busca ou da categoria. Toque em um item para ver ofertas semelhantes; use Converter na barra lateral."
+              }
               right={
                 mlSearchLoading ||
                 mlSearchResults.length > 0 ||
@@ -1761,8 +1807,8 @@ export default function MinhaListaOfertasMlPage() {
           </div>
 
           {mlSearchLoading && mlSearchResults.length === 0 && !selectedMlProduct && !mlSearchFocusMode ? (
-            <div className="flex items-center justify-center gap-2 py-12 text-[#a0a0a0] text-sm">
-              <Loader2 className="w-5 h-5 animate-spin text-[#e24c30]" aria-hidden />
+            <div className="flex items-center gap-2 px-4 pt-8 pb-4 text-[#a0a0a0] text-sm w-full min-w-0">
+              <Loader2 className="w-5 h-5 animate-spin text-[#e24c30] shrink-0" aria-hidden />
               Buscando…
             </div>
           ) : null}
@@ -1771,8 +1817,8 @@ export default function MinhaListaOfertasMlPage() {
           mlSearchResults.length === 0 &&
           !selectedMlProduct &&
           !mlSearchFocusMode ? (
-            <div className="flex items-center justify-center p-6 sm:p-10 lg:p-16">
-              <div className="dash flex flex-col items-center justify-center py-12 sm:py-16 rounded-2xl w-full max-w-sm text-center px-4">
+            <div className="flex flex-col items-center px-4 pt-6 pb-8 sm:pt-8 sm:pb-10 w-full min-w-0">
+              <div className="dash flex flex-col items-center justify-center py-8 sm:py-10 rounded-2xl w-full max-w-sm text-center px-4">
                 <div className="w-14 h-14 rounded-2xl bg-[#e24c30]/10 border border-[#e24c30]/20 flex items-center justify-center mb-4">
                   <MousePointer2 className="w-7 h-7 text-[#e24c30]" />
                 </div>
@@ -1787,10 +1833,10 @@ export default function MinhaListaOfertasMlPage() {
           {(mlSearchResults.length > 0 ||
             (selectedMlProduct && mlSearchFocusMode) ||
             (selectedMlProduct && !mlSearchFocusMode)) ? (
-            <div className="p-4 flex flex-col gap-5 w-full min-w-0">
-        <section className="rounded-xl border border-[#2c2c32] bg-[#222228] p-4 space-y-4">
+            <>
           {!mlSearchLoading && selectedMlProduct && mlSearchFocusMode ? (
-            <div className="space-y-4 pt-1 border-t border-[#2c2c32]">
+            <div className="p-4 sm:p-5 flex flex-col gap-5 w-full min-w-0">
+            <div className="space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="text-[10px] text-[#9a9aa2]">Produto em destaque</p>
                 {mlSearchResults.length > 0 ? (
@@ -1818,38 +1864,17 @@ export default function MinhaListaOfertasMlPage() {
                 <div className="flex-1 min-w-0">
                   <p className="text-[13px] font-bold text-[#f0f0f2] leading-snug line-clamp-2">{selectedMlProduct.productName}</p>
                   <p className="text-[10px] text-[#a0a0a0] mt-1">Mercado Livre · {selectedMlProduct.itemId}</p>
-                  <div className="flex items-center justify-between gap-3 mt-2 flex-wrap">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      {selectedMlProduct.price != null ? (
-                        <span className="text-[18px] font-bold text-[#e24c30] leading-none">
-                          {formatCurrency(selectedMlProduct.price)}
-                        </span>
-                      ) : null}
-                      {selectedMlProduct.discountRate != null && selectedMlProduct.discountRate > 0 ? (
-                        <span className="text-[9px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20">
-                          {fmtMlDisc(selectedMlProduct.discountRate)}
-                        </span>
-                      ) : null}
-                    </div>
-                    {(() => {
-                      const selPct = selectedMlProduct.affiliateCommissionPct;
-                      const selComm =
-                        selPct != null && selPct > 0
-                          ? mlEstCommissionFromPromoPrice(selectedMlProduct.price, selPct)
-                          : null;
-                      return selComm != null && selPct != null && selPct > 0 ? (
-                        <p className="w-full min-[520px]:w-auto text-[11px] font-semibold text-emerald-400 whitespace-normal break-words min-[520px]:whitespace-nowrap">
-                          {Math.abs(selPct - Math.round(selPct)) < 0.001
-                            ? String(Math.round(selPct))
-                            : selPct.toFixed(1)}
-                          % GANHOS ML · {formatCurrency(selComm)}
-                        </p>
-                      ) : (
-                        <p className="text-[10px] text-[#7d7d86] w-full min-[520px]:w-auto">
-                          GANHOS: abra o PDP com token (busca enriquece o card).
-                        </p>
-                      );
-                    })()}
+                  <div className="flex items-center gap-2 flex-wrap mt-2">
+                    {selectedMlProduct.price != null ? (
+                      <span className="text-[18px] font-bold text-[#e24c30] leading-none">
+                        {formatCurrency(selectedMlProduct.price)}
+                      </span>
+                    ) : null}
+                    {selectedMlProduct.discountRate != null && selectedMlProduct.discountRate > 0 ? (
+                      <span className="text-[9px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20">
+                        {fmtMlDisc(selectedMlProduct.discountRate)}
+                      </span>
+                    ) : null}
                   </div>
                 </div>
               </div>
@@ -1875,7 +1900,7 @@ export default function MinhaListaOfertasMlPage() {
                     ))}
                     {mlGoldenSimilarTotalPages > 1 ? (
                       <GeradorPaginationBar
-                        className="pt-2 mt-1 border-t border-[#2c2c32]"
+                        className="pt-2 px-1 border-t border-[#2c2c32] mt-1"
                         page={mlGoldenSimilarPage}
                         totalPages={mlGoldenSimilarTotalPages}
                         summary={`Página ${mlGoldenSimilarPage} de ${mlGoldenSimilarTotalPages}`}
@@ -1887,30 +1912,30 @@ export default function MinhaListaOfertasMlPage() {
                 </div>
               ) : null}
             </div>
+            </div>
           ) : null}
 
           {!mlSearchLoading && mlSearchResults.length > 0 && !(selectedMlProduct && mlSearchFocusMode) ? (
-            <div className="space-y-2 pt-1 border-t border-[#2c2c32]">
-              <p className="text-[10px] text-[#9a9aa2]">
-                {mlSearchResults.length} resultado(s) — toque para selecionar
+            <div className="px-4 pb-4 pt-0 flex flex-col gap-2 w-full min-w-0">
+              <p className="text-[10px] text-[#a0a0a0] px-0.5 pt-1">
+                {mlSearchResults.length} produto{mlSearchResults.length !== 1 ? "s" : ""} encontrado
+                {mlSearchResults.length !== 1 ? "s" : ""} - clique para selecionar
               </p>
-              <div className="space-y-2 max-h-[min(50vh,360px)] overflow-y-auto pr-1 gerador-scrollbar-ref">
-                {pagedMlSearchResults.map((p) => {
-                  const sel =
-                    selectedMlProduct?.itemId === p.itemId && selectedMlProduct?.productLink === p.productLink;
-                  return (
-                    <MlOfferRowCard
-                      key={`${p.itemId}-${p.productLink}`}
-                      p={p}
-                      onPick={() => void handleMlProductSelect(p)}
-                      selected={sel}
-                    />
-                  );
-                })}
-              </div>
+              {pagedMlSearchResults.map((p) => {
+                const sel =
+                  selectedMlProduct?.itemId === p.itemId && selectedMlProduct?.productLink === p.productLink;
+                return (
+                  <MlOfferRowCard
+                    key={`${p.itemId}-${p.productLink}`}
+                    p={p}
+                    onPick={() => void handleMlProductSelect(p)}
+                    selected={sel}
+                  />
+                );
+              })}
               {mlSearchTotalPages > 1 ? (
                 <GeradorPaginationBar
-                  className="pt-2 border-t border-[#2c2c32]"
+                  className="pt-2 px-1 border-t border-[#2c2c32] mt-1"
                   page={mlSearchPage}
                   totalPages={mlSearchTotalPages}
                   summary={`Página ${mlSearchPage} de ${mlSearchTotalPages}`}
@@ -1921,11 +1946,10 @@ export default function MinhaListaOfertasMlPage() {
             </div>
           ) : null}
 
-        </section>
-            </div>
+            </>
             ) : null}
 
-        <div className="p-4 flex flex-col gap-5 w-full min-w-0">
+        <div className="hidden w-full min-w-0" aria-hidden>
         <section className={cn("rounded-xl border border-[#2c2c32] bg-[#222228] p-4 space-y-4", "hidden")}>
           <div className={mlSectionHeadClass}>
             <Columns2 className="h-3.5 w-3.5 text-[#e24c30]/80 shrink-0" />
@@ -2386,47 +2410,91 @@ export default function MinhaListaOfertasMlPage() {
 
         {categoryPickerOpen && typeof document !== "undefined"
           ? createPortal(
-              <div
-                className={mlModalOverlayClass}
-                role="presentation"
-                onClick={() => setCategoryPickerOpen(false)}
-              >
+              <div className={mlModalOverlayClass} role="presentation" onClick={closeCategoryPicker}>
                 <div
                   role="dialog"
                   aria-modal="true"
-                  aria-labelledby="ml-category-picker-title"
-                  className="w-full max-w-md max-h-[min(85vh,560px)] flex flex-col rounded-2xl border border-[#2c2c32] bg-[#1c1c1f] shadow-2xl overflow-hidden m-4"
+                  aria-labelledby={mlCategoryPickerTitleId}
+                  className={`${mlModalShellClass} max-w-lg max-h-[min(520px,85vh)]`}
                   onClick={(e) => e.stopPropagation()}
                 >
-                  <div className="shrink-0 px-4 py-3 border-b border-[#2c2c32] flex items-center justify-between gap-2 bg-[#222228]">
-                    <h2 id="ml-category-picker-title" className="text-sm font-bold text-[#f0f0f2]">
-                      Categorias
-                    </h2>
+                  <div className={`${mlModalHeaderClass} flex items-start justify-between gap-3`}>
+                    <div className="min-w-0 flex-1">
+                      <h2
+                        id={mlCategoryPickerTitleId}
+                        className="text-sm font-bold text-text-primary flex items-center gap-2"
+                      >
+                        <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-shopee-orange/15 border border-shopee-orange/25 shrink-0">
+                          <Search className="h-4 w-4 text-shopee-orange" />
+                        </span>
+                        Categorias
+                      </h2>
+                      <p className="text-[11px] text-text-secondary/75 mt-1.5 leading-relaxed">
+                        Lista do Mercado Livre; ao confirmar, carregamos produtos dessa categoria.
+                      </p>
+                      <div className="relative mt-3">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-text-secondary/45 pointer-events-none" />
+                        <input
+                          type="search"
+                          autoFocus
+                          value={categoryPickerQuery}
+                          onChange={(e) => setCategoryPickerQuery(e.target.value)}
+                          placeholder="Filtrar categorias…"
+                          className={mlModalSearchInputClass}
+                          disabled={mlSearchLoading}
+                        />
+                      </div>
+                    </div>
                     <button
                       type="button"
-                      onClick={() => setCategoryPickerOpen(false)}
-                      className="w-8 h-8 rounded-lg border border-[#3e3e3e] bg-[#1c1c1f] flex items-center justify-center text-[#a0a0a0] hover:text-[#f0f0f2] hover:border-[#585858] transition"
                       aria-label="Fechar"
+                      onClick={closeCategoryPicker}
+                      disabled={mlSearchLoading}
+                      className="p-1.5 rounded-xl text-text-secondary hover:text-text-primary hover:bg-dark-bg shrink-0 disabled:opacity-40"
                     >
-                      <X className="w-4 h-4" />
+                      <X className="h-5 w-5" />
                     </button>
                   </div>
-                  <div className="flex-1 min-h-0 overflow-y-auto p-2 gerador-scrollbar-ref flex flex-col gap-1">
-                    {ML_LISTA_CATEGORY_OPTIONS.map((c) => (
-                      <button
-                        key={c.slug}
-                        type="button"
-                        disabled={mlSearchLoading}
-                        onClick={() => void handleMlCategorySearch(c.slug, c.label)}
-                        className={cn(
-                          "w-full text-left rounded-xl border px-3 py-2.5 text-[11px] font-medium transition",
-                          "border-[#2c2c32] bg-[#222228] text-[#e8e8ec] hover:border-[#e24c30]/40 hover:bg-[#26262c]",
-                          mlSearchLoading && "opacity-50 pointer-events-none",
-                        )}
-                      >
-                        {c.label}
-                      </button>
-                    ))}
+                  <div className={mlModalListScrollClass}>
+                    {categoriasFiltradasPicker.length === 0 ? (
+                      <p className="text-sm text-text-secondary text-center py-8 px-4">Nada encontrado.</p>
+                    ) : (
+                      categoriasFiltradasPicker.map((c) => {
+                        const selected = categoryDraftSlug === c.slug;
+                        return (
+                          <button
+                            key={c.slug}
+                            type="button"
+                            disabled={mlSearchLoading}
+                            onClick={() => setCategoryDraftSlug(c.slug)}
+                            className={mlPickerRowClass(selected)}
+                          >
+                            <span className="block truncate font-medium">{c.label}</span>
+                            <span className="block text-[11px] text-text-secondary/55 font-normal truncate mt-0.5">
+                              {c.slug}
+                            </span>
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+                  <div className={mlModalFooterClass}>
+                    <button
+                      type="button"
+                      onClick={closeCategoryPicker}
+                      disabled={mlSearchLoading}
+                      className="rounded-xl border border-dark-border px-4 py-2 text-sm font-medium text-text-secondary hover:bg-dark-bg transition-colors disabled:opacity-50"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={confirmCategoryPicker}
+                      disabled={!categoryDraftSlug || mlSearchLoading}
+                      className="rounded-xl bg-shopee-orange px-4 py-2 text-sm font-semibold text-white hover:opacity-90 shadow-[0_2px_12px_rgba(238,77,45,0.25)] disabled:opacity-50"
+                    >
+                      Confirmar
+                    </button>
                   </div>
                 </div>
               </div>,
