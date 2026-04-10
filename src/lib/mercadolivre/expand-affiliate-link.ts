@@ -7,12 +7,17 @@ import { looksLikeMercadoLivreProductUrl } from "@/lib/mercadolivre/extract-mlb-
 
 const SHORT_HOSTS = new Set(["meli.la", "www.meli.la"]);
 
-const BROWSER_HEADERS: HeadersInit = {
+const BROWSER_HEADERS_BASE: Record<string, string> = {
   "User-Agent":
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
   Accept: "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
   "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.5",
 };
+
+function browserHeaders(cookieHeader?: string | null): HeadersInit {
+  if (!cookieHeader?.trim()) return BROWSER_HEADERS_BASE;
+  return { ...BROWSER_HEADERS_BASE, Cookie: cookieHeader.trim() };
+}
 
 function isAllowedFinalProductHost(hostname: string): boolean {
   const h = hostname.toLowerCase();
@@ -99,7 +104,10 @@ function extractMlProductUrlFromMeliBody(html: string, baseUrl: string): string 
 /**
  * Se já for URL de produto ML, devolve normalizada; se for meli.la, segue redirects.
  */
-export async function expandMercadoLivreAffiliateLink(raw: string): Promise<string | null> {
+export async function expandMercadoLivreAffiliateLink(
+  raw: string,
+  cookieHeader?: string | null,
+): Promise<string | null> {
   const trimmed = raw.trim();
   if (!trimmed) return null;
 
@@ -123,8 +131,9 @@ export async function expandMercadoLivreAffiliateLink(raw: string): Promise<stri
   const res = await fetch(trimmed, {
     method: "GET",
     redirect: "follow",
-    headers: BROWSER_HEADERS,
+    headers: browserHeaders(cookieHeader),
     signal: AbortSignal.timeout(20000),
+    ...(cookieHeader?.trim() ? { cache: "no-store" as RequestCache } : {}),
   });
   if (!res.ok) return null;
 

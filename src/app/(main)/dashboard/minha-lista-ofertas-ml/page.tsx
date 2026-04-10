@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo, useId, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useId, useRef, Fragment } from "react";
 import Papa from "papaparse";
 import { createPortal } from "react-dom";
 import Link from "next/link";
@@ -9,117 +9,248 @@ import {
   Loader2,
   Trash2,
   ExternalLink,
-  FolderMinus,
-  ChevronDown,
-  ChevronRight,
   Search,
   ArrowLeft,
   ListChecks,
   Link2,
   Columns2,
-  RefreshCw,
-  Store,
   X,
   Plus,
   Upload,
   FileDown,
-  Pencil,
+  AlertCircle,
+  CheckCircle2,
+  Copy,
+  Check,
+  ImageIcon,
+  MousePointer2,
+  Zap,
+  ListPlus,
 } from "lucide-react";
-import ConfirmModal from "@/app/components/ui/ConfirmModal";
+import {
+  cn,
+  ColHeader,
+  FieldGroup,
+  GeradorShellScrollbarStyle,
+  IconBtn,
+} from "@/app/components/gerador/gerador-ui-primitives";
+import { GeradorAddToListModal } from "@/app/components/gerador/GeradorAddToListModal";
+import type { MlSiteSearchProduct } from "@/lib/mercadolivre/site-search";
+import { ML_LISTA_CATEGORY_OPTIONS } from "@/lib/mercadolivre/ml-lista-category-slugs";
 import Toolist from "@/app/components/ui/Toolist";
 import { extractMlbIdFromUrl, looksLikeMercadoLivreProductUrl } from "@/lib/mercadolivre/extract-mlb-id";
 import { effectiveListaOfferPromoPrice } from "@/lib/lista-ofertas-effective-promo";
+import { mlEstCommissionFromPromoPrice } from "@/lib/mercadolivre/ml-lista-automation-text";
+import { useMlAffiliateLocalSettings } from "@/lib/mercadolivre/use-ml-affiliate-local-settings";
 
 
 type Lista = { id: string; nome: string; totalItens: number; createdAt?: string };
-type Item = {
-  id: string;
-  listaId: string;
-  imageUrl: string;
-  productName: string;
-  priceOriginal: number | null;
-  pricePromo: number | null;
-  discountRate: number | null;
-  converterLink: string;
-  /** URL do anúncio ML salva no servidor para “Atualizar” quando o meli.la falhar */
-  productPageUrl?: string;
-  createdAt: string;
-};
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 2 }).format(value);
 }
 
-function displayPrecoPorLista(item: Item): string {
-  const por =
-    effectiveListaOfferPromoPrice(item.priceOriginal, item.pricePromo, item.discountRate) ?? item.pricePromo;
-  return por != null ? formatCurrency(por) : "—";
-}
-
-function moneyInputStringFromNumber(n: number | null | undefined): string {
-  if (n == null || !Number.isFinite(n)) return "";
-  return String(n).replace(".", ",");
-}
-
-function parseMoneyInput(s: string): number | null {
-  const t = s.trim().replace(/\s/g, "").replace(",", ".");
-  if (!t) return null;
-  const n = Number(t);
-  return Number.isFinite(n) ? n : null;
-}
-
-function parsePercentInput(s: string): number | null {
-  const t = s.trim().replace(/\s/g, "").replace(",", ".");
-  if (!t) return null;
-  const n = Number(t);
-  return Number.isFinite(n) ? n : null;
-}
-
-/** Item com meta incompleta (falha de scrape/API) — dispara modo “Atualizar erros”. */
-function mlItemLooksIncomplete(item: Item): boolean {
-  if (!item.converterLink?.trim()) return false;
-  const por =
-    effectiveListaOfferPromoPrice(item.priceOriginal, item.pricePromo, item.discountRate) ?? item.pricePromo;
-  const hasPrice = por != null && Number.isFinite(Number(por));
-  const hasImg = !!item.imageUrl?.trim();
-  const n = (item.productName || "").trim();
-  if (/^Produto \(linha \d+\)$/i.test(n)) return true;
-  if (/^MLBU\d{5,}$/i.test(n)) return true;
-  if (!hasImg && !hasPrice) return true;
-  return false;
-}
-
 const MAX_BULK_PAIRS = 60;
 
-/** Alinhado ao MAX_ROWS_PER_REQUEST da API refresh (fatias por POST). */
-const ML_LISTA_REFRESH_CHUNK = 120;
+type MlMobileTab = "config" | "produto" | "historico";
 
-const inputClass =
-  "w-full px-3 py-2 rounded-lg border border-dark-border bg-dark-bg text-sm text-text-primary placeholder:text-text-secondary/60";
-const textareaClass =
-  "w-full px-3 py-2 rounded-lg border border-dark-border bg-dark-bg text-xs sm:text-sm font-mono text-text-primary placeholder:text-text-secondary/50 min-h-[160px]";
+const ML_MOBILE_STEPS: { id: MlMobileTab; label: string }[] = [
+  { id: "config", label: "Configurar" },
+  { id: "produto", label: "Produto" },
+  { id: "historico", label: "Histórico" },
+];
+
+type MlHistoryEntry = {
+  id: string;
+  shortLink: string;
+  originUrl: string;
+  productName: string;
+  imageUrl: string;
+  itemId: string;
+  pricePromo: number | null;
+  priceOriginal: number | null;
+  discountRate: number | null;
+  createdAt: string;
+};
+
+const ML_HISTORY_PAGE_SIZE = 4;
+const ML_SEARCH_PAGE_SIZE = 4;
+const ML_SIMILAR_PAGE_SIZE = 4;
+
+function fmtMlDisc(r: number) {
+  return `${Math.round(r)}% OFF`;
+}
+
+/** Primeiras palavras do título para buscar ofertas semelhantes no ML. */
+function mlSimilarSearchQueryFromProductName(name: string): string {
+  const parts = name
+    .trim()
+    .split(/\s+/)
+    .filter((w) => w.length > 1)
+    .slice(0, 5);
+  return parts.join(" ").trim();
+}
+
+function MlOfferRowCard({
+  p,
+  onPick,
+  selected,
+  compact,
+}: {
+  p: MlSiteSearchProduct;
+  onPick: () => void;
+  selected?: boolean;
+  compact?: boolean;
+}) {
+  const pctForComm = p.affiliateCommissionPct;
+  const comm =
+    pctForComm != null && pctForComm > 0 ? mlEstCommissionFromPromoPrice(p.price, pctForComm) : null;
+  return (
+    <button
+      type="button"
+      onClick={onPick}
+      className={cn(
+        "w-full rounded-xl transition text-left group flex flex-wrap items-start gap-x-3 gap-y-2 min-[420px]:flex-nowrap min-[420px]:items-center",
+        compact ? "px-2.5 py-2.5" : "px-3 py-3",
+        selected
+          ? "border border-[#e24c30] bg-[#3B2B2B]"
+          : "bg-[#1c1c1f] border border-[#2c2c32] hover:border-[#e24c30]/30 hover:bg-[#232328]",
+      )}
+    >
+      <div
+        className={cn(
+          "rounded-lg shrink-0 border border-[#2c2c32] overflow-hidden bg-[#232328]",
+          compact ? "w-10 h-10 min-[360px]:w-11 min-[360px]:h-11" : "w-12 h-12 min-[360px]:w-14 min-[360px]:h-14",
+        )}
+      >
+        {p.imageUrl ? (
+          <img src={p.imageUrl} alt="" className="w-full h-full object-cover" />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center">
+            <ImageIcon className="w-4 h-4 text-[#686868]" />
+          </div>
+        )}
+      </div>
+      <div className="flex-1 min-w-0 pt-0.5">
+        <p
+          className={cn(
+            "font-semibold text-[#f0f0f2] leading-[1.35] pr-1",
+            compact ? "text-[12px] line-clamp-2 min-[420px]:line-clamp-1" : "text-[13px] min-[360px]:text-xs line-clamp-2 min-[420px]:line-clamp-1",
+          )}
+        >
+          {p.productName}
+        </p>
+        <div className="flex items-center gap-x-2 gap-y-1.5 mt-2 flex-wrap">
+          {p.price != null ? (
+            <span className={cn("font-bold text-[#e24c30]", compact ? "text-[10px]" : "text-[11px] min-[360px]:text-xs")}>
+              {formatCurrency(p.price)}
+            </span>
+          ) : null}
+          {p.discountRate != null && p.discountRate > 0 ? (
+            <span
+              className={cn(
+                "font-bold text-emerald-400 bg-emerald-500/10 px-1.5 py-px rounded-md border border-emerald-500/15 whitespace-nowrap",
+                compact ? "text-[9px]" : "text-[10px]",
+              )}
+            >
+              {fmtMlDisc(p.discountRate)}
+            </span>
+          ) : null}
+          <span className={cn("text-[#9a9aa2] whitespace-nowrap", compact ? "text-[9px]" : "text-[10px]")}>
+            {p.itemId}
+          </span>
+        </div>
+      </div>
+      <div
+        className={cn(
+          "flex items-start justify-between gap-3 shrink-0 min-[420px]:items-center min-[420px]:justify-start",
+          compact
+            ? "w-full pl-[52px] pt-2 mt-1 border-t border-[#2c2c32] min-[420px]:w-auto min-[420px]:pl-0 min-[420px]:pt-0 min-[420px]:mt-0 min-[420px]:border-t-0"
+            : "w-full pl-[60px] min-[360px]:pl-[68px] pt-2 mt-1 border-t border-[#2c2c32] min-[420px]:w-auto min-[420px]:pl-0 min-[420px]:pt-0 min-[420px]:mt-0 min-[420px]:border-t-0",
+        )}
+      >
+        <div className="text-left min-[420px]:text-right">
+          {comm != null && pctForComm != null && pctForComm > 0 ? (
+            <>
+              <p className={cn("font-bold text-emerald-400 leading-none", compact ? "text-[13px]" : "text-[15px] min-[360px]:text-sm")}>
+                {formatCurrency(comm)}
+              </p>
+              <p className={cn("text-[#bebebe] mt-2", compact ? "text-[9px]" : "text-[10px]")}>
+                {Math.abs(pctForComm - Math.round(pctForComm)) < 0.001
+                  ? String(Math.round(pctForComm))
+                  : pctForComm.toFixed(1)}
+                % GANHOS ML
+              </p>
+            </>
+          ) : (
+            <p className="text-[9px] text-[#7d7d86]">GANHOS no PDP</p>
+          )}
+        </div>
+        <ExternalLink
+          className={cn(
+            "text-[#e24c30] shrink-0 opacity-100 min-[420px]:opacity-50 min-[420px]:group-hover:opacity-100 transition-opacity mt-0.5 min-[420px]:mt-0",
+            compact ? "w-3 h-3" : "w-3.5 h-3.5",
+          )}
+          aria-hidden
+        />
+      </div>
+    </button>
+  );
+}
+
+function MlHistoryActions({
+  inList,
+  copiedId,
+  onCopy,
+  onOpen,
+  onAddToList,
+  onDelete,
+}: {
+  inList: boolean;
+  copiedId: boolean;
+  onCopy: () => void;
+  onOpen: () => void;
+  onAddToList: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <>
+      <IconBtn onClick={onCopy} title={copiedId ? "Copiado!" : "Copiar"} active={copiedId}>
+        {copiedId ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+      </IconBtn>
+      <IconBtn onClick={onOpen} title="Abrir">
+        <ExternalLink className="w-3.5 h-3.5" />
+      </IconBtn>
+      <IconBtn onClick={onAddToList} title={inList ? "Já está em alguma lista" : "Adicionar à lista"} active={inList}>
+        <ListPlus className="w-3.5 h-3.5" />
+      </IconBtn>
+      <IconBtn onClick={onDelete} title="Excluir" danger>
+        <Trash2 className="w-3.5 h-3.5" />
+      </IconBtn>
+    </>
+  );
+}
+
+/** Inputs alinhados ao gerador Shopee (#1c1c1f / #e24c30) */
+const gInp =
+  "w-full bg-[#1c1c1f] border border-[#3e3e3e] rounded-xl px-3 py-2.5 text-xs text-[#f0f0f2] placeholder:text-[#868686] focus:border-[#e24c30] focus:ring-1 focus:ring-[#e24c30]/15 outline-none transition";
+const gTa = `${gInp} min-h-[140px] font-mono sm:text-xs`;
+const gBtnPrimary =
+  "inline-flex items-center justify-center gap-2 min-h-10 px-4 rounded-xl bg-[#e24c30] text-sm font-semibold text-white hover:bg-[#c94028] disabled:opacity-40 shadow-lg shadow-[#e24c30]/20 transition";
+const gBtnSecondary =
+  "inline-flex items-center justify-center gap-2 min-h-10 px-4 rounded-xl bg-[#1c1c1f] border border-[#3e3e3e] text-[12px] font-semibold text-[#d2d2d2] hover:text-[#f0f0f2] hover:border-[#585858] disabled:opacity-40 transition";
+
 const labelClass = "block text-xs font-medium text-text-secondary mb-1.5";
 
 /** Formulários “Colar em lote” / “Um produto por vez” — alinhado ao SectionBox (Meta / padrão do app) */
-const mlSectionFormClass =
-  "rounded-xl border border-dark-border/60 bg-dark-bg/40 p-4 sm:p-5 space-y-4";
 const mlSectionHeadClass =
   "flex flex-wrap items-center gap-2 border-l-2 border-shopee-orange/60 pl-2 -ml-px";
 const mlSectionTitleClass =
   "text-xs font-semibold text-text-primary uppercase tracking-wide";
-const mlInputClass =
-  "w-full rounded-xl border border-dark-border bg-dark-bg py-2.5 px-3 text-sm text-text-primary placeholder:text-text-secondary/50 focus:outline-none focus:border-shopee-orange/60 focus:ring-1 focus:ring-shopee-orange/20";
-const mlTextareaClass =
-  "w-full rounded-xl border border-dark-border bg-dark-bg py-2.5 px-3 text-xs sm:text-sm font-mono text-text-primary placeholder:text-text-secondary/45 min-h-[160px] focus:outline-none focus:border-shopee-orange/60 focus:ring-1 focus:ring-shopee-orange/20 scrollbar-thin";
 const mlFieldLabelClass =
   "block text-xs font-semibold text-text-secondary uppercase tracking-wide mb-1.5";
 const mlFieldLabelInlineClass =
   "text-xs font-semibold text-text-secondary uppercase tracking-wide shrink-0";
-const mlBtnPrimaryClass =
-  "inline-flex items-center justify-center gap-2 min-h-10 px-4 rounded-xl bg-shopee-orange text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50 shadow-[0_2px_12px_rgba(238,77,45,0.22)] transition-opacity";
-const mlBtnSecondaryClass =
-  "inline-flex items-center justify-center gap-2 min-h-10 px-4 rounded-xl border border-dark-border/80 bg-dark-bg/30 text-text-primary text-sm font-medium hover:border-shopee-orange/35 hover:text-shopee-orange disabled:opacity-50 transition-colors";
-
 const mlModalOverlayClass =
   "fixed inset-0 z-[100] flex items-center justify-center p-3 md:p-6 bg-black/70 backdrop-blur-[2px]";
 const mlModalShellClass =
@@ -333,33 +464,7 @@ function fallbackNameFromProductUrl(url: string, lineIndex: number): string {
 
 export default function MinhaListaOfertasMlPage() {
   const [listas, setListas] = useState<Lista[]>([]);
-  const [itemsByLista, setItemsByLista] = useState<Record<string, Item[]>>({});
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [loadingListaId, setLoadingListaId] = useState<string | null>(null);
-  const [expandedListas, setExpandedListas] = useState<Set<string>>(new Set());
-  const [filterByLista, setFilterByLista] = useState<Record<string, string>>({});
-  const [pageByLista, setPageByLista] = useState<Record<string, number>>({});
-  const [confirmState, setConfirmState] = useState<{
-    type: "deleteItem" | "emptyList" | "deleteList";
-    title: string;
-    message: string;
-    confirmLabel: string;
-    variant: "danger" | "default";
-    payload: { itemId?: string; listaId: string };
-  } | null>(null);
-  const [confirmLoading, setConfirmLoading] = useState(false);
-  const [editItemModal, setEditItemModal] = useState<{ item: Item; listaId: string } | null>(null);
-  const [editItemForm, setEditItemForm] = useState({
-    productName: "",
-    priceOriginal: "",
-    pricePromo: "",
-    discountRate: "",
-  });
-  const [savingEditItem, setSavingEditItem] = useState(false);
-  const ITEMS_PER_PAGE = 4;
-  const LISTAS_PER_PAGE = 4;
-  const [listasPage, setListasPage] = useState(1);
 
   const [criandoLista, setCriandoLista] = useState(false);
   const [listasMenuModalOpen, setListasMenuModalOpen] = useState(false);
@@ -369,12 +474,10 @@ export default function MinhaListaOfertasMlPage() {
   const [selecionarListaModalOpen, setSelecionarListaModalOpen] = useState(false);
   const [listaPickerQuery, setListaPickerQuery] = useState("");
   const [listaPickerDraftId, setListaPickerDraftId] = useState("");
-  /** Sanfona "Um produto por vez" — fechada por padrão */
-  const [umProdutoAccordionOpen, setUmProdutoAccordionOpen] = useState(false);
+  const [mobileTab, setMobileTab] = useState<MlMobileTab>("produto");
   const listasMenuTitleId = useId();
   const criarListaTitleId = useId();
   const ondeSalvarTitleId = useId();
-  const editItemTitleId = useId();
 
   const [addListaId, setAddListaId] = useState("");
   const [affiliateLink, setAffiliateLink] = useState("");
@@ -389,6 +492,47 @@ export default function MinhaListaOfertasMlPage() {
   const bulkFileInputRef = useRef<HTMLInputElement>(null);
   /** Só erros de importação — sucesso não mostra aviso (evita ruído visual). */
   const [bulkImportWarn, setBulkImportWarn] = useState<string | null>(null);
+
+  const { sessionToken: mlSessionToken, affiliateTag: mlAffiliateTag } = useMlAffiliateLocalSettings();
+
+  const mlSessionBody = useMemo(() => {
+    const t = mlSessionToken.trim();
+    return t ? { mlSessionToken: t } : {};
+  }, [mlSessionToken]);
+
+  const [mlSearchQuery, setMlSearchQuery] = useState("");
+  const [mlSearchLoading, setMlSearchLoading] = useState(false);
+  const [mlListSourceLabel, setMlListSourceLabel] = useState<string | null>(null);
+  const [mlSearchResults, setMlSearchResults] = useState<MlSiteSearchProduct[]>([]);
+  const [mlSearchPage, setMlSearchPage] = useState(1);
+  const [selectedMlProduct, setSelectedMlProduct] = useState<MlSiteSearchProduct | null>(null);
+  const [mlSearchFocusMode, setMlSearchFocusMode] = useState(false);
+  const [mlSimilarProducts, setMlSimilarProducts] = useState<MlSiteSearchProduct[]>([]);
+  const [mlSimilarLoading, setMlSimilarLoading] = useState(false);
+  const [mlGoldenSimilarPage, setMlGoldenSimilarPage] = useState(1);
+  const [mlConvertLoading, setMlConvertLoading] = useState(false);
+  const [categoryPickerOpen, setCategoryPickerOpen] = useState(false);
+  const mlSearchSeq = useRef(0);
+
+  const [mlHistory, setMlHistory] = useState<MlHistoryEntry[]>([]);
+  const [mlHistorySearch, setMlHistorySearch] = useState("");
+  const [mlHistorySearchDebounced, setMlHistorySearchDebounced] = useState("");
+  const [mlHistoryPage, setMlHistoryPage] = useState(1);
+  const [mlHistoryTotal, setMlHistoryTotal] = useState(0);
+  const [mlHistoryTotalPages, setMlHistoryTotalPages] = useState(1);
+  const [mlHistoryLoading, setMlHistoryLoading] = useState(false);
+
+  const [mlAddToListModal, setMlAddToListModal] = useState<{ open: boolean; entries: MlHistoryEntry[] }>({
+    open: false,
+    entries: [],
+  });
+  const [mlHistModalListaId, setMlHistModalListaId] = useState<string | null>(null);
+  const [mlHistModalNovaLista, setMlHistModalNovaLista] = useState("");
+  const [mlAddToListLoading, setMlAddToListLoading] = useState(false);
+  const [mlAddToListFeedback, setMlAddToListFeedback] = useState<string | null>(null);
+  const [linksInMlOfferList, setLinksInMlOfferList] = useState<Set<string>>(new Set());
+  const [selectedMlHistoryIds, setSelectedMlHistoryIds] = useState<Set<string>>(new Set());
+  const [copiedMlHistoryId, setCopiedMlHistoryId] = useState<string | null>(null);
 
   const applyBulkPairs = useCallback((pairs: { product: string; affiliate: string }[]) => {
     if (pairs.length === 0) {
@@ -448,7 +592,6 @@ export default function MinhaListaOfertasMlPage() {
     },
     [applyBulkPairs]
   );
-  const [refreshTarget, setRefreshTarget] = useState<string | null>(null);
 
   const bulkProductLines = useMemo(() => linesFromTextarea(bulkProductUrls), [bulkProductUrls]);
   const bulkAffiliateLines = useMemo(() => linesFromTextarea(bulkAffiliateUrls), [bulkAffiliateUrls]);
@@ -456,16 +599,6 @@ export default function MinhaListaOfertasMlPage() {
     bulkProductLines.length > 0 &&
     bulkAffiliateLines.length > 0 &&
     bulkProductLines.length === bulkAffiliateLines.length;
-
-  const totalListasPages = Math.max(1, Math.ceil(listas.length / LISTAS_PER_PAGE));
-  const pagedListas = useMemo(() => {
-    const from = (listasPage - 1) * LISTAS_PER_PAGE;
-    return listas.slice(from, from + LISTAS_PER_PAGE);
-  }, [listas, listasPage]);
-
-  useEffect(() => {
-    setListasPage((p) => Math.min(Math.max(1, p), totalListasPages));
-  }, [listas.length, totalListasPages]);
 
   const loadListas = useCallback(async () => {
     try {
@@ -479,46 +612,476 @@ export default function MinhaListaOfertasMlPage() {
     }
   }, []);
 
-  const loadItems = useCallback(async (listaId: string): Promise<Item[]> => {
-    setLoadingListaId(listaId);
+  const loadMlHistory = useCallback(async (page: number, search?: string) => {
+    setMlHistoryLoading(true);
     try {
-      const res = await fetch(`/api/mercadolivre/minha-lista-ofertas?lista_id=${listaId}`);
+      const params = new URLSearchParams({ page: String(page), limit: String(ML_HISTORY_PAGE_SIZE) });
+      if (search?.trim()) params.set("search", search.trim());
+      const res = await fetch(`/api/mercadolivre/link-history?${params}`);
       const json = await res.json();
-      const arr: Item[] = Array.isArray(json?.data) ? json.data : [];
-      if (!res.ok) return [];
-      setItemsByLista((prev) => ({ ...prev, [listaId]: arr }));
-      return arr;
+      if (!res.ok) throw new Error(json?.error ?? "Erro ao carregar histórico");
+      setMlHistory(Array.isArray(json.data) ? json.data : []);
+      setMlHistoryTotal(Number(json.total) ?? 0);
+      setMlHistoryTotalPages(Math.max(1, Number(json.totalPages) ?? 1));
+      setMlHistoryPage(Number(json.page) ?? 1);
     } catch {
-      setItemsByLista((prev) => ({ ...prev, [listaId]: [] }));
-      return [];
+      setMlHistory([]);
     } finally {
-      setLoadingListaId(null);
+      setMlHistoryLoading(false);
+    }
+  }, []);
+
+  const loadLinksInMlOfferList = useCallback(async () => {
+    try {
+      const res = await fetch("/api/mercadolivre/minha-lista-ofertas");
+      const json = await res.json();
+      if (!res.ok) return;
+      const list = Array.isArray(json?.data) ? json.data : [];
+      setLinksInMlOfferList(
+        new Set(list.map((o: { converterLink?: string }) => (o.converterLink ?? "").trim()).filter(Boolean)),
+      );
+    } catch {
+      /* ignore */
     }
   }, []);
 
   useEffect(() => {
-    setLoading(true);
-    setError(null);
-    loadListas().finally(() => setLoading(false));
-  }, [loadListas]);
+    const t = setTimeout(() => setMlHistorySearchDebounced(mlHistorySearch), 300);
+    return () => clearTimeout(t);
+  }, [mlHistorySearch]);
 
   useEffect(() => {
-    listas.forEach((l) => loadItems(l.id));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [listas]);
+    setMlHistoryPage(1);
+  }, [mlHistorySearchDebounced]);
+
+  useEffect(() => {
+    void loadMlHistory(mlHistoryPage, mlHistorySearchDebounced);
+  }, [mlHistoryPage, mlHistorySearchDebounced, loadMlHistory]);
+
+  useEffect(() => {
+    void loadLinksInMlOfferList();
+  }, [loadLinksInMlOfferList]);
+
+  const mlSearchTotalPages = Math.max(1, Math.ceil(mlSearchResults.length / ML_SEARCH_PAGE_SIZE));
+  const pagedMlSearchResults = useMemo(() => {
+    const from = (mlSearchPage - 1) * ML_SEARCH_PAGE_SIZE;
+    return mlSearchResults.slice(from, from + ML_SEARCH_PAGE_SIZE);
+  }, [mlSearchResults, mlSearchPage]);
+
+  useEffect(() => {
+    setMlSearchPage(1);
+  }, [mlSearchResults.length]);
+
+  const mlGoldenSimilarTotalPages = Math.max(1, Math.ceil(mlSimilarProducts.length / ML_SIMILAR_PAGE_SIZE));
+  const pagedMlGoldenSimilar = useMemo(() => {
+    const from = (mlGoldenSimilarPage - 1) * ML_SIMILAR_PAGE_SIZE;
+    return mlSimilarProducts.slice(from, from + ML_SIMILAR_PAGE_SIZE);
+  }, [mlSimilarProducts, mlGoldenSimilarPage]);
+
+  useEffect(() => {
+    setMlGoldenSimilarPage(1);
+  }, [selectedMlProduct?.itemId, selectedMlProduct?.productLink]);
+
+  const goProdutoOnMobile = useCallback(() => {
+    if (typeof window === "undefined") return;
+    if (window.matchMedia("(max-width: 1023px)").matches) setMobileTab("produto");
+  }, []);
+
+  const runMlSearchFromString = useCallback(
+    async (rawInput: string) => {
+      const raw = rawInput.trim();
+      if (!raw) {
+        setMlSearchResults([]);
+        setMlListSourceLabel(null);
+        return;
+      }
+      if (!mlSessionToken.trim()) return;
+
+      const seq = ++mlSearchSeq.current;
+      setMlSearchLoading(true);
+      setError(null);
+      setSelectedMlProduct(null);
+      setMlSearchFocusMode(false);
+      setMlSimilarProducts([]);
+      setMlListSourceLabel(null);
+      try {
+        if (looksLikeMercadoLivreProductUrl(raw) || extractMlbIdFromUrl(raw)) {
+          const res = await fetch("/api/mercadolivre/resolve-item", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ productUrl: raw, ...mlSessionBody }),
+          });
+          const j = await res.json();
+          if (!res.ok) throw new Error(j?.error ?? "Não foi possível abrir este anúncio.");
+          const d = j.data as Record<string, unknown>;
+          const permalink = String(d.permalink ?? "").trim() || raw;
+          if (seq !== mlSearchSeq.current) return;
+          setMlSearchResults([
+            {
+              itemId: String(d.resolvedId ?? "").trim() || "MLB",
+              productName: String(d.productName ?? "Produto"),
+              productLink: permalink,
+              imageUrl: String(d.imageUrl ?? ""),
+              price: d.pricePromo != null ? Number(d.pricePromo) : null,
+              priceOriginal: d.priceOriginal != null ? Number(d.priceOriginal) : null,
+              discountRate: d.discountRate != null ? Number(d.discountRate) : null,
+              currencyId: String(d.currencyId ?? "BRL") || "BRL",
+              affiliateCommissionPct:
+                typeof d.affiliateCommissionPct === "number" && Number.isFinite(d.affiliateCommissionPct)
+                  ? d.affiliateCommissionPct
+                  : null,
+            },
+          ]);
+          goProdutoOnMobile();
+          return;
+        }
+        const res = await fetch("/api/mercadolivre/product-search", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ q: raw, limit: 30, mlSessionToken: mlSessionToken.trim() }),
+        });
+        const j = await res.json();
+        if (!res.ok) throw new Error(j?.error ?? "Erro na busca");
+        if (seq !== mlSearchSeq.current) return;
+        setMlSearchResults(Array.isArray(j.products) ? j.products : []);
+        goProdutoOnMobile();
+      } catch (e) {
+        if (seq === mlSearchSeq.current) {
+          setMlSearchResults([]);
+          setError(e instanceof Error ? e.message : "Erro na busca");
+        }
+      } finally {
+        if (seq === mlSearchSeq.current) setMlSearchLoading(false);
+      }
+    },
+    [mlSessionToken, mlSessionBody, goProdutoOnMobile],
+  );
+
+  const handleMlSearch = useCallback(() => {
+    const raw = mlSearchQuery.trim();
+    if (!raw) {
+      setError("Digite o nome do produto ou cole a URL do anúncio.");
+      return;
+    }
+    if (!mlSessionToken.trim()) {
+      setError("Configure o token da extensão em Minha Conta → Mercado Livre Afiliados.");
+      return;
+    }
+    void runMlSearchFromString(mlSearchQuery);
+  }, [mlSearchQuery, mlSessionToken, runMlSearchFromString]);
+
+  useEffect(() => {
+    const q = mlSearchQuery.trim();
+    if (!q) return;
+    if (!mlSessionToken.trim()) return;
+    const id = setTimeout(() => {
+      void runMlSearchFromString(mlSearchQuery);
+    }, 450);
+    return () => clearTimeout(id);
+  }, [mlSearchQuery, mlSessionToken, runMlSearchFromString]);
+
+  useEffect(() => {
+    if (mlSearchQuery.trim()) return;
+    mlSearchSeq.current += 1;
+    setMlSearchResults([]);
+    setMlListSourceLabel(null);
+    setSelectedMlProduct(null);
+    setMlSearchFocusMode(false);
+    setMlSimilarProducts([]);
+    setMlSearchLoading(false);
+  }, [mlSearchQuery]);
+
+  const handleMlCategorySearch = useCallback(
+    async (slug: string, label: string) => {
+      setCategoryPickerOpen(false);
+      if (!mlSessionToken.trim()) {
+        setError("Configure o token da extensão em Minha Conta → Mercado Livre Afiliados.");
+        return;
+      }
+      const seq = ++mlSearchSeq.current;
+      setMlSearchLoading(true);
+      setError(null);
+      setSelectedMlProduct(null);
+      setMlSearchFocusMode(false);
+      setMlSimilarProducts([]);
+      setMlListSourceLabel(label);
+      try {
+        const res = await fetch("/api/mercadolivre/product-search", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ categoria: slug, limit: 30, mlSessionToken: mlSessionToken.trim() }),
+        });
+        const j = await res.json();
+        if (!res.ok) throw new Error(j?.error ?? "Erro na busca");
+        if (seq !== mlSearchSeq.current) return;
+        setMlSearchResults(Array.isArray(j.products) ? j.products : []);
+        goProdutoOnMobile();
+      } catch (e) {
+        if (seq === mlSearchSeq.current) {
+          setMlSearchResults([]);
+          setMlListSourceLabel(null);
+          setError(e instanceof Error ? e.message : "Erro na busca");
+        }
+      } finally {
+        if (seq === mlSearchSeq.current) setMlSearchLoading(false);
+      }
+    },
+    [mlSessionToken, goProdutoOnMobile],
+  );
+
+  const resetMlMainPanel = useCallback(() => {
+    setMlSearchQuery("");
+  }, []);
+
+  const canMlConvert = !!selectedMlProduct && !!mlSessionToken.trim() && !!mlAffiliateTag.trim();
+
+  const handleMlProductSelect = useCallback(
+    async (p: MlSiteSearchProduct) => {
+      setSelectedMlProduct(p);
+      setMlSearchFocusMode(true);
+      setMlGoldenSimilarPage(1);
+      const token = mlSessionToken.trim();
+      if (!token) {
+        setMlSimilarProducts([]);
+        return;
+      }
+      const q = mlSimilarSearchQueryFromProductName(p.productName);
+      if (!q || q.length < 2) {
+        setMlSimilarProducts([]);
+        return;
+      }
+      setMlSimilarLoading(true);
+      setMlSimilarProducts([]);
+      try {
+        const res = await fetch("/api/mercadolivre/product-search", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ q, limit: 24, mlSessionToken: token }),
+        });
+        const j = await res.json();
+        if (!res.ok) throw new Error(typeof j?.error === "string" ? j.error : "");
+        const list = (Array.isArray(j.products) ? j.products : []) as MlSiteSearchProduct[];
+        const norm = (x: MlSiteSearchProduct) =>
+          `${x.itemId}-${(x.productLink || "").split("#")[0].split("?")[0].toLowerCase()}`;
+        const cur = norm(p);
+        setMlSimilarProducts(list.filter((x) => norm(x) !== cur).slice(0, 20));
+      } catch {
+        setMlSimilarProducts([]);
+      } finally {
+        setMlSimilarLoading(false);
+      }
+    },
+    [mlSessionToken],
+  );
+
+  const handleMlConvertAndHistory = useCallback(async () => {
+    if (!selectedMlProduct) return;
+    if (!mlSessionToken.trim()) {
+      setError("Configure o token em Minha Conta → Mercado Livre Afiliados.");
+      return;
+    }
+    const tag = mlAffiliateTag.trim();
+    if (!tag) {
+      setError("Configure a etiqueta em uso em Minha Conta → Mercado Livre Afiliados (a mesma do linkbuilder).");
+      return;
+    }
+    if (!/^[a-zA-Z0-9_-]+$/.test(tag)) {
+      setError("Etiqueta inválida: use só letras, números, _ ou - (ex.: cake9265169).");
+      return;
+    }
+    setMlConvertLoading(true);
+    setError(null);
+    try {
+      const gen = await fetch("/api/mercadolivre/generate-affiliate-link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mlSessionToken: mlSessionToken.trim(),
+          affiliateTag: tag,
+          productPageUrl: selectedMlProduct.productLink,
+        }),
+      });
+      const gj = await gen.json();
+      if (!gen.ok) throw new Error(gj?.error ?? "Erro ao gerar meli.la");
+
+      const shortLink = String(gj?.shortLink ?? "").trim();
+      const hist = await fetch("/api/mercadolivre/link-history", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          shortLink,
+          originUrl: selectedMlProduct.productLink,
+          productName: selectedMlProduct.productName,
+          imageUrl: selectedMlProduct.imageUrl,
+          itemId: selectedMlProduct.itemId,
+          pricePromo: selectedMlProduct.price,
+          priceOriginal: selectedMlProduct.priceOriginal,
+          discountRate: selectedMlProduct.discountRate,
+        }),
+      });
+      const hj = await hist.json();
+      if (!hist.ok) throw new Error(hj?.error ?? "Erro ao salvar no histórico");
+
+      setSelectedMlProduct(null);
+      setMobileTab("historico");
+      setMlHistoryPage(1);
+      await loadMlHistory(1, mlHistorySearchDebounced);
+      void loadLinksInMlOfferList();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erro ao converter");
+    } finally {
+      setMlConvertLoading(false);
+    }
+  }, [
+    selectedMlProduct,
+    mlSessionToken,
+    mlAffiliateTag,
+    loadMlHistory,
+    mlHistorySearchDebounced,
+    loadLinksInMlOfferList,
+  ]);
+
+  const handleDeleteMlHistory = useCallback(
+    async (id: string) => {
+      try {
+        const res = await fetch(`/api/mercadolivre/link-history?id=${encodeURIComponent(id)}`, {
+          method: "DELETE",
+        });
+        if (!res.ok) throw new Error("Erro ao excluir");
+        await loadMlHistory(mlHistoryPage, mlHistorySearchDebounced);
+      } catch {
+        /* ignore */
+      }
+    },
+    [mlHistoryPage, mlHistorySearchDebounced, loadMlHistory],
+  );
+
+  const openMlAddToListModal = useCallback((entries: MlHistoryEntry[]) => {
+    if (entries.length === 0) return;
+    setMlAddToListModal({ open: true, entries });
+    setMlHistModalListaId(null);
+    setMlHistModalNovaLista("");
+  }, []);
+
+  const closeMlAddToListModal = useCallback(() => {
+    setMlAddToListModal({ open: false, entries: [] });
+    setMlHistModalListaId(null);
+    setMlHistModalNovaLista("");
+  }, []);
+
+  const toggleMlHistorySelect = useCallback((id: string) => {
+    setSelectedMlHistoryIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const allMlHistoryIds = mlHistory.map((h) => h.id);
+  const allMlHistorySelected =
+    allMlHistoryIds.length > 0 && allMlHistoryIds.every((id) => selectedMlHistoryIds.has(id));
+  const someMlHistorySelected = selectedMlHistoryIds.size > 0;
+
+  const toggleAllMlHistory = useCallback(() => {
+    setSelectedMlHistoryIds((prev) => {
+      const next = new Set(prev);
+      if (allMlHistorySelected) {
+        allMlHistoryIds.forEach((id) => next.delete(id));
+      } else {
+        allMlHistoryIds.forEach((id) => next.add(id));
+      }
+      return next;
+    });
+  }, [allMlHistoryIds, allMlHistorySelected]);
+
+  const confirmMlAddToList = useCallback(async () => {
+    const entries = mlAddToListModal.entries;
+    if (!entries.length) return;
+    if (!mlHistModalListaId && !mlHistModalNovaLista.trim()) {
+      setMlAddToListFeedback("Selecione uma lista ou crie uma nova.");
+      return;
+    }
+    setMlAddToListLoading(true);
+    setMlAddToListFeedback(null);
+    try {
+      let targetListaId = mlHistModalListaId;
+      if (!targetListaId && mlHistModalNovaLista.trim()) {
+        const createRes = await fetch("/api/mercadolivre/minha-lista-ofertas/listas", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ nome: mlHistModalNovaLista.trim() }),
+        });
+        const createJson = await createRes.json();
+        if (!createRes.ok) throw new Error(createJson?.error ?? "Erro ao criar lista");
+        targetListaId = createJson?.data?.id ?? null;
+        await loadListas();
+      }
+      if (!targetListaId) throw new Error("Selecione ou crie uma lista.");
+
+      let added = 0;
+      for (const entry of entries) {
+        const res = await fetch("/api/mercadolivre/minha-lista-ofertas", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            listaId: targetListaId,
+            converterLink: entry.shortLink,
+            productPageUrl: entry.originUrl,
+            productName: entry.productName,
+            imageUrl: entry.imageUrl,
+            priceOriginal: entry.priceOriginal,
+            pricePromo: entry.pricePromo,
+            discountRate: entry.discountRate,
+          }),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data?.error ?? "Erro ao adicionar");
+        }
+        setLinksInMlOfferList((prev) => new Set(prev).add(entry.shortLink));
+        added++;
+      }
+      setMlAddToListModal({ open: false, entries: [] });
+      setSelectedMlHistoryIds((prev) => {
+        const next = new Set(prev);
+        entries.forEach((e) => next.delete(e.id));
+        return next;
+      });
+      setMlAddToListFeedback(added === 1 ? "Adicionado à lista!" : `${added} produtos adicionados!`);
+      setTimeout(() => setMlAddToListFeedback(null), 3000);
+    } catch (e) {
+      setMlAddToListFeedback(e instanceof Error ? e.message : "Erro ao adicionar");
+    } finally {
+      setMlAddToListLoading(false);
+    }
+  }, [mlAddToListModal.entries, mlHistModalListaId, mlHistModalNovaLista, loadListas]);
+
+  useEffect(() => {
+    setError(null);
+    void loadListas();
+  }, [loadListas]);
 
   useEffect(() => {
     if (listas.length > 0 && !addListaId) setAddListaId(listas[0].id);
   }, [listas, addListaId]);
 
   useEffect(() => {
-    const anyOpen = listasMenuModalOpen || selecionarListaModalOpen || criarListaModalOpen;
+    const anyOpen =
+      listasMenuModalOpen ||
+      selecionarListaModalOpen ||
+      criarListaModalOpen ||
+      mlAddToListModal.open;
     if (!anyOpen) return;
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
-      if (criarListaModalOpen && !criandoLista && !bulkSaving) setCriarListaModalOpen(false);
+      if (mlAddToListModal.open && !mlAddToListLoading) {
+        setMlAddToListModal({ open: false, entries: [] });
+        setMlHistModalListaId(null);
+        setMlHistModalNovaLista("");
+      } else if (criarListaModalOpen && !criandoLista && !bulkSaving) setCriarListaModalOpen(false);
       else if (selecionarListaModalOpen) setSelecionarListaModalOpen(false);
       else if (listasMenuModalOpen) setListasMenuModalOpen(false);
     };
@@ -527,7 +1090,15 @@ export default function MinhaListaOfertasMlPage() {
       window.removeEventListener("keydown", onKey);
       document.body.style.overflow = prevOverflow;
     };
-  }, [listasMenuModalOpen, selecionarListaModalOpen, criarListaModalOpen, criandoLista, bulkSaving]);
+  }, [
+    listasMenuModalOpen,
+    selecionarListaModalOpen,
+    criarListaModalOpen,
+    criandoLista,
+    bulkSaving,
+    mlAddToListModal.open,
+    mlAddToListLoading,
+  ]);
 
   useEffect(() => {
     if (!bulkSaving) return;
@@ -538,68 +1109,6 @@ export default function MinhaListaOfertasMlPage() {
     window.addEventListener("beforeunload", onBeforeUnload);
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, [bulkSaving]);
-
-  useEffect(() => {
-    if (!editItemModal) return;
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape" || savingEditItem) return;
-      setEditItemModal(null);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      document.body.style.overflow = prevOverflow;
-    };
-  }, [editItemModal, savingEditItem]);
-
-  const openEditItemModal = useCallback((item: Item, listaId: string) => {
-    setEditItemModal({ item, listaId });
-    setEditItemForm({
-      productName: item.productName ?? "",
-      priceOriginal: moneyInputStringFromNumber(item.priceOriginal),
-      pricePromo: moneyInputStringFromNumber(
-        effectiveListaOfferPromoPrice(item.priceOriginal, item.pricePromo, item.discountRate) ??
-          item.pricePromo,
-      ),
-      discountRate:
-        item.discountRate != null && Number.isFinite(item.discountRate) ? String(item.discountRate) : "",
-    });
-  }, []);
-
-  const submitEditItemModal = useCallback(async () => {
-    if (!editItemModal) return;
-    setSavingEditItem(true);
-    setError(null);
-    try {
-      const po = parseMoneyInput(editItemForm.priceOriginal);
-      let pp = parseMoneyInput(editItemForm.pricePromo);
-      const dr = parsePercentInput(editItemForm.discountRate);
-      const normalized = effectiveListaOfferPromoPrice(po, pp, dr);
-      if (normalized != null) pp = normalized;
-
-      const res = await fetch("/api/mercadolivre/minha-lista-ofertas", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id: editItemModal.item.id,
-          productName: editItemForm.productName.trim(),
-          priceOriginal: po,
-          pricePromo: pp,
-          discountRate: dr,
-        }),
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json?.error ?? "Erro ao salvar");
-      await loadItems(editItemModal.listaId);
-      setEditItemModal(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro ao salvar alterações");
-    } finally {
-      setSavingEditItem(false);
-    }
-  }, [editItemModal, editItemForm, loadItems]);
 
   const selectedLista = useMemo(() => listas.find((l) => l.id === addListaId), [listas, addListaId]);
 
@@ -629,7 +1138,7 @@ export default function MinhaListaOfertasMlPage() {
       const resMeta = await fetch("/api/mercadolivre/resolve-item", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ ...body, ...mlSessionBody }),
       });
       const jsonMeta = await resMeta.json();
       if (resMeta.ok && jsonMeta?.data) apply(jsonMeta.data as Record<string, unknown>);
@@ -654,7 +1163,7 @@ export default function MinhaListaOfertasMlPage() {
       /* mantém fallback de nome abaixo */
     }
     return { nome, img, po, pp, dr };
-  }, []);
+  }, [mlSessionBody]);
 
   const runBulkRows = useCallback(
     async (listaIdTarget: string, rows: { productUrl: string; affiliateUrl: string }[]) => {
@@ -690,13 +1199,13 @@ export default function MinhaListaOfertasMlPage() {
         }
         setBulkProgress({ done: i + 1, total: rows.length });
       }
-      await loadItems(listaIdTarget);
       await loadListas();
       setBulkProductUrls("");
       setBulkAffiliateUrls("");
       setBulkProgress(null);
+      void loadLinksInMlOfferList();
     },
-    [resolveRowMeta, loadItems, loadListas],
+    [resolveRowMeta, loadListas, loadLinksInMlOfferList],
   );
 
   const openCriarListaFromMenu = () => {
@@ -808,7 +1317,7 @@ export default function MinhaListaOfertasMlPage() {
       return;
     }
     if (!addListaId) {
-      setError("Escolha uma lista em Listas → Onde salvar.");
+      setError("Escolha uma lista em Configurar → Onde salvar.");
       return;
     }
 
@@ -848,74 +1357,9 @@ export default function MinhaListaOfertasMlPage() {
     setCriarListaModalOpen(true);
   };
 
-  const handleRefreshLista = async (listaId: string) => {
-    setRefreshTarget(`lista:${listaId}`);
-    setError(null);
-    try {
-      let items = itemsByLista[listaId] ?? [];
-      if (items.length === 0) {
-        items = await loadItems(listaId);
-      }
-      if (items.length === 0) return;
-
-      let uTot = 0;
-      let fTot = 0;
-      const allErrors: string[] = [];
-
-      const runChunk = async (body: { listaId: string; itemIds: string[] }) => {
-        const res = await fetch("/api/mercadolivre/minha-lista-ofertas/refresh", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        });
-        const json = await res.json();
-        if (!res.ok) throw new Error(json?.error ?? "Erro ao atualizar");
-        uTot += json?.data?.updated ?? 0;
-        fTot += json?.data?.failed ?? 0;
-        if (Array.isArray(json?.data?.errors)) allErrors.push(...json.data.errors);
-      };
-
-      for (let i = 0; i < items.length; i += ML_LISTA_REFRESH_CHUNK) {
-        const itemIds = items.slice(i, i + ML_LISTA_REFRESH_CHUNK).map((x) => x.id);
-        await runChunk({ listaId, itemIds });
-      }
-
-      await loadItems(listaId);
-      if (fTot > 0 && allErrors.length > 0) {
-        setError(`Atualizados: ${uTot}. Com aviso: ${fTot}. ${allErrors[0]}`);
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro ao atualizar lista");
-    } finally {
-      setRefreshTarget(null);
-    }
-  };
-
-  const handleRefreshItem = async (itemId: string, listaId: string) => {
-    setRefreshTarget(`item:${itemId}`);
-    setError(null);
-    try {
-      const res = await fetch("/api/mercadolivre/minha-lista-ofertas/refresh", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ itemId }),
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json?.error ?? "Erro ao atualizar");
-      await loadItems(listaId);
-      if ((json?.data?.failed ?? 0) > 0) {
-        setError(json?.data?.errors?.[0] ?? "Não foi possível atualizar este item.");
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro ao atualizar item");
-    } finally {
-      setRefreshTarget(null);
-    }
-  };
-
   const handleAdicionarItem = async () => {
     if (!addListaId) {
-      setError("Escolha uma lista em Listas → Onde salvar.");
+      setError("Escolha uma lista em Configurar → Onde salvar.");
       return;
     }
     const linkAfiliado = affiliateLink.trim();
@@ -954,7 +1398,7 @@ export default function MinhaListaOfertasMlPage() {
         const resMeta = await fetch("/api/mercadolivre/resolve-item", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ productUrl: urlProduto }),
+          body: JSON.stringify({ productUrl: urlProduto, ...mlSessionBody }),
         });
         const jsonMeta = await resMeta.json();
         if (!resMeta.ok) {
@@ -968,7 +1412,7 @@ export default function MinhaListaOfertasMlPage() {
         const resMeta = await fetch("/api/mercadolivre/resolve-item", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ affiliateUrl: linkAfiliado }),
+          body: JSON.stringify({ affiliateUrl: linkAfiliado, ...mlSessionBody }),
         });
         const jsonMeta = await resMeta.json();
         if (!resMeta.ok) {
@@ -1013,17 +1457,11 @@ export default function MinhaListaOfertasMlPage() {
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json?.error ?? "Erro ao salvar");
-      const item = json.data as Item;
-      setItemsByLista((prev) => ({
-        ...prev,
-        [addListaId]: [item, ...(prev[addListaId] ?? [])],
-      }));
-      setListas((prev) =>
-        prev.map((l) => (l.id === addListaId ? { ...l, totalItens: (l.totalItens ?? 0) + 1 } : l)),
-      );
+      await loadListas();
       setAffiliateLink("");
       setProductUrl("");
       setDiscountRate("");
+      void loadLinksInMlOfferList();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erro ao salvar");
     } finally {
@@ -1031,190 +1469,467 @@ export default function MinhaListaOfertasMlPage() {
     }
   };
 
-  const handleDeleteItemClick = (itemId: string, listaId: string) => {
-    setConfirmState({
-      type: "deleteItem",
-      title: "Remover produto",
-      message: "Remover este produto da lista?",
-      confirmLabel: "Remover",
-      variant: "danger",
-      payload: { itemId, listaId },
-    });
-  };
-
-  const handleEmptyListClick = (listaId: string) => {
-    setConfirmState({
-      type: "emptyList",
-      title: "Esvaziar lista",
-      message: "Remover todos os produtos desta lista?",
-      confirmLabel: "Esvaziar",
-      variant: "danger",
-      payload: { listaId },
-    });
-  };
-
-  const handleDeleteListClick = (listaId: string) => {
-    setConfirmState({
-      type: "deleteList",
-      title: "Apagar lista",
-      message: "Apagar esta lista e todos os produtos?",
-      confirmLabel: "Apagar",
-      variant: "danger",
-      payload: { listaId },
-    });
-  };
-
-  const runConfirmAction = useCallback(async () => {
-    if (!confirmState) return;
-    const { type, payload } = confirmState;
-    setConfirmLoading(true);
-    try {
-      if (type === "deleteItem" && payload.itemId) {
-        const res = await fetch(`/api/mercadolivre/minha-lista-ofertas?id=${payload.itemId}`, { method: "DELETE" });
-        if (!res.ok) throw new Error("Erro ao remover");
-        setItemsByLista((prev) => ({
-          ...prev,
-          [payload.listaId]: (prev[payload.listaId] ?? []).filter((i) => i.id !== payload.itemId),
-        }));
-        setListas((prev) => prev.map((l) => (l.id === payload.listaId ? { ...l, totalItens: Math.max(0, (l.totalItens ?? 0) - 1) } : l)));
-      } else if (type === "emptyList") {
-        const res = await fetch(`/api/mercadolivre/minha-lista-ofertas?lista_id=${payload.listaId}&empty=1`, { method: "DELETE" });
-        if (!res.ok) throw new Error("Erro ao esvaziar");
-        setItemsByLista((prev) => ({ ...prev, [payload.listaId]: [] }));
-        setListas((prev) => prev.map((l) => (l.id === payload.listaId ? { ...l, totalItens: 0 } : l)));
-      } else if (type === "deleteList") {
-        const res = await fetch(`/api/mercadolivre/minha-lista-ofertas/listas?id=${payload.listaId}`, { method: "DELETE" });
-        if (!res.ok) throw new Error("Erro ao apagar lista");
-        setListas((prev) => prev.filter((l) => l.id !== payload.listaId));
-        setItemsByLista((prev) => {
-          const next = { ...prev };
-          delete next[payload.listaId];
-          return next;
-        });
-        if (addListaId === payload.listaId) setAddListaId("");
-      }
-      setConfirmState(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro na ação");
-    } finally {
-      setConfirmLoading(false);
-    }
-  }, [confirmState, addListaId]);
-
-  const handleConfirmCancel = useCallback(() => {
-    if (!confirmLoading) setConfirmState(null);
-  }, [confirmLoading]);
-
-  const copyLink = (link: string) => {
-    navigator.clipboard.writeText(link).then(() => {}).catch(() => {});
-  };
-
-  const toggleLista = (listaId: string) => {
-    setExpandedListas((prev) => {
-      const next = new Set(prev);
-      if (next.has(listaId)) next.delete(listaId);
-      else next.add(listaId);
-      return next;
-    });
-  };
-
-  const getFilteredAndPaginatedItems = (listaId: string) => {
-    const items = itemsByLista[listaId] ?? [];
-    const filter = (filterByLista[listaId] ?? "").trim().toLowerCase();
-    const filtered = filter ? items.filter((i) => (i.productName || "").toLowerCase().includes(filter)) : items;
-    const page = pageByLista[listaId] ?? 1;
-    const totalPages = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE));
-    const from = (page - 1) * ITEMS_PER_PAGE;
-    const slice = filtered.slice(from, from + ITEMS_PER_PAGE);
-    return { slice, totalPages, page, total: filtered.length };
-  };
-
-  const setListaPage = (listaId: string, page: number) => {
-    setPageByLista((prev) => ({ ...prev, [listaId]: page }));
-  };
-
   return (
-    <div className="min-h-screen bg-dark-bg text-text-primary p-4 md:p-6">
-      <div className="mx-auto w-full max-w-7xl lg:max-w-[90vw]">
-        <div className="flex items-center gap-3 mb-2">
+    <div className="bg-[#1c1c1f] border border-[#2c2c32] text-[#f0f0f2] flex flex-col rounded-xl overflow-hidden overflow-x-hidden w-full max-w-[100vw]">
+      <GeradorShellScrollbarStyle />
+
+      <header className="sticky top-0 z-30 h-12 bg-[#27272a] flex items-center justify-between px-3 sm:px-4 border-b border-[#2c2c32] gap-2">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           <Link
             href="/dashboard/grupos-venda"
-            className="p-2 rounded-lg border border-dark-border bg-dark-card text-text-secondary hover:text-shopee-orange hover:border-shopee-orange/40 transition-colors"
+            className="w-8 h-8 rounded-lg bg-[#222228] border border-[#2c2c32] flex items-center justify-center text-[#a0a0a0] hover:text-[#e24c30] hover:border-[#e24c30]/35 shrink-0"
             title="Grupos de Venda"
           >
-            <ArrowLeft className="h-5 w-5" />
+            <ArrowLeft className="w-4 h-4" />
           </Link>
-          <img src="/ml.png" alt="" className="w-11 h-11 object-contain shrink-0" />
-          <div>
-            <h1 className="text-xl font-semibold text-text-primary tracking-tight">Minha Lista de Ofertas</h1>
-            <p className="text-xs text-text-secondary mt-0.5">Mercado Livre</p>
+          <div className="w-8 h-8 rounded-lg bg-[#e24c30]/15 border border-[#e24c30]/30 flex items-center justify-center shrink-0 overflow-hidden">
+            <img src="/ml.png" alt="" className="w-6 h-6 object-contain" />
+          </div>
+          <div className="min-w-0">
+            <span className="text-[13px] sm:text-sm font-bold tracking-tight text-[#f0f0f2] truncate block">
+              Lista de Ofertas ML
+            </span>
           </div>
         </div>
+        <div
+          className={cn(
+            "flex items-center gap-1.5 px-2 sm:px-2.5 py-1 rounded-full border text-[9px] sm:text-[10px] font-bold shrink-0",
+            mlSessionToken.trim() && mlAffiliateTag.trim()
+              ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/25"
+              : "text-amber-400 bg-amber-500/10 border-amber-500/25",
+          )}
+        >
+          <CheckCircle2 className="w-3 h-3" />
+          <span className="hidden min-[360px]:inline">
+            {mlSessionToken.trim() && mlAffiliateTag.trim()
+              ? "Token conectado"
+              : !mlSessionToken.trim() && !mlAffiliateTag.trim()
+                ? "ML não configurado"
+                : !mlSessionToken.trim()
+                  ? "Sem token ML"
+                  : "Sem etiqueta ML"}
+          </span>
+          <span className="min-[360px]:hidden">ML</span>
+        </div>
+      </header>
 
-        <div className="flex items-start gap-2 mb-6 max-w-2xl">
-          <div className="text-xs text-text-secondary leading-relaxed flex-1 space-y-3">
-            <p>
-              Para gerar links massivos no seu ML Afiliado, acesse esse link:
-            </p>
+      {(!mlSessionToken.trim() || !mlAffiliateTag.trim()) && (
+        <div className="px-3 sm:px-4 py-3 border-b border-amber-500/35 bg-amber-950/35 text-[11px] text-amber-100/95 leading-relaxed flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <p className="min-w-0">
+            Instale a extensão CodeNXT e salve <span className="font-semibold">etiqueta</span> e{" "}
+            <span className="font-semibold">token</span> em Minha Conta para buscar e converter no ML.
+          </p>
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
             <a
-              href="https://www.mercadolivre.com.br/afiliados/linkbuilder#hub"
+              href="https://codenxt.online/extensao"
               target="_blank"
               rel="noopener noreferrer"
-              className={`${mlBtnSecondaryClass} text-xs inline-flex no-underline w-full sm:w-auto justify-center`}
+              className="inline-flex items-center justify-center rounded-lg bg-amber-500/25 hover:bg-amber-500/35 border border-amber-400/40 px-3 py-1.5 text-[11px] font-semibold text-amber-50 no-underline transition"
             >
-              <ExternalLink className="h-4 w-4 shrink-0" aria-hidden />
-              Construtor de links 
+              Baixar extensão
             </a>
+            <Link
+              href="/configuracoes?ml=1"
+              className="inline-flex items-center justify-center rounded-lg bg-[#222228] hover:bg-[#2a2a30] border border-[#3e3e46] px-3 py-1.5 text-[11px] font-semibold text-[#f0f0f2] no-underline transition"
+            >
+              Minha Conta
+            </Link>
           </div>
-    
         </div>
+      )}
 
-        {error && (
-          <div className="mb-5 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">
-            {error}
-          </div>
-        )}
+      {error && (
+        <div className="px-3 sm:px-4 py-2.5 border-b border-[#2c2c32] bg-red-500/5 flex items-center gap-2">
+          <AlertCircle className="w-3.5 h-3.5 text-red-400 shrink-0" />
+          <p className="text-[11px] text-red-400 flex-1">{error}</p>
+          <button
+            type="button"
+            onClick={() => setError(null)}
+            className="text-[#a0a0a0] hover:text-white shrink-0"
+            aria-label="Fechar aviso"
+          >
+            <X className="w-3 h-3" />
+          </button>
+        </div>
+      )}
 
-        <div className="lg:grid lg:grid-cols-2 gap-6 xl:gap-8 items-start">
-          <div className="min-w-0 flex flex-col gap-5">
-        <section className="rounded-xl border border-dark-border bg-dark-card p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex  items-center gap-3">
-           
+      <nav
+        className="lg:hidden sticky top-12 z-20 border-b border-[#2c2c32] px-3 py-3 bg-[#1c1c1f] shadow-[0_4px_20px_rgba(0,0,0,0.25)]"
+        aria-label="Seções da lista ML"
+      >
+        <div className="flex items-center justify-center w-full max-w-lg mx-auto px-2 py-1 gap-0">
+          {ML_MOBILE_STEPS.map((step, idx) => {
+            const active = mobileTab === step.id;
+            return (
+              <Fragment key={step.id}>
+                {idx > 0 && (
+                  <div
+                    className="h-px flex-1 min-w-[8px] max-w-[40px] sm:max-w-[56px] mx-1 sm:mx-2 bg-[#2c2c32] self-center shrink"
+                    aria-hidden
+                  />
+                )}
+                <button
+                  type="button"
+                  onClick={() => setMobileTab(step.id)}
+                  aria-current={active ? "step" : undefined}
+                  className="shrink-0 rounded-full outline-none transition-transform active:scale-95 focus-visible:ring-2 focus-visible:ring-[#e24c30]/55 mx-1"
+                >
+                  <span
+                    className={cn(
+                      "w-9 h-9 rounded-full flex items-center justify-center text-[12px] font-bold border-2 transition-all",
+                      active
+                        ? "bg-[#e24c30] border-[#e24c30] text-white shadow-[0_0_12px_rgba(226,76,48,0.4)]"
+                        : "bg-[#1e1e24] border-[#35353d] text-[#8b8b96]",
+                    )}
+                  >
+                    {idx + 1}
+                  </span>
+                </button>
+              </Fragment>
+            );
+          })}
+        </div>
+        <p className="text-center text-[10px] text-[#9a9aa2] mt-2">
+          {ML_MOBILE_STEPS.find((s) => s.id === mobileTab)?.label}
+        </p>
+      </nav>
+
+      <div className="flex items-stretch border-b border-[#2c2c32]">
+        <aside
+          className={cn(
+            "w-full lg:w-60 lg:shrink-0 border-r border-[#2c2c32] bg-[#27272a] flex flex-col min-w-0 min-h-0",
+            mobileTab === "config" ? "flex" : "hidden lg:flex",
+          )}
+        >
+          <ColHeader
+            step={1}
+            active
+            label="Configurar Link"
+            tooltip="Busca por link ou nome (atualiza sozinha ao digitar). Categorias pela lupa. Converter gera meli.la e salva no histórico — etiqueta e token em Minha Conta."
+          />
+          <div className="p-4 flex flex-col gap-4">
+            <FieldGroup
+              label="Link ou nome do produto"
+              tooltip="Cole a URL do anúncio ou digite o nome; a busca dispara automaticamente após uma pausa na digitação."
+            >
+              <div className="relative">
+                <input
+                  value={mlSearchQuery}
+                  onChange={(e) => setMlSearchQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") void handleMlSearch();
+                  }}
+                  placeholder="Cole o link ou nome…"
+                  spellCheck={false}
+                  className="w-full bg-[#1c1c1f] border border-[#3e3e3e] rounded-xl px-3 py-2.5 pr-9 text-xs text-[#f0f0f2] placeholder:text-[#868686] focus:border-[#e24c30]/50 outline-none transition"
+                />
+                {mlSearchLoading ? (
+                  <Loader2
+                    className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 animate-spin text-[#e24c30]/70"
+                    aria-hidden
+                  />
+                ) : null}
+              </div>
+            </FieldGroup>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => void handleMlSearch()}
+                disabled={mlSearchLoading || !mlSearchQuery.trim() || !mlSessionToken.trim()}
+                className="flex w-full items-center justify-center gap-1.5 bg-[#1c1c1f] border border-[#3e3e3e] text-[#d2d2d2] rounded-xl py-2.5 text-[11px] font-semibold hover:text-[#f0f0f2] hover:border-[#585858] disabled:opacity-40 transition min-h-[42px]"
+              >
+                {mlSearchLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Search className="w-3 h-3" />}
+                Buscar
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleMlConvertAndHistory()}
+                disabled={mlConvertLoading || !canMlConvert}
+                title={
+                  !selectedMlProduct
+                    ? "Selecione um produto na área Produto."
+                    : !mlSessionToken.trim()
+                      ? "Configure o token em Minha Conta."
+                      : !mlAffiliateTag.trim()
+                        ? "Configure a etiqueta em Minha Conta."
+                        : undefined
+                }
+                className="hidden lg:flex w-full items-center justify-center gap-1.5 bg-[#e24c30] text-white rounded-xl py-2.5 text-[11px] font-semibold hover:bg-[#c94028] disabled:opacity-40 transition shadow-lg shadow-[#e24c30]/20 min-h-[42px]"
+              >
+                {mlConvertLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Zap className="w-3 h-3" />}
+                Converter
+              </button>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => void handleMlConvertAndHistory()}
+              disabled={mlConvertLoading || !canMlConvert}
+              title={
+                !selectedMlProduct
+                  ? "Selecione um produto na área Produto."
+                  : !mlSessionToken.trim()
+                    ? "Configure o token em Minha Conta."
+                    : !mlAffiliateTag.trim()
+                      ? "Configure a etiqueta em Minha Conta."
+                      : undefined
+              }
+              className="lg:hidden flex w-full items-center justify-center gap-1.5 bg-[#e24c30] text-white rounded-xl py-2.5 text-[11px] font-semibold hover:bg-[#c94028] disabled:opacity-40 transition shadow-lg shadow-[#e24c30]/20 min-h-[42px]"
+            >
+              {mlConvertLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Zap className="w-3 h-3" />}
+              Converter
+            </button>
+
+            <div className="flex items-center gap-2">
+              <div className="flex-1 h-px bg-[#2c2c32]" />
+              <span className="text-[9px] text-[#888888] uppercase tracking-widest font-medium whitespace-nowrap">
+                ou explore
+              </span>
+              <div className="flex-1 h-px bg-[#2c2c32]" />
+            </div>
+
+            <FieldGroup
+              label="Categoria"
+              tooltip="Abre um painel com categorias do Mercado Livre; ao escolher uma, listamos produtos dessa categoria."
+            >
+              <button
+                type="button"
+                onClick={() => setCategoryPickerOpen(true)}
+                disabled={!mlSessionToken.trim() || mlSearchLoading}
+                title={!mlSessionToken.trim() ? "Configure o token em Minha Conta." : undefined}
+                className="flex w-full items-center justify-center gap-2 bg-[#1c1c1f] border border-[#3e3e3e] text-[#d2d2d2] rounded-xl py-2.5 px-3 text-[11px] font-semibold hover:text-[#f0f0f2] hover:border-[#585858] disabled:opacity-40 transition min-h-[42px]"
+              >
+                <Search className="w-3.5 h-3.5 text-[#e24c30]/90 shrink-0" aria-hidden />
+                <span className="truncate">{mlListSourceLabel ?? "Escolher categoria"}</span>
+              </button>
+            </FieldGroup>
+
+            <FieldGroup
+              label="Construtor ML"
+              icon={<ExternalLink className="w-2.5 h-2.5" />}
+              tooltip="Abre o linkbuilder oficial do programa de afiliados do Mercado Livre."
+            >
+              <a
+                href="https://www.mercadolivre.com.br/afiliados/linkbuilder#hub"
+                target="_blank"
+                rel="noopener noreferrer"
+                className={cn(gBtnSecondary, "w-full justify-center text-[11px] no-underline")}
+              >
+                Abrir linkbuilder oficial
+              </a>
+            </FieldGroup>
+
             <button
               type="button"
               onClick={() => setListasMenuModalOpen(true)}
-              className="inline-flex items-center gap-2 h-10 px-4 rounded-lg border border-shopee-orange/45 bg-shopee-orange/10 text-sm font-semibold text-shopee-orange hover:bg-shopee-orange/18 transition-colors"
+              className="text-left text-[10px] font-medium text-[#8b8b96] hover:text-[#e24c30] transition underline underline-offset-2 decoration-[#3e3e46] hover:decoration-[#e24c30]/50"
             >
-              <Search className="h-4 w-4 shrink-0" />
-              Listas
+              Gerenciar listas de ofertas
             </button>
-            <Toolist
-              variant="below"
-              text="Abra Listas para criar uma lista nova ou escolher onde os produtos serão salvos (lote e cadastro avançado)."
+          </div>
+        </aside>
+
+        <main
+          className={cn(
+            "flex-1 flex flex-col min-w-0 min-h-0 bg-[#1c1c1f] w-full",
+            mobileTab === "produto" ? "flex" : "hidden lg:flex",
+          )}
+        >
+          <div className="z-10 lg:sticky lg:top-12 lg:z-20 bg-[#1c1c1f]">
+            <ColHeader
+              step={2}
+              active={
+                mlSearchLoading ||
+                mlSearchResults.length > 0 ||
+                !!selectedMlProduct ||
+                mlSearchFocusMode
+              }
+              label="Produto"
+              tooltip="Resultados da busca ou da categoria. Toque em um item para ver ofertas semelhantes; use Converter na barra lateral."
+              right={
+                mlSearchLoading ||
+                mlSearchResults.length > 0 ||
+                !!selectedMlProduct ||
+                mlSearchFocusMode ? (
+                  <IconBtn onClick={resetMlMainPanel} title="Limpar busca e seleção">
+                    <X className="w-3 h-3" />
+                  </IconBtn>
+                ) : undefined
+              }
             />
           </div>
-          <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-            {selectedLista ? (
-              <button
-                type="button"
-                onClick={openOndeSalvarFromMenu}
-                title="Clique para trocar de lista"
-                className="inline-flex items-center gap-2 pl-3 pr-2 py-1.5 rounded-lg text-xs font-medium border border-shopee-orange/50 bg-shopee-orange/8 text-text-primary hover:border-shopee-orange/65 max-w-full"
-              >
-                <span className="truncate">{selectedLista.nome}</span>
-                <span className="text-text-secondary/80 shrink-0 tabular-nums">({selectedLista.totalItens ?? 0})</span>
-                <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-80" />
-              </button>
-            ) : (
-              <p className="text-xs text-text-secondary">Listas → Onde salvar.</p>
-            )}
-          </div>
-        </section>
 
-        <section className={mlSectionFormClass}>
+          {mlSearchLoading && mlSearchResults.length === 0 && !selectedMlProduct && !mlSearchFocusMode ? (
+            <div className="flex items-center justify-center gap-2 py-12 text-[#a0a0a0] text-sm">
+              <Loader2 className="w-5 h-5 animate-spin text-[#e24c30]" aria-hidden />
+              Buscando…
+            </div>
+          ) : null}
+
+          {!mlSearchLoading &&
+          mlSearchResults.length === 0 &&
+          !selectedMlProduct &&
+          !mlSearchFocusMode ? (
+            <div className="flex items-center justify-center p-6 sm:p-10 lg:p-16">
+              <div className="dash flex flex-col items-center justify-center py-12 sm:py-16 rounded-2xl w-full max-w-sm text-center px-4">
+                <div className="w-14 h-14 rounded-2xl bg-[#e24c30]/10 border border-[#e24c30]/20 flex items-center justify-center mb-4">
+                  <MousePointer2 className="w-7 h-7 text-[#e24c30]" />
+                </div>
+                <h3 className="text-base font-bold text-[#f0f0f2] mb-2">Pronto para começar!</h3>
+                <p className="text-xs text-[#bebebe] leading-relaxed max-w-[200px]">
+                  Cole um link ou nome na barra lateral, ou escolha uma categoria na lupa.
+                </p>
+              </div>
+            </div>
+          ) : null}
+
+          {(mlSearchResults.length > 0 ||
+            (selectedMlProduct && mlSearchFocusMode) ||
+            (selectedMlProduct && !mlSearchFocusMode)) ? (
+            <div className="p-4 flex flex-col gap-5 w-full min-w-0">
+        <section className="rounded-xl border border-[#2c2c32] bg-[#222228] p-4 space-y-4">
+          {!mlSearchLoading && selectedMlProduct && mlSearchFocusMode ? (
+            <div className="space-y-4 pt-1 border-t border-[#2c2c32]">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-[10px] text-[#9a9aa2]">Produto em destaque</p>
+                {mlSearchResults.length > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => setMlSearchFocusMode(false)}
+                    className="text-[10px] font-semibold text-[#e24c30] hover:underline"
+                  >
+                    Voltar aos {mlSearchResults.length} resultado(s)
+                  </button>
+                ) : null}
+              </div>
+              <div className="bg-[#1c1c1f] border border-[#2c2c32] rounded-xl p-3 sm:p-4 flex gap-3 items-start w-full min-w-0">
+                <div className="w-[76px] h-[76px] rounded-lg bg-white shrink-0 border border-[#2c2c32] overflow-hidden p-1 flex items-center justify-center">
+                  {selectedMlProduct.imageUrl ? (
+                    <img
+                      src={selectedMlProduct.imageUrl}
+                      alt=""
+                      className="max-w-full max-h-full object-contain"
+                    />
+                  ) : (
+                    <ImageIcon className="w-7 h-7 text-[#686868]" />
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[13px] font-bold text-[#f0f0f2] leading-snug line-clamp-2">{selectedMlProduct.productName}</p>
+                  <p className="text-[10px] text-[#a0a0a0] mt-1">Mercado Livre · {selectedMlProduct.itemId}</p>
+                  <div className="flex items-center justify-between gap-3 mt-2 flex-wrap">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {selectedMlProduct.price != null ? (
+                        <span className="text-[18px] font-bold text-[#e24c30] leading-none">
+                          {formatCurrency(selectedMlProduct.price)}
+                        </span>
+                      ) : null}
+                      {selectedMlProduct.discountRate != null && selectedMlProduct.discountRate > 0 ? (
+                        <span className="text-[9px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20">
+                          {fmtMlDisc(selectedMlProduct.discountRate)}
+                        </span>
+                      ) : null}
+                    </div>
+                    {(() => {
+                      const selPct = selectedMlProduct.affiliateCommissionPct;
+                      const selComm =
+                        selPct != null && selPct > 0
+                          ? mlEstCommissionFromPromoPrice(selectedMlProduct.price, selPct)
+                          : null;
+                      return selComm != null && selPct != null && selPct > 0 ? (
+                        <p className="w-full min-[520px]:w-auto text-[11px] font-semibold text-emerald-400 whitespace-normal break-words min-[520px]:whitespace-nowrap">
+                          {Math.abs(selPct - Math.round(selPct)) < 0.001
+                            ? String(Math.round(selPct))
+                            : selPct.toFixed(1)}
+                          % GANHOS ML · {formatCurrency(selComm)}
+                        </p>
+                      ) : (
+                        <p className="text-[10px] text-[#7d7d86] w-full min-[520px]:w-auto">
+                          GANHOS: abra o PDP com token (busca enriquece o card).
+                        </p>
+                      );
+                    })()}
+                  </div>
+                </div>
+              </div>
+
+              {mlSimilarLoading ? (
+                <div className="flex items-center justify-center gap-2 py-6 text-[#a0a0a0] text-xs">
+                  <Loader2 className="w-4 h-4 animate-spin" /> Buscando ofertas semelhantes…
+                </div>
+              ) : null}
+
+              {!mlSimilarLoading && mlSimilarProducts.length > 0 ? (
+                <div className="pt-1 w-full min-w-0">
+                  <h3 className="text-[11px] font-bold text-[#f0f0f2] uppercase tracking-widest">Ofertas semelhantes</h3>
+                  <p className="text-[9px] text-[#9a9aa2] mt-0.5">Com base nas primeiras palavras do nome do produto.</p>
+                  <div className="mt-3 w-full rounded-xl border border-[#2c2c32] bg-[#222228] p-3 flex flex-col gap-2 min-w-0">
+                    {pagedMlGoldenSimilar.map((sp) => (
+                      <MlOfferRowCard
+                        key={`${sp.itemId}-${sp.productLink}`}
+                        p={sp}
+                        onPick={() => void handleMlProductSelect(sp)}
+                        compact
+                      />
+                    ))}
+                    {mlGoldenSimilarTotalPages > 1 ? (
+                      <GeradorPaginationBar
+                        className="pt-2 mt-1 border-t border-[#2c2c32]"
+                        page={mlGoldenSimilarPage}
+                        totalPages={mlGoldenSimilarTotalPages}
+                        summary={`Página ${mlGoldenSimilarPage} de ${mlGoldenSimilarTotalPages}`}
+                        onPrev={() => setMlGoldenSimilarPage((x) => Math.max(1, x - 1))}
+                        onNext={() => setMlGoldenSimilarPage((x) => Math.min(mlGoldenSimilarTotalPages, x + 1))}
+                      />
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
+          {!mlSearchLoading && mlSearchResults.length > 0 && !(selectedMlProduct && mlSearchFocusMode) ? (
+            <div className="space-y-2 pt-1 border-t border-[#2c2c32]">
+              <p className="text-[10px] text-[#9a9aa2]">
+                {mlSearchResults.length} resultado(s) — toque para selecionar
+              </p>
+              <div className="space-y-2 max-h-[min(50vh,360px)] overflow-y-auto pr-1 gerador-scrollbar-ref">
+                {pagedMlSearchResults.map((p) => {
+                  const sel =
+                    selectedMlProduct?.itemId === p.itemId && selectedMlProduct?.productLink === p.productLink;
+                  return (
+                    <MlOfferRowCard
+                      key={`${p.itemId}-${p.productLink}`}
+                      p={p}
+                      onPick={() => void handleMlProductSelect(p)}
+                      selected={sel}
+                    />
+                  );
+                })}
+              </div>
+              {mlSearchTotalPages > 1 ? (
+                <GeradorPaginationBar
+                  className="pt-2 border-t border-[#2c2c32]"
+                  page={mlSearchPage}
+                  totalPages={mlSearchTotalPages}
+                  summary={`Página ${mlSearchPage} de ${mlSearchTotalPages}`}
+                  onPrev={() => setMlSearchPage((x) => Math.max(1, x - 1))}
+                  onNext={() => setMlSearchPage((x) => Math.min(mlSearchTotalPages, x + 1))}
+                />
+              ) : null}
+            </div>
+          ) : null}
+
+        </section>
+            </div>
+            ) : null}
+
+        <div className="p-4 flex flex-col gap-5 w-full min-w-0">
+        <section className={cn("rounded-xl border border-[#2c2c32] bg-[#222228] p-4 space-y-4", "hidden")}>
           <div className={mlSectionHeadClass}>
-            <Columns2 className="h-3.5 w-3.5 text-shopee-orange/80 shrink-0" />
-            <h2 className={mlSectionTitleClass}>Colar em lote </h2>
+            <Columns2 className="h-3.5 w-3.5 text-[#e24c30]/80 shrink-0" />
+            <h2 className={mlSectionTitleClass}>Colar em lote</h2>
             <Toolist
               variant="below"
               wide
@@ -1234,7 +1949,7 @@ export default function MinhaListaOfertasMlPage() {
                 placeholder={
                   "https://produto.mercadolivre.com.br/MLB-…\nhttps://www.mercadolivre.com.br/…/p/MLB…"
                 }
-                className={mlTextareaClass}
+                className={gTa}
               />
             </div>
             <div className="min-w-0">
@@ -1247,13 +1962,13 @@ export default function MinhaListaOfertasMlPage() {
                 }}
                 spellCheck={false}
                 placeholder={"https://meli.la/…\nhttps://meli.la/…"}
-                className={mlTextareaClass}
+                className={gTa}
               />
             </div>
           </div>
 
-          <div className="rounded-xl border border-dark-border/50 bg-dark-bg/30 px-3 py-3 space-y-2">
-            <p className="text-xs font-semibold text-text-secondary uppercase tracking-wide">
+          <div className="rounded-xl border border-[#2c2c32] bg-[#1c1c1f] px-3 py-3 space-y-2">
+            <p className="text-[10px] font-bold text-[#d8d8d8] uppercase tracking-widest">
               Planilha ou bloco de notas
             </p>
         
@@ -1268,9 +1983,9 @@ export default function MinhaListaOfertasMlPage() {
               <button
                 type="button"
                 onClick={() => bulkFileInputRef.current?.click()}
-                className={`${mlBtnSecondaryClass} text-xs py-2 min-h-9`}
+                className={cn(gBtnSecondary, "text-[11px] py-2 min-h-9")}
               >
-                <Upload className="h-3.5 w-3.5 shrink-0 text-shopee-orange" aria-hidden />
+                <Upload className="h-3.5 w-3.5 shrink-0 text-[#e24c30]" aria-hidden />
                 Dados
               </button>
               <button
@@ -1312,379 +2027,412 @@ export default function MinhaListaOfertasMlPage() {
                 : ""}
             </span>
           </div>
-          <div className="flex flex-col sm:flex-row flex-wrap gap-2 pt-3 border-t border-dark-border/60">
+          <div className="flex flex-col sm:flex-row flex-wrap gap-2 pt-3 border-t border-[#2c2c32]">
             <button
               type="button"
               onClick={runBulkSaveSelected}
               disabled={bulkSaving || !bulkPairMatch || !addListaId}
-              title={!addListaId ? "Escolha uma lista em Listas → Onde salvar." : undefined}
-              className={mlBtnPrimaryClass}
+              title={
+                !addListaId
+                  ? "Crie uma lista pelo histórico (Adicionar à lista) ou use Criar lista e importar no lote."
+                  : undefined
+              }
+              className={gBtnPrimary}
             >
-              Adicionar
+              Adicionar à lista
             </button>
             <button
               type="button"
               onClick={openBulkNewListModal}
               disabled={bulkSaving || !bulkPairMatch}
               title="Abre um popup para nomear a lista; se deixar em branco, usamos um nome com a data."
-              className={mlBtnSecondaryClass}
+              className={gBtnSecondary}
             >
-              Criar lista
+              Criar lista e importar
             </button>
           </div>
         </section>
 
-        <section className={mlSectionFormClass}>
-          <div className="flex flex-wrap items-start justify-between gap-2">
-            <button
-              type="button"
-              id="ml-um-produto-accordion-trigger"
-              onClick={() => setUmProdutoAccordionOpen((v) => !v)}
-              className={`${mlSectionHeadClass} flex flex-wrap items-center gap-2 flex-1 min-w-0 rounded-lg py-1.5 -my-1 pr-2 text-left hover:bg-dark-bg/60 transition-colors`}
-              aria-expanded={umProdutoAccordionOpen}
-              aria-controls="ml-um-produto-accordion-panel"
-            >
-              {umProdutoAccordionOpen ? (
-                <ChevronDown className="h-4 w-4 text-text-secondary shrink-0" aria-hidden />
-              ) : (
-                <ChevronRight className="h-4 w-4 text-text-secondary shrink-0" aria-hidden />
-              )}
-              <Link2 className="h-3.5 w-3.5 text-shopee-orange/80 shrink-0" aria-hidden />
-              <span className={mlSectionTitleClass}>Um produto por vez</span>
-            </button>
+        <section className={cn("rounded-xl border border-[#2c2c32] bg-[#222228] p-4 space-y-4", "hidden")}>
+          <div className={mlSectionHeadClass}>
+            <Link2 className="h-3.5 w-3.5 text-[#e24c30]/80 shrink-0" aria-hidden />
+            <h3 className={mlSectionTitleClass}>Um produto por vez</h3>
             <Toolist
               variant="below"
               wide
-              text="Ao salvar, o app busca na API nome, imagem e preços (URL do anúncio ou meli.la) e grava na lista. Desconto % é opcional e recalcula o preço promo. Para vários itens, use o lote acima."
+              text="Ao salvar, o app busca nome, imagem e preços (URL do anúncio ou meli.la). Desconto % é opcional."
             />
           </div>
-          {umProdutoAccordionOpen ? (
-            <div
-              id="ml-um-produto-accordion-panel"
-              role="region"
-              aria-labelledby="ml-um-produto-accordion-trigger"
-              className="grid gap-3 sm:grid-cols-2 pt-3 mt-2 border-t border-dark-border/60"
-            >
-              <div className="sm:col-span-2">
-                <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
-                  <label className={mlFieldLabelInlineClass} htmlFor="ml-product-url">
-                    URL do anúncio (recomendado)
-                  </label>
-                  <Toolist
-                    variant="floating"
-                    wide
-                    text="Se não colar aqui, use um link meli.la no campo abaixo — a API tenta resolver só pelo meli.la."
-                  />
-                </div>
-                <input
-                  id="ml-product-url"
-                  value={productUrl}
-                  onChange={(e) => setProductUrl(e.target.value)}
-                  placeholder="Página do produto com MLB na URL"
-                  className={mlInputClass}
-                />
-              </div>
-              <div className="sm:col-span-2">
-                <label className={mlFieldLabelClass} htmlFor="ml-affiliate-link">
-                  Link de afiliado (obrigatório)
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="sm:col-span-2">
+              <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
+                <label className={mlFieldLabelInlineClass} htmlFor="ml-product-url">
+                  URL do anúncio (recomendado)
                 </label>
-                <input
-                  id="ml-affiliate-link"
-                  value={affiliateLink}
-                  onChange={(e) => setAffiliateLink(e.target.value)}
-                  placeholder="Link do gerador de afiliados (meli.la)"
-                  className={mlInputClass}
+                <Toolist
+                  variant="floating"
+                  wide
+                  text="Se não colar aqui, use um link meli.la no campo abaixo."
                 />
               </div>
-              <div className="sm:col-span-2 sm:max-w-xs">
-                <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
-                  <label className={mlFieldLabelInlineClass} htmlFor="ml-discount">
-                    Desconto % (opcional)
-                  </label>
-                  <Toolist
-                    variant="floating"
-                    text="Se preencher, substitui o desconto vindo da API e recalcula o preço promo a partir do preço original."
-                  />
-                </div>
-                <input
-                  id="ml-discount"
-                  value={discountRate}
-                  onChange={(e) => setDiscountRate(e.target.value)}
-                  placeholder="Ex.: 10"
-                  className={mlInputClass}
-                />
-              </div>
-              <div className="sm:col-span-2 pt-2 border-t border-dark-border/60">
-                <button
-                  type="button"
-                  onClick={() => void handleAdicionarItem()}
-                  disabled={salvandoItem || !addListaId}
-                  title={!addListaId ? "Escolha uma lista em Listas → Onde salvar." : undefined}
-                  className={`${mlBtnPrimaryClass} h-11 px-6`}
-                >
-                  {salvandoItem ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                  Salvar na lista
-                </button>
-              </div>
+              <input
+                id="ml-product-url"
+                value={productUrl}
+                onChange={(e) => setProductUrl(e.target.value)}
+                placeholder="Página do produto com MLB na URL"
+                className={gInp}
+              />
             </div>
-          ) : null}
-        </section>
-          </div>
-
-          <aside className="min-w-0 scrollbar-thin lg:sticky lg:top-6 lg:max-h-[calc(100dvh-5rem)] lg:overflow-y-auto lg:overflow-x-hidden lg:pb-2 lg:pr-1 [scrollbar-gutter:stable]">
-        {loading ? (
-          <div className="flex items-center justify-center py-12 rounded-xl border border-dark-border/60 bg-dark-bg/40">
-            <Loader2 className="h-8 w-8 animate-spin text-shopee-orange" />
-          </div>
-        ) : listas.length === 0 ? (
-          <div className="rounded-xl border border-dark-border/60 bg-dark-bg/40 p-6 sm:p-8 text-center text-text-secondary">
-            <ListChecks className="h-10 w-10 sm:h-12 sm:w-12 mx-auto mb-3 text-shopee-orange" />
-            <p className="font-medium text-text-primary text-sm">Nenhuma lista ainda</p>
-            <p className="text-xs sm:text-sm mt-2 max-w-xs mx-auto leading-relaxed">
-              Toque em <span className="text-text-primary">Listas</span> → Criar lista, ou use &quot;Criar lista nova e adicionar tudo&quot; no lote. Depois escolha Onde salvar e adicione produtos.
-            </p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            <h2 className="text-xs font-semibold text-text-primary uppercase tracking-wide border-l-2 border-shopee-orange/60 pl-2 -ml-px">
-              Suas listas
-            </h2>
-            <ul className="space-y-3">
-              {pagedListas.map((lista) => {
-                const isExpanded = expandedListas.has(lista.id);
-                const { slice, totalPages, page, total } = getFilteredAndPaginatedItems(lista.id);
-                const listaItemsFull = itemsByLista[lista.id] ?? [];
-                const mlIncompleteCount = listaItemsFull.filter(mlItemLooksIncomplete).length;
-                const mlHasIncomplete = mlIncompleteCount > 0;
-                return (
-                  <li key={lista.id} className="rounded-xl border border-dark-border bg-dark-card overflow-hidden">
-                    <button
-                      type="button"
-                      onClick={() => toggleLista(lista.id)}
-                      className="w-full p-4 flex flex-wrap items-center justify-between gap-2 text-left hover:bg-dark-bg/50 transition-colors"
-                    >
-                      <span className="flex items-center gap-2 min-w-0">
-                        {isExpanded ? (
-                          <ChevronDown className="h-5 w-5 text-text-secondary shrink-0" />
-                        ) : (
-                          <ChevronRight className="h-5 w-5 text-text-secondary shrink-0" />
-                        )}
-                        <Store className="h-5 w-5 text-shopee-orange shrink-0" />
-                        <span className="text-lg font-semibold text-text-primary truncate">{lista.nome}</span>
-                        <span className="text-sm text-text-secondary shrink-0">({lista.totalItens ?? 0} itens)</span>
-                      </span>
-                      <span className="flex items-center gap-2 shrink-0 flex-wrap justify-end" onClick={(e) => e.stopPropagation()}>
-                        {mlHasIncomplete && !isExpanded ? (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              void handleRefreshLista(lista.id);
-                            }}
-                            disabled={refreshTarget !== null}
-                            title={`${mlIncompleteCount} item(ns) incompletos. Atualiza toda a lista pelos links salvos.`}
-                            className="flex items-center gap-1 px-2 py-1.5 rounded-md border border-shopee-orange bg-shopee-orange/15 text-shopee-orange text-xs font-medium hover:bg-shopee-orange/25 hover:border-shopee-orange disabled:opacity-50 relative overflow-hidden ml-refresh-errors"
-                          >
-                            {refreshTarget === `lista:${lista.id}` ? (
-                              <Loader2 className="h-3.5 w-3.5 animate-spin relative z-[1]" />
-                            ) : (
-                              <RefreshCw className="h-3.5 w-3.5 relative z-[1]" />
-                            )}
-                            <span className="relative z-[1]">Atualizar erros</span>
-                          </button>
-                        ) : null}
-                        <button
-                          type="button"
-                          onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleEmptyListClick(lista.id); }}
-                          disabled={(itemsByLista[lista.id]?.length ?? 0) === 0}
-                          className="flex items-center gap-1 px-2 py-1.5 rounded-md border border-dark-border text-text-secondary text-xs hover:bg-shopee-orange/10 hover:text-shopee-orange hover:border-shopee-orange/35 disabled:opacity-40"
-                          title="Esvaziar lista"
-                        >
-                          <FolderMinus className="h-3.5 w-3.5" /> Esvaziar
-                        </button>
-                        <button
-                          type="button"
-                          onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleDeleteListClick(lista.id); }}
-                          className="flex items-center gap-1 px-2 py-1.5 rounded-md border border-dark-border text-text-secondary text-xs hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/30"
-                          title="Apagar lista"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" /> Apagar
-                        </button>
-                      </span>
-                    </button>
-                    {isExpanded && (
-                      <div className="border-t border-dark-border p-4">
-                        {loadingListaId === lista.id ? (
-                          <div className="flex justify-center py-6">
-                            <Loader2 className="h-6 w-6 animate-spin text-shopee-orange" />
-                          </div>
-                        ) : !itemsByLista[lista.id]?.length ? (
-                          <p className="text-sm text-text-secondary py-4 text-center">Nenhum produto nesta lista.</p>
-                        ) : (
-                          <>
-                            <div className="mb-3 flex flex-wrap items-center gap-2">
-                              <Search className="h-4 w-4 text-text-secondary shrink-0" />
-                              <input
-                                type="text"
-                                value={filterByLista[lista.id] ?? ""}
-                                onChange={(e) => {
-                                  setFilterByLista((prev) => ({ ...prev, [lista.id]: e.target.value }));
-                                  setPageByLista((prev) => ({ ...prev, [lista.id]: 1 }));
-                                }}
-                                placeholder="Filtrar por nome do produto..."
-                                className="flex-1 min-w-[140px] px-3 py-2 rounded-lg border border-dark-border bg-dark-bg text-text-primary text-sm placeholder:text-text-secondary/60"
-                              />
-                              <button
-                                type="button"
-                                onClick={() => handleRefreshLista(lista.id)}
-                                disabled={refreshTarget !== null}
-                                title={
-                                  mlHasIncomplete
-                                    ? `${mlIncompleteCount} item(ns) sem dados completos. Atualiza toda a lista pelos links salvos (meli.la / página do produto).`
-                                    : "Atualizar nome, imagem e preços pelos links salvos"
-                                }
-                                className={`shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-lg border text-xs font-medium disabled:opacity-50 relative overflow-hidden ${
-                                  mlHasIncomplete
-                                    ? "ml-refresh-errors border-shopee-orange bg-shopee-orange/15 text-shopee-orange hover:bg-shopee-orange/25 hover:border-shopee-orange"
-                                    : "border-dark-border text-text-secondary hover:border-shopee-orange/45 hover:text-shopee-orange"
-                                }`}
-                              >
-                                {refreshTarget === `lista:${lista.id}` ? (
-                                  <Loader2 className="h-3.5 w-3.5 animate-spin relative z-[1]" />
-                                ) : (
-                                  <RefreshCw className="h-3.5 w-3.5 relative z-[1]" />
-                                )}
-                                <span className="relative z-[1]">{mlHasIncomplete ? "Atualizar erros" : "Atualizar preços"}</span>
-                              </button>
-                            </div>
-                            <ul className="space-y-4">
-                              {slice.map((item) => (
-                                <li
-                                  key={item.id}
-                                  className="flex gap-4 p-3 rounded-lg border border-dark-border bg-dark-bg"
-                                >
-                                  {item.imageUrl ? (
-                                    <img
-                                      src={item.imageUrl}
-                                      alt=""
-                                      className="w-20 h-20 object-contain rounded-lg bg-white/5 shrink-0"
-                                    />
-                                  ) : (
-                                    <div className="w-20 h-20 rounded-lg bg-dark-card shrink-0 flex items-center justify-center text-text-secondary text-xs border border-dark-border">
-                                      —
-                                    </div>
-                                  )}
-                                  <div className="flex-1 min-w-0">
-                                    <p className="text-sm font-medium text-text-primary leading-snug">
-                                      {item.productName || "Produto"}
-                                    </p>
-                                    <p className="text-sm text-text-secondary mt-1">
-                                      💰 Preço:{" "}
-                                      {item.discountRate != null && item.discountRate > 0 && (
-                                        <span className="text-red-400 font-medium">-{Math.round(item.discountRate)}% </span>
-                                      )}
-                                      <span className="line-through">
-                                        {item.priceOriginal != null ? formatCurrency(item.priceOriginal) : "—"}
-                                      </span>
-                                      {" por "}
-                                      <span className="text-shopee-orange font-medium">{displayPrecoPorLista(item)}</span>
-                                    </p>
-                                    <p className="text-[11px] font-medium text-text-secondary uppercase tracking-wide mt-2">
-                                      Link de afiliado
-                                    </p>
-                                    <button
-                                      type="button"
-                                      onClick={() => copyLink(item.converterLink)}
-                                      className="text-sm text-emerald-400/90 hover:underline break-all text-left w-full"
-                                    >
-                                      {item.converterLink}
-                                    </button>
-                                    <div className="flex flex-wrap items-center gap-2 mt-2">
-                                      <a
-                                        href={item.converterLink}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="text-xs text-emerald-400/90 hover:underline flex items-center gap-1"
-                                      >
-                                        <ExternalLink className="h-3 w-3 shrink-0" /> Abrir link
-                                      </a>
-                                      <button
-                                        type="button"
-                                        onClick={() => handleRefreshItem(item.id, lista.id)}
-                                        disabled={refreshTarget !== null}
-                                        className={`text-xs flex items-center gap-1 disabled:opacity-50 relative overflow-hidden rounded px-0.5 -mx-0.5 ${
-                                          mlItemLooksIncomplete(item)
-                                            ? "ml-refresh-errors text-shopee-orange font-medium hover:underline"
-                                            : "text-text-secondary hover:text-shopee-orange hover:underline"
-                                        }`}
-                                      >
-                                        {refreshTarget === `item:${item.id}` ? (
-                                          <Loader2 className="h-3 w-3 animate-spin shrink-0 relative z-[1]" />
-                                        ) : (
-                                          <RefreshCw className="h-3 w-3 shrink-0 relative z-[1]" />
-                                        )}
-                                        <span className="relative z-[1]">
-                                          {mlItemLooksIncomplete(item) ? "Atualizar erro" : "Atualizar"}
-                                        </span>
-                                      </button>
-                                      <span className="ml-auto flex items-center gap-0.5 shrink-0">
-                                        <button
-                                          type="button"
-                                          onClick={() => openEditItemModal(item, lista.id)}
-                                          className="p-1.5 rounded-md text-text-secondary hover:text-shopee-orange hover:bg-shopee-orange/10 transition-colors"
-                                          title="Editar nome, preços e desconto"
-                                        >
-                                          <Pencil className="h-4 w-4 shrink-0" aria-hidden />
-                                        </button>
-                                        <button
-                                          type="button"
-                                          onClick={() => handleDeleteItemClick(item.id, lista.id)}
-                                          className="p-1.5 rounded-md text-red-400 hover:bg-red-500/10 transition-colors"
-                                          title="Remover da lista"
-                                        >
-                                          <Trash2 className="h-4 w-4 shrink-0" aria-hidden />
-                                        </button>
-                                      </span>
-                                    </div>
-                                  </div>
-                                </li>
-                              ))}
-                            </ul>
-                            {totalPages > 1 && (
-                              <GeradorPaginationBar
-                                className="mt-4 border-t border-dark-border pt-3"
-                                page={page}
-                                totalPages={totalPages}
-                                summary={`Mostrando ${slice.length} de ${total} produto(s)`}
-                                onPrev={() => setListaPage(lista.id, Math.max(1, page - 1))}
-                                onNext={() => setListaPage(lista.id, Math.min(totalPages, page + 1))}
-                              />
-                            )}
-                          </>
-                        )}
-                      </div>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-
-            {listas.length > 0 && (
-              <div className="rounded-xl border border-dark-border/60 bg-dark-card/80 px-3 py-3">
-                <GeradorPaginationBar
-                  page={listasPage}
-                  totalPages={totalListasPages}
-                  summary={`Mostrando ${pagedListas.length} de ${listas.length} lista(s)`}
-                  onPrev={() => setListasPage((p) => Math.max(1, p - 1))}
-                  onNext={() => setListasPage((p) => Math.min(totalListasPages, p + 1))}
+            <div className="sm:col-span-2">
+              <label className={mlFieldLabelClass} htmlFor="ml-affiliate-link">
+                Link de afiliado (obrigatório)
+              </label>
+              <input
+                id="ml-affiliate-link"
+                value={affiliateLink}
+                onChange={(e) => setAffiliateLink(e.target.value)}
+                placeholder="https://meli.la/…"
+                className={gInp}
+              />
+            </div>
+            <div className="sm:col-span-2 sm:max-w-xs">
+              <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
+                <label className={mlFieldLabelInlineClass} htmlFor="ml-discount">
+                  Desconto % (opcional)
+                </label>
+                <Toolist
+                  variant="floating"
+                  text="Se preencher, recalcula o preço em destaque a partir do original."
                 />
               </div>
+              <input
+                id="ml-discount"
+                value={discountRate}
+                onChange={(e) => setDiscountRate(e.target.value)}
+                placeholder="Ex.: 10"
+                className={gInp}
+              />
+            </div>
+            <div className="sm:col-span-2 pt-2 border-t border-[#2c2c32]">
+              <button
+                type="button"
+                onClick={() => void handleAdicionarItem()}
+                disabled={salvandoItem || !addListaId}
+                title={
+                  !addListaId
+                    ? "Crie uma lista pelo histórico ou importe em lote com nova lista."
+                    : undefined
+                }
+                className={`${gBtnPrimary} h-11 px-6 w-full sm:w-auto`}
+              >
+                {salvandoItem ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                Salvar na lista
+              </button>
+            </div>
+          </div>
+        </section>
+        </div>
+        </main>
+      </div>
+
+      <section
+        className={cn(
+          "border-t border-[#2c2c32] bg-[#27272a]",
+          mobileTab === "historico" ? "block" : "hidden lg:block",
+        )}
+      >
+        <div className="px-3 sm:px-5 py-4 border-b border-[#2c2c32] flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-6 h-6 rounded-lg bg-[#e24c30]/15 border border-[#e24c30]/25 flex items-center justify-center shrink-0">
+              <Link2 className="w-3 h-3 text-[#e24c30]" />
+            </div>
+            <h2 className="text-sm font-bold text-[#f0f0f2] truncate">Histórico de links ML</h2>
+            {mlHistoryTotal > 0 ? (
+              <span className="text-[9px] text-[#bebebe] bg-[#232328] px-1.5 py-px rounded-full border border-[#3e3e3e] shrink-0">
+                {mlHistoryTotal} {mlHistoryTotal === 1 ? "link" : "links"}
+              </span>
+            ) : null}
+          </div>
+          <div className="relative w-full sm:w-56 group/search">
+            <Search className="w-3 h-3 absolute left-2.5 top-1/2 -translate-y-1/2 text-[#e24c30]/55 group-focus-within/search:text-[#e24c30] transition-colors" />
+            <input
+              value={mlHistorySearch}
+              onChange={(e) => setMlHistorySearch(e.target.value)}
+              placeholder="Buscar produto, meli.la…"
+              className="w-full sm:w-56 bg-[#18181c] border border-[#e24c30]/20 rounded-xl py-2 pl-8 pr-3 text-xs text-[#f0f0f2] placeholder:text-[#7a7a82] shadow-inner shadow-black/20 outline-none transition-all hover:border-[#e24c30]/35 focus:border-[#e24c30] focus:ring-2 focus:ring-[#e24c30]/25 focus:bg-[#1c1c20]"
+            />
+          </div>
+        </div>
+
+        <div className="px-3 sm:px-5 py-2.5 border-b border-[#2c2c32] bg-[#1c1c1f] flex flex-row flex-wrap items-center justify-between gap-2 lg:gap-3">
+          <label
+            className="flex items-center gap-2 cursor-pointer select-none group shrink-0"
+            aria-label={
+              someMlHistorySelected
+                ? `${selectedMlHistoryIds.size} selecionados`
+                : "Selecionar todos do histórico"
+            }
+          >
+            <div
+              role="checkbox"
+              aria-checked={allMlHistorySelected ? true : someMlHistorySelected ? "mixed" : false}
+              tabIndex={0}
+              onClick={toggleAllMlHistory}
+              onKeyDown={(e) => {
+                if (e.key === " " || e.key === "Enter") {
+                  e.preventDefault();
+                  toggleAllMlHistory();
+                }
+              }}
+              className={cn(
+                "w-4 h-4 rounded-md border flex items-center justify-center shrink-0 transition-all duration-200 outline-none focus-visible:ring-2 focus-visible:ring-[#e24c30]/45 focus-visible:ring-offset-2 focus-visible:ring-offset-[#1c1c1f]",
+                allMlHistorySelected
+                  ? "bg-[#e24c30] border-[#e24c30] shadow-[0_0_12px_rgba(226,76,48,0.35)]"
+                  : someMlHistorySelected
+                    ? "bg-[#e24c30]/18 border-[#e24c30] ring-1 ring-inset ring-[#e24c30]/30"
+                    : "bg-[#141418] border-[#3f3f46] group-hover:border-[#e24c30]/45 group-hover:bg-[#e24c30]/5",
+              )}
+            >
+              {someMlHistorySelected && !allMlHistorySelected ? (
+                <span className="w-2 h-1 rounded-[2px] bg-[#e24c30]" />
+              ) : null}
+            </div>
+            <span className="hidden lg:inline text-[11px] font-medium text-[#bebebe] group-hover:text-[#e0e0e0] transition">
+              {someMlHistorySelected
+                ? `${selectedMlHistoryIds.size} selecionado${selectedMlHistoryIds.size > 1 ? "s" : ""}`
+                : "Selecionar todos"}
+            </span>
+          </label>
+          <div
+            className={cn(
+              "flex items-center justify-end gap-1.5 flex-nowrap shrink-0 transition-opacity duration-200",
+              someMlHistorySelected ? "flex opacity-100" : "hidden",
             )}
+          >
+            <button
+              type="button"
+              onClick={() => setSelectedMlHistoryIds(new Set())}
+              className="flex items-center justify-center gap-1.5 text-[11px] text-[#a0a0a0] hover:text-[#f0f0f2] font-medium transition bg-[#222228] border border-[#2c2c32] rounded-lg p-2.5 lg:p-0 lg:bg-transparent lg:border-0"
+            >
+              <X className="w-4 h-4 lg:w-3 lg:h-3 shrink-0" />
+              <span className="hidden lg:inline">Limpar</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => openMlAddToListModal(mlHistory.filter((h) => selectedMlHistoryIds.has(h.id)))}
+              className="flex items-center justify-center gap-1.5 text-[11px] font-semibold text-emerald-400 hover:text-emerald-300 bg-emerald-500/8 hover:bg-emerald-500/15 border border-emerald-500/20 rounded-lg p-2.5 lg:px-2.5 lg:py-1 transition"
+            >
+              <ListPlus className="w-4 h-4 lg:w-3 lg:h-3 shrink-0" />
+              <span className="hidden lg:inline whitespace-nowrap">Adicionar à lista ({selectedMlHistoryIds.size})</span>
+            </button>
+            <button
+              type="button"
+              onClick={async () => {
+                const ids = Array.from(selectedMlHistoryIds);
+                for (const id of ids) await handleDeleteMlHistory(id);
+                setSelectedMlHistoryIds(new Set());
+              }}
+              className="flex items-center justify-center gap-1.5 text-[11px] font-semibold text-red-400 hover:text-red-300 bg-red-500/8 hover:bg-red-500/15 border border-red-500/20 rounded-lg p-2.5 lg:px-2.5 lg:py-1 transition"
+            >
+              <Trash2 className="w-4 h-4 lg:w-3 lg:h-3 shrink-0" />
+              <span className="hidden lg:inline whitespace-nowrap">Excluir {selectedMlHistoryIds.size}</span>
+            </button>
+          </div>
+        </div>
+
+        {mlAddToListFeedback ? (
+          <div
+            className={cn(
+              "mx-3 sm:mx-5 mt-3 flex items-center gap-2 px-3 py-2 rounded-lg border text-[11px]",
+              mlAddToListFeedback.includes("Selecione") || mlAddToListFeedback.toLowerCase().includes("erro")
+                ? "bg-amber-500/8 border-amber-500/20 text-amber-400"
+                : "bg-emerald-500/8 border-emerald-500/20 text-emerald-400",
+            )}
+          >
+            <CheckCircle2 className="w-3.5 h-3.5 shrink-0" /> {mlAddToListFeedback}
+          </div>
+        ) : null}
+
+        <div className="divide-y divide-[#2c2c32] max-h-[min(70vh,720px)] overflow-y-auto scrollbar-ref bg-[#1c1c1f]">
+          {mlHistoryLoading && mlHistory.length === 0 ? (
+            <div className="flex items-center justify-center gap-2 py-10 text-[#a0a0a0] text-sm">
+              <Loader2 className="w-4 h-4 animate-spin" /> Carregando…
+            </div>
+          ) : mlHistory.length === 0 ? (
+            <div className="px-3 sm:px-5 py-10 text-center text-[#a0a0a0] text-[12px] bg-[#17171a]">
+              Nenhum link no histórico. Use <span className="text-[#f0f0f2] font-medium">Buscar</span> e{" "}
+              <span className="text-[#f0f0f2] font-medium">Converter</span>.
+            </div>
+          ) : (
+            mlHistory.map((h) => {
+              const inList = linksInMlOfferList.has(h.shortLink ?? "");
+              const isSelected = selectedMlHistoryIds.has(h.id);
+              const isCopied = copiedMlHistoryId === h.id;
+              return (
+                <div
+                  key={h.id}
+                  onClick={() => toggleMlHistorySelect(h.id)}
+                  className={cn(
+                    "px-3 sm:px-5 py-3.5 border-l-[3px] transition cursor-pointer",
+                    isSelected
+                      ? "bg-[#e24c30]/10 border-l-[#e24c30] hover:bg-[#e24c30]/15"
+                      : "border-l-transparent hover:bg-[#252528]",
+                  )}
+                >
+                  <div className="flex items-start gap-3">
+                    <span
+                      role="checkbox"
+                      aria-checked={isSelected}
+                      tabIndex={0}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleMlHistorySelect(h.id);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === " " || e.key === "Enter") {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          toggleMlHistorySelect(h.id);
+                        }
+                      }}
+                      className={cn(
+                        "w-4 h-4 rounded-md border shrink-0 cursor-pointer mt-0.5 transition-all duration-200 outline-none focus-visible:ring-2 focus-visible:ring-[#e24c30]/45",
+                        isSelected
+                          ? "bg-[#e24c30] border-[#e24c30] shadow-[0_0_10px_rgba(226,76,48,0.28)]"
+                          : "border-[#3f3f46] bg-[#141418] hover:border-[#e24c30]/45",
+                      )}
+                    />
+                    <div className="w-10 h-10 rounded-lg shrink-0 border border-[#2c2c32] overflow-hidden bg-[#232328]">
+                      {h.imageUrl ? (
+                        <img src={h.imageUrl} alt="" className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center">
+                          <ImageIcon className="w-4 h-4 text-[#686868]" />
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-semibold text-[#f0f0f2] line-clamp-2">{h.productName || "Link"}</p>
+                      <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                        <span className="text-[9px] text-[#a0a0a0]">
+                          {new Date(h.createdAt).toLocaleDateString("pt-BR")}
+                        </span>
+                        {h.pricePromo != null ? (
+                          <span className="text-[9px] font-semibold text-[#e24c30]">{formatCurrency(h.pricePromo)}</span>
+                        ) : null}
+                      </div>
+                      <p className="text-[10px] text-[#e24c30] font-mono break-all mt-1 line-clamp-2">{h.shortLink}</p>
+                      <div
+                        className="flex items-center gap-1 shrink-0 mt-2 min-[560px]:hidden"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <MlHistoryActions
+                          inList={inList}
+                          copiedId={isCopied}
+                          onCopy={() => {
+                            void navigator.clipboard.writeText(h.shortLink);
+                            setCopiedMlHistoryId(h.id);
+                            setTimeout(
+                              () => setCopiedMlHistoryId((c) => (c === h.id ? null : c)),
+                              1500,
+                            );
+                          }}
+                          onOpen={() => window.open(h.shortLink, "_blank", "noopener,noreferrer")}
+                          onAddToList={() => openMlAddToListModal([h])}
+                          onDelete={() => void handleDeleteMlHistory(h.id)}
+                        />
+                      </div>
+                    </div>
+                    <div
+                      className="hidden min-[560px]:flex items-center gap-1 shrink-0"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <MlHistoryActions
+                        inList={inList}
+                        copiedId={isCopied}
+                        onCopy={() => {
+                          void navigator.clipboard.writeText(h.shortLink);
+                          setCopiedMlHistoryId(h.id);
+                          setTimeout(
+                            () => setCopiedMlHistoryId((c) => (c === h.id ? null : c)),
+                            1500,
+                          );
+                        }}
+                        onOpen={() => window.open(h.shortLink, "_blank", "noopener,noreferrer")}
+                        onAddToList={() => openMlAddToListModal([h])}
+                        onDelete={() => void handleDeleteMlHistory(h.id)}
+                      />
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {(mlHistoryTotal > 0 || mlHistoryLoading) && (
+          <div className="px-3 sm:px-5 py-3.5 border-t border-[#2c2c32] bg-[#1c1c1f]">
+            <GeradorPaginationBar
+              page={mlHistoryPage}
+              totalPages={mlHistoryTotalPages}
+              loading={mlHistoryLoading}
+              summary={`Mostrando ${mlHistory.length} de ${mlHistoryTotal} links`}
+              onPrev={() => setMlHistoryPage((p) => Math.max(1, p - 1))}
+              onNext={() => setMlHistoryPage((p) => Math.min(mlHistoryTotalPages, p + 1))}
+            />
           </div>
         )}
-          </aside>
-        </div>
+      </section>
+
+        {categoryPickerOpen && typeof document !== "undefined"
+          ? createPortal(
+              <div
+                className={mlModalOverlayClass}
+                role="presentation"
+                onClick={() => setCategoryPickerOpen(false)}
+              >
+                <div
+                  role="dialog"
+                  aria-modal="true"
+                  aria-labelledby="ml-category-picker-title"
+                  className="w-full max-w-md max-h-[min(85vh,560px)] flex flex-col rounded-2xl border border-[#2c2c32] bg-[#1c1c1f] shadow-2xl overflow-hidden m-4"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="shrink-0 px-4 py-3 border-b border-[#2c2c32] flex items-center justify-between gap-2 bg-[#222228]">
+                    <h2 id="ml-category-picker-title" className="text-sm font-bold text-[#f0f0f2]">
+                      Categorias
+                    </h2>
+                    <button
+                      type="button"
+                      onClick={() => setCategoryPickerOpen(false)}
+                      className="w-8 h-8 rounded-lg border border-[#3e3e3e] bg-[#1c1c1f] flex items-center justify-center text-[#a0a0a0] hover:text-[#f0f0f2] hover:border-[#585858] transition"
+                      aria-label="Fechar"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <div className="flex-1 min-h-0 overflow-y-auto p-2 gerador-scrollbar-ref flex flex-col gap-1">
+                    {ML_LISTA_CATEGORY_OPTIONS.map((c) => (
+                      <button
+                        key={c.slug}
+                        type="button"
+                        disabled={mlSearchLoading}
+                        onClick={() => void handleMlCategorySearch(c.slug, c.label)}
+                        className={cn(
+                          "w-full text-left rounded-xl border px-3 py-2.5 text-[11px] font-medium transition",
+                          "border-[#2c2c32] bg-[#222228] text-[#e8e8ec] hover:border-[#e24c30]/40 hover:bg-[#26262c]",
+                          mlSearchLoading && "opacity-50 pointer-events-none",
+                        )}
+                      >
+                        {c.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>,
+              document.body,
+            )
+          : null}
 
         {bulkSaving && typeof document !== "undefined"
           ? createPortal(
@@ -1928,7 +2676,7 @@ export default function MinhaListaOfertasMlPage() {
                   <div className={mlModalListScrollClass}>
                     {listas.length === 0 ? (
                       <p className="text-sm text-text-secondary text-center py-8 px-4">
-                        Nenhuma lista ainda. Use Listas → Criar lista.
+                        Nenhuma lista ainda. Em Configurar, use Gerenciar listas → Criar lista.
                       </p>
                     ) : listasFiltradasPicker.length === 0 ? (
                       <p className="text-sm text-text-secondary text-center py-8 px-4">Nada encontrado.</p>
@@ -1974,146 +2722,37 @@ export default function MinhaListaOfertasMlPage() {
             )
           : null}
 
-        {editItemModal && typeof document !== "undefined"
-          ? createPortal(
-              <div
-                className={mlModalOverlayClass}
-                role="presentation"
-                onClick={() => {
-                  if (!savingEditItem) setEditItemModal(null);
-                }}
-              >
-                <div
-                  role="dialog"
-                  aria-modal="true"
-                  aria-labelledby={editItemTitleId}
-                  className={`${mlModalShellClass} max-w-md max-h-[min(90vh,640px)]`}
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <div className={`${mlModalHeaderClass} flex items-start justify-between gap-3`}>
-                    <div className="min-w-0">
-                      <h2 id={editItemTitleId} className="text-sm font-bold text-text-primary flex items-center gap-2">
-                        <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-shopee-orange/15 border border-shopee-orange/25 shrink-0">
-                          <Pencil className="h-4 w-4 text-shopee-orange" aria-hidden />
-                        </span>
-                        Editar produto
-                      </h2>
-                      <p className="text-[11px] text-text-secondary/80 mt-1.5 leading-relaxed">
-                        Ajuste manual do nome e dos preços exibidos na lista. O link de afiliado não muda aqui.
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (!savingEditItem) setEditItemModal(null);
-                      }}
-                      className="shrink-0 rounded-lg p-1.5 text-text-secondary hover:bg-dark-bg hover:text-text-primary"
-                      aria-label="Fechar"
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
-                  </div>
-                  <div className="p-4 space-y-3 overflow-y-auto scrollbar-thin flex-1 min-h-0">
-                    <div>
-                      <label className={mlFieldLabelClass} htmlFor="ml-edit-name">
-                        Nome do produto
-                      </label>
-                      <input
-                        id="ml-edit-name"
-                        value={editItemForm.productName}
-                        onChange={(e) => setEditItemForm((f) => ({ ...f, productName: e.target.value }))}
-                        className={mlInputClass}
-                        autoComplete="off"
-                      />
-                    </div>
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <div>
-                        <label className={mlFieldLabelClass} htmlFor="ml-edit-po">
-                          Preço original (riscado)
-                        </label>
-                        <input
-                          id="ml-edit-po"
-                          inputMode="decimal"
-                          value={editItemForm.priceOriginal}
-                          onChange={(e) => setEditItemForm((f) => ({ ...f, priceOriginal: e.target.value }))}
-                          placeholder="Ex.: 199,90"
-                          className={mlInputClass}
-                        />
-                      </div>
-                      <div>
-                        <label className={mlFieldLabelClass} htmlFor="ml-edit-pp">
-                          Preço final (por)
-                        </label>
-                        <input
-                          id="ml-edit-pp"
-                          inputMode="decimal"
-                          value={editItemForm.pricePromo}
-                          onChange={(e) => setEditItemForm((f) => ({ ...f, pricePromo: e.target.value }))}
-                          placeholder="Ex.: 149,90"
-                          className={mlInputClass}
-                        />
-                      </div>
-                    </div>
-                    <div className="sm:max-w-[200px]">
-                      <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
-                        <label className={mlFieldLabelInlineClass} htmlFor="ml-edit-dr">
-                          Desconto % (opcional)
-                        </label>
-                        <Toolist
-                          variant="floating"
-                          text="Se preencher e o preço final coincidir com o original, o app recalcula o valor em destaque (por) com o desconto."
-                        />
-                      </div>
-                      <input
-                        id="ml-edit-dr"
-                        inputMode="decimal"
-                        value={editItemForm.discountRate}
-                        onChange={(e) => setEditItemForm((f) => ({ ...f, discountRate: e.target.value }))}
-                        placeholder="Ex.: 10"
-                        className={mlInputClass}
-                      />
-                    </div>
-                  </div>
-                  <div className={mlModalFooterClass}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (!savingEditItem) setEditItemModal(null);
-                      }}
-                      className="rounded-xl border border-dark-border px-4 py-2 text-sm font-medium text-text-secondary hover:bg-dark-bg transition-colors"
-                    >
-                      Cancelar
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void submitEditItemModal()}
-                      disabled={savingEditItem}
-                      className="rounded-xl bg-shopee-orange px-4 py-2 text-sm font-semibold text-white hover:opacity-90 shadow-[0_2px_12px_rgba(238,77,45,0.25)] disabled:opacity-50 inline-flex items-center gap-2"
-                    >
-                      {savingEditItem ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                      Salvar
-                    </button>
-                  </div>
-                </div>
-              </div>,
-              document.body,
-            )
-          : null}
-
-        {confirmState && (
-          <ConfirmModal
-            open={!!confirmState}
-            title={confirmState.title}
-            message={confirmState.message}
-            confirmLabel={confirmState.confirmLabel}
-            cancelLabel="Cancelar"
-            variant={confirmState.variant}
-            loading={confirmLoading}
-            onConfirm={runConfirmAction}
-            onCancel={handleConfirmCancel}
-          />
-        )}
-      </div>
+        <GeradorAddToListModal
+          open={mlAddToListModal.open}
+          onClose={closeMlAddToListModal}
+          lists={listas.map((l) => ({ id: l.id, nome: l.nome, totalItens: l.totalItens ?? 0 }))}
+          newListName={mlHistModalNovaLista}
+          setNewListName={setMlHistModalNovaLista}
+          activeListId={mlHistModalListaId}
+          setActiveListId={setMlHistModalListaId}
+          onCreate={async () => {
+            if (!mlHistModalNovaLista.trim()) return;
+            try {
+              const res = await fetch("/api/mercadolivre/minha-lista-ofertas/listas", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ nome: mlHistModalNovaLista.trim() }),
+              });
+              const json = await res.json();
+              if (res.ok && json?.data?.id) {
+                setMlHistModalListaId(json.data.id);
+                await loadListas();
+                setMlHistModalNovaLista("");
+              }
+            } catch {
+              /* ignore */
+            }
+          }}
+          onConfirm={() => void confirmMlAddToList()}
+          canConfirm={!!mlHistModalListaId && mlAddToListModal.entries.length > 0}
+          pendingCount={mlAddToListModal.entries.length}
+          loading={mlAddToListLoading}
+        />
     </div>
   );
 }

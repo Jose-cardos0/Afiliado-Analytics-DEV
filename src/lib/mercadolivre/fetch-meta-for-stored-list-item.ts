@@ -30,6 +30,7 @@ export async function fetchMlProductMetaForStoredListItem(
   converterLink: string,
   productPageUrl: string | null | undefined,
   accessToken?: string | null,
+  mlCookieHeader?: string | null,
 ): Promise<MlProductMeta | null> {
   const conv = converterLink.trim();
   if (!conv) return null;
@@ -37,18 +38,18 @@ export async function fetchMlProductMetaForStoredListItem(
   const page = (productPageUrl ?? "").trim();
 
   if (page && (looksLikeMercadoLivreProductUrl(page) || !!extractMlbIdFromUrl(page))) {
-    const m = await fetchMlProductMetaFromUrl(page, accessToken);
+    const m = await fetchMlProductMetaFromUrl(page, accessToken, mlCookieHeader);
     if (metaUsable(m)) return m;
   }
 
   if (looksLikeMercadoLivreProductUrl(conv) && !isMeliLaHost(conv)) {
-    const m = await fetchMlProductMetaFromUrl(conv, accessToken);
+    const m = await fetchMlProductMetaFromUrl(conv, accessToken, mlCookieHeader);
     if (metaUsable(m)) return m;
   }
 
-  const expanded = await expandMercadoLivreAffiliateLink(conv);
+  const expanded = await expandMercadoLivreAffiliateLink(conv, mlCookieHeader);
   if (expanded) {
-    const m = await fetchMlProductMetaFromUrl(expanded, accessToken);
+    const m = await fetchMlProductMetaFromUrl(expanded, accessToken, mlCookieHeader);
     if (metaUsable(m)) return m;
   }
 

@@ -2,15 +2,15 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
 import { fetchMlProductMetaByMlbId, fetchMlProductMetaFromUrl } from "@/lib/mercadolivre/fetch-product-meta";
 import { expandMercadoLivreAffiliateLink } from "@/lib/mercadolivre/expand-affiliate-link";
-import { tryFetchMlClientCredentialsToken } from "@/lib/mercadolivre/oauth-app-token";
+import { parseMlExtensionSessionToCookieHeader } from "@/lib/mercadolivre/ml-session-cookie";
+import { isMlSocialListsProfileUrl } from "@/lib/mercadolivre/site-search";
 
 export const dynamic = "force-dynamic";
 
 /**
  * POST { productUrl?: string, mlbId?: string, affiliateUrl?: string }
  * affiliateUrl: link curto meli.la — o servidor segue o redirect até a página do produto.
- * Busca dados do anúncio na API do ML. Se o perfil tiver Client ID + Secret,
- * tenta obter token de aplicação; senão usa só endpoints públicos.
+ * Metadados via HTML (JSON-LD) do anúncio + cookie de sessão quando enviado — sem REST api.mercadolibre.com.
  */
 export async function POST(req: Request) {
   try {
@@ -18,31 +18,31 @@ export async function POST(req: Request) {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
 
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("mercadolivre_client_id, mercadolivre_client_secret")
-      .eq("id", user.id)
-      .single();
-
-    const cid = (profile as { mercadolivre_client_id?: string } | null)?.mercadolivre_client_id?.trim() ?? "";
-    const csec = (profile as { mercadolivre_client_secret?: string } | null)?.mercadolivre_client_secret?.trim() ?? "";
-    let accessToken: string | null = null;
-    if (cid && csec) {
-      accessToken = await tryFetchMlClientCredentialsToken(cid, csec);
-    }
-
     const body = await req.json().catch(() => ({}));
     const productUrl = String(body?.productUrl ?? body?.product_url ?? "").trim();
     const mlbIdRaw = String(body?.mlbId ?? body?.mlb_id ?? "").trim();
     const affiliateUrl = String(body?.affiliateUrl ?? body?.affiliate_url ?? "").trim();
+    const mlCookieHeader =
+      parseMlExtensionSessionToCookieHeader(
+        String(body?.mlSessionToken ?? body?.ml_session_token ?? "").trim(),
+      ) ?? null;
 
     let meta = null as Awaited<ReturnType<typeof fetchMlProductMetaByMlbId>>;
     if (mlbIdRaw) {
-      meta = await fetchMlProductMetaByMlbId(mlbIdRaw, accessToken);
+      meta = await fetchMlProductMetaByMlbId(mlbIdRaw, null, mlCookieHeader);
     } else if (productUrl) {
-      meta = await fetchMlProductMetaFromUrl(productUrl, accessToken);
+      if (isMlSocialListsProfileUrl(productUrl)) {
+        return NextResponse.json(
+          {
+            error:
+              "Esta URL é página de perfil social do Mercado Livre (/social/…), não um anúncio. Use o link da página do produto (produto.mercadolivre.com.br ou similar) ou o ID MLB.",
+          },
+          { status: 400 },
+        );
+      }
+      meta = await fetchMlProductMetaFromUrl(productUrl, null, mlCookieHeader);
     } else if (affiliateUrl) {
-      const expanded = await expandMercadoLivreAffiliateLink(affiliateUrl);
+      const expanded = await expandMercadoLivreAffiliateLink(affiliateUrl, mlCookieHeader);
       if (!expanded) {
         return NextResponse.json(
           {
@@ -52,7 +52,7 @@ export async function POST(req: Request) {
           { status: 400 },
         );
       }
-      meta = await fetchMlProductMetaFromUrl(expanded, accessToken);
+      meta = await fetchMlProductMetaFromUrl(expanded, null, mlCookieHeader);
     }
 
     if (!meta) {
@@ -81,8 +81,10 @@ export async function POST(req: Request) {
         soldQuantity: meta.soldQuantity ?? null,
         warranty: meta.warranty ?? null,
         listingTypeId: meta.listingTypeId ?? null,
-        usedAppCredentials: !!(cid && csec),
-        usedBearerToken: !!accessToken,
+        affiliateCommissionPct: meta.affiliateCommissionPct ?? null,
+        usedAppCredentials: false,
+        usedBearerToken: false,
+        usedMlSessionCookie: !!mlCookieHeader,
       },
     });
   } catch (e) {

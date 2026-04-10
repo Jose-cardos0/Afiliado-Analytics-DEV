@@ -102,6 +102,10 @@ Por que remover `.git`?
 
 ---
 
+- FORÇAR 
+```bash
+git push -u origin sync-dev-para-subpasta --force-with-lease
+```
 ## Passo 8) Salvar no Git (commit)
 
 ```bash

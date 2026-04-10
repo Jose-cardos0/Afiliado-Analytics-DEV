@@ -13,9 +13,10 @@ const root = __dirname;
 // Subdomínio que vai servir apenas páginas de captura
 const CAPTURE_HOST = "s.afiliadoanalytics.com.br";
 
-// slug = 1 segmento só (sem /) e bloqueando prefixes reservados
+// slug = 1 segmento sem "/" e sem "." (evita tratar /click.png, /campflor.png, /logo-shopee_*.png como slug).
+// beforeFiles rewrites correm ANTES de servir `public/` — sem isto, assets quebram em s.afiliadoanalytics.com.br.
 const SLUG_SOURCE =
-  "/:slug((?!api|_next|favicon\\.ico|robots\\.txt|sitemap\\.xml|manifest\\.json|capture|dashboard)[^/]+)";
+  "/:slug((?!api|_next|favicon\\.ico|robots\\.txt|sitemap\\.xml|manifest\\.json|capture|dashboard)[^/.]+)";
 
 const nextConfig: NextConfig = {
   turbopack: { root },

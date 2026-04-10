@@ -13,9 +13,8 @@ type ConfiguracoesClientProps = {
   initialAppId: string;
   initialHasKey: boolean;
   initialLast4: string | null;
-  mlInitialClientId: string;
-  mlInitialHasSecret: boolean;
-  mlInitialLast4: string | null;
+  /** Abre o bloco Mercado Livre (ex.: link da Lista ML com ?ml=1). */
+  initialOpenMl?: boolean;
   metaHasToken: boolean;
   metaLast4: string | null;
 };
@@ -36,10 +35,9 @@ const CARDS: {
   },
   {
     key: "mercadolivre",
-    title: "Mercado Livre API",
-    description: "Client ID e Secret — dados de anúncios",
+    title: "Mercado Livre Afiliados",
+    description: "Etiqueta em uso e token da extensão",
     icon: ShoppingBag,
-    hidden: true,
   },
   {
     key: "meta",
@@ -68,13 +66,11 @@ export default function ConfiguracoesClient({
   initialAppId,
   initialHasKey,
   initialLast4,
-  mlInitialClientId,
-  mlInitialHasSecret,
-  mlInitialLast4,
+  initialOpenMl,
   metaHasToken,
   metaLast4,
 }: ConfiguracoesClientProps) {
-  const [openSection, setOpenSection] = useState<SectionKey>(null);
+  const [openSection, setOpenSection] = useState<SectionKey>(initialOpenMl ? "mercadolivre" : null);
   const visibleCards = CARDS.filter((c) => !c.hidden);
 
   return (
@@ -120,11 +116,7 @@ export default function ConfiguracoesClient({
       )}
       {openSection === "mercadolivre" && (
         <div className="animate-in fade-in duration-200">
-          <MercadoLivreIntegrationCard
-            initialClientId={mlInitialClientId}
-            initialHasSecret={mlInitialHasSecret}
-            initialLast4={mlInitialLast4}
-          />
+          <MercadoLivreIntegrationCard />
         </div>
       )}
       {openSection === "meta" && (

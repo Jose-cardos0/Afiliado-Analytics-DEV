@@ -116,7 +116,7 @@ const sidebarNavItems: NavItem[] = [
     title: "Lista de Ofertas - ML",
     href: "/dashboard/minha-lista-ofertas-ml",
     icon: <ListChecks className="h-5 w-5 text-amber-400" />,
-    hidden: true,
+    hidden: false,
   },
   {
     title: "Gerador de Criativos",

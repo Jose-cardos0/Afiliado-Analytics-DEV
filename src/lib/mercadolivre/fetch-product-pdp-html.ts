@@ -21,14 +21,22 @@ export type MlPdpProductMeta = {
   soldQuantity?: number | null;
   warranty?: string | null;
   listingTypeId?: string | null;
+  /** Barra de afiliados no PDP: "GANHOS 12%" (só no HTML com cookie de sessão afiliado). */
+  affiliateCommissionPct?: number | null;
 };
 
-const BROWSER_HEADERS: HeadersInit = {
+const BROWSER_HEADERS_BASE: Record<string, string> = {
   "User-Agent":
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
   Accept: "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
   "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.5",
+  Referer: "https://www.mercadolivre.com.br/",
 };
+
+function pdpHeaders(cookieHeader?: string | null): HeadersInit {
+  if (!cookieHeader?.trim()) return BROWSER_HEADERS_BASE;
+  return { ...BROWSER_HEADERS_BASE, Cookie: cookieHeader.trim() };
+}
 
 const ALLOWED_PDP_HOSTS = new Set([
   "produto.mercadolivre.com.br",
@@ -64,6 +72,33 @@ export function normalizeMercadoLivrePdpUrlForFetch(pageUrl: string): string {
   } catch {
     return pageUrl.trim();
   }
+}
+
+/**
+ * Barra preta de afiliados no topo do anúncio (logado): texto "GANHOS 12%".
+ * Removemos tags para juntar texto partido por nós do React.
+ */
+export function extractMlAffiliateGanhosPctFromHtml(html: string): number | null {
+  const head = html.length > 180_000 ? html.slice(0, 180_000) : html;
+  const rough = head
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/gi, " ");
+  const re = /GANHOS\s*(\d{1,2}(?:[.,]\d+)?)\s*%/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(rough)) !== null) {
+    const n = parseFloat(String(m[1]).replace(",", "."));
+    if (Number.isFinite(n) && n > 0 && n <= 100) {
+      return Math.round(n * 100) / 100;
+    }
+  }
+  return null;
+}
+
+function mergeAffiliatePctFromHtml(meta: MlPdpProductMeta, html: string): MlPdpProductMeta {
+  const pct = extractMlAffiliateGanhosPctFromHtml(html);
+  if (pct == null) return meta;
+  return { ...meta, affiliateCommissionPct: pct };
 }
 
 function parsePrice(v: unknown): number | null {
@@ -126,6 +161,26 @@ function mapLdProduct(obj: Record<string, unknown>, sourceUrl: string, resolvedI
   };
 }
 
+/** Percorre o JSON-LD inteiro (o ML costuma aninhar Product fora de @graph). */
+function findLdProductDeep(data: unknown, depth = 0): Record<string, unknown> | null {
+  if (depth > 24 || data == null) return null;
+  if (typeof data !== "object") return null;
+  if (Array.isArray(data)) {
+    for (const item of data) {
+      const r = findLdProductDeep(item, depth + 1);
+      if (r) return r;
+    }
+    return null;
+  }
+  const o = data as Record<string, unknown>;
+  if (isProductNode(o)) return o;
+  for (const v of Object.values(o)) {
+    const r = findLdProductDeep(v, depth + 1);
+    if (r) return r;
+  }
+  return null;
+}
+
 function tryParseLdJsonBlock(jsonStr: string, sourceUrl: string, resolvedId: string): MlPdpProductMeta | null {
   const trimmed = jsonStr.trim();
   if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) return null;
@@ -154,13 +209,102 @@ function tryParseLdJsonBlock(jsonStr: string, sourceUrl: string, resolvedId: str
       if (m) return m;
     }
   }
+
+  const deep = findLdProductDeep(data);
+  if (deep) return mapLdProduct(deep, sourceUrl, resolvedId);
   return null;
+}
+
+function decodeHtmlEntities(s: string): string {
+  return s
+    .replace(/&quot;/gi, '"')
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">");
+}
+
+/**
+ * Quando não há Product no JSON-LD “óbvio”, o ML ainda costuma mandar og:title / og:image.
+ */
+function parsePdpMetaFromOpenGraph(html: string, sourceUrl: string, resolvedId: string): MlPdpProductMeta | null {
+  const metaProp = (prop: string): string | null => {
+    const re1 = new RegExp(`<meta[^>]+property=["']${prop}["'][^>]+content=["']([^"']*)["']`, "i");
+    const re2 = new RegExp(`<meta[^>]+content=["']([^"']*)["'][^>]+property=["']${prop}["']`, "i");
+    const a = re1.exec(html);
+    if (a?.[1] != null) return decodeHtmlEntities(a[1].trim());
+    const b = re2.exec(html);
+    return b?.[1] != null ? decodeHtmlEntities(b[1].trim()) : null;
+  };
+  const metaName = (name: string): string | null => {
+    const re = new RegExp(`<meta[^>]+name=["']${name}["'][^>]+content=["']([^"']*)["']`, "i");
+    const m = re.exec(html);
+    return m?.[1] != null ? decodeHtmlEntities(m[1].trim()) : null;
+  };
+
+  const title =
+    metaProp("og:title") ??
+    metaName("twitter:title") ??
+    metaProp("twitter:title") ??
+    "";
+  const imageRaw =
+    metaProp("og:image") ??
+    metaName("twitter:image") ??
+    metaProp("twitter:image:src") ??
+    "";
+  const imageUrl = imageRaw.replace(/^http:\/\//i, "https://");
+
+  let pricePromo: number | null = null;
+  const priceCandidates = [
+    metaProp("product:price:amount"),
+    metaProp("og:price:amount"),
+    (() => {
+      const m = /<meta[^>]+itemprop=["']price["'][^>]+content=["']([^"']+)["']/i.exec(html);
+      return m?.[1]?.trim() ?? null;
+    })(),
+  ];
+  for (const raw of priceCandidates) {
+    if (!raw) continue;
+    const normalized = raw.replace(/\s/g, "").replace(/R\$\s?/i, "");
+    let n: number | null = null;
+    if (/^\d+[.,]\d{2}$/.test(normalized)) {
+      n = parseFloat(normalized.replace(/\./g, "").replace(",", "."));
+    } else {
+      n = parseFloat(normalized.replace(",", "."));
+    }
+    if (n != null && Number.isFinite(n) && n > 0 && n < 1_000_000) {
+      pricePromo = Math.round(n * 100) / 100;
+      break;
+    }
+  }
+
+  if (!title && !imageUrl && pricePromo == null) return null;
+
+  return {
+    resolvedId,
+    productName: title || `Produto ${resolvedId}`,
+    imageUrl,
+    pricePromo,
+    priceOriginal: pricePromo,
+    discountRate: null,
+    permalink: sourceUrl.split("#")[0],
+    subtitle: null,
+    condition: null,
+    currencyId: "BRL",
+    availableQuantity: null,
+    soldQuantity: null,
+    warranty: null,
+    listingTypeId: null,
+  };
 }
 
 /**
  * Busca metadados na página HTML do PDP (JSON-LD).
  */
-export async function fetchMlProductMetaFromPdpHtml(productUrl: string): Promise<MlPdpProductMeta | null> {
+export async function fetchMlProductMetaFromPdpHtml(
+  productUrl: string,
+  cookieHeader?: string | null,
+): Promise<MlPdpProductMeta | null> {
   const fetchUrl = normalizeMercadoLivrePdpUrlForFetch(productUrl);
   let u: URL;
   try {
@@ -174,9 +318,11 @@ export async function fetchMlProductMetaFromPdpHtml(productUrl: string): Promise
   const resolvedId = extractMlbIdFromUrl(productUrl) ?? extractMlbIdFromUrl(fetchUrl) ?? "MLB";
 
   const res = await fetch(u.toString(), {
-    headers: BROWSER_HEADERS,
+    headers: pdpHeaders(cookieHeader),
     redirect: "follow",
-    next: { revalidate: 300 },
+    ...(cookieHeader?.trim()
+      ? { cache: "no-store" as RequestCache }
+      : { next: { revalidate: 300 } }),
   });
   if (!res.ok) return null;
 
@@ -189,7 +335,14 @@ export async function fetchMlProductMetaFromPdpHtml(productUrl: string): Promise
     const block = m[1]?.trim();
     if (!block) continue;
     const meta = tryParseLdJsonBlock(block, u.toString(), resolvedId);
-    if (meta?.productName || meta?.imageUrl || meta?.pricePromo != null) return meta;
+    if (meta?.productName || meta?.imageUrl || meta?.pricePromo != null) {
+      return mergeAffiliatePctFromHtml(meta, html);
+    }
+  }
+
+  const og = parsePdpMetaFromOpenGraph(html, u.toString(), resolvedId);
+  if (og?.productName || og?.imageUrl || og?.pricePromo != null) {
+    return mergeAffiliatePctFromHtml(og, html);
   }
 
   return null;

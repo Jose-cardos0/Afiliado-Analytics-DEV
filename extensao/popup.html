@@ -1,0 +1,355 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <title>Afiliado Analytics</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+    rel="stylesheet"
+  />
+  <style>
+    :root {
+      --aa-bg:            #18181f;
+      --aa-surface:       #23232A;
+      --aa-surface-deep:  rgba(0, 0, 0, 0.25);
+      --aa-border:        rgba(255, 255, 255, 0.10);
+      --aa-border-focus:  rgba(226, 76, 48, 0.55);
+
+      --aa-red:           #EE4D2D;
+      --aa-red-end:       #ff7a54;
+      --aa-red-soft:      rgba(226, 76, 48, 0.10);
+
+      --aa-text:          #ffffff;
+      --aa-muted:         rgba(255, 255, 255, 0.78);
+      --aa-placeholder:   rgba(255, 255, 255, 0.28);
+
+      --aa-radius-xl:     20px;
+      --aa-radius-md:     12px;
+      --aa-radius-sm:     8px;
+      --aa-radius-pill:   999px;
+
+      --font-inter: 'Inter', system-ui, sans-serif;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--font-inter);
+      width: 370px;
+      padding: 12px;
+      background: #18181f;
+      color: var(--aa-text);
+    }
+
+    .aa-card {
+      position: relative;
+      overflow: hidden;
+      background: var(--aa-surface);
+      border: 1px solid var(--aa-border);
+      border-radius: var(--aa-radius-xl);
+      padding: 18px 18px 16px;
+      box-shadow:
+        0 32px 64px rgba(0, 0, 0, 0.65),
+        0 0 0 1px rgba(0, 0, 0, 0.4);
+    }
+
+    .aa-card::before {
+      content: "";
+      pointer-events: none;
+      position: absolute;
+      right: -50px;
+      top: -50px;
+      width: 180px;
+      height: 180px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(226, 76, 48, 0.14) 0%, transparent 70%);
+      filter: blur(18px);
+      z-index: 0;
+    }
+
+    .aa-card::after {
+      content: "";
+      pointer-events: none;
+      position: absolute;
+      left: -40px;
+      bottom: -40px;
+      width: 160px;
+      height: 160px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(226, 76, 48, 0.07) 0%, transparent 70%);
+      filter: blur(22px);
+      z-index: 0;
+    }
+
+    .aa-inner { position: relative; z-index: 1; }
+
+    .aa-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 14px;
+    }
+
+    .aa-brand {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .aa-brand-icon {
+      width: 18px;
+      height: 18px;
+      object-fit: contain;
+      flex-shrink: 0;
+      filter: drop-shadow(0 0 4px rgba(238, 77, 45, 0.55));
+    }
+
+    .aa-brand-name {
+      font-family: var(--font-inter);
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      line-height: 1;
+    }
+
+    .aa-brand-name .word-afiliado  { color: #ffffff; }
+    .aa-brand-name .word-analytics { color: #EE4D2D; }
+
+    .aa-version {
+      font-family: var(--font-inter);
+      font-size: 9px;
+      font-weight: 500;
+      padding: 3px 8px;
+      border-radius: var(--aa-radius-pill);
+      background: var(--aa-red-soft);
+      border: 1px solid rgba(238, 77, 45, 0.28);
+      color: #ff9a7a;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+    }
+
+    .aa-divider {
+      height: 1px;
+      background: var(--aa-border);
+      margin-bottom: 12px;
+    }
+
+    .aa-domain-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.85);
+      margin-bottom: 4px;
+      min-height: 16px;
+    }
+
+    /* Bolinha — verde por padrão (site detectado) */
+    .aa-domain-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #10b981;
+      box-shadow: 0 0 6px rgba(16, 185, 129, 0.75);
+      flex-shrink: 0;
+      transition: background 0.2s, box-shadow 0.2s;
+    }
+
+    /* Bolinha vermelha — site não suportado */
+    .aa-domain-dot.dot-error {
+      background: #ef4444;
+      box-shadow: 0 0 6px rgba(239, 68, 68, 0.75);
+    }
+
+    .aa-status {
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.82);
+      margin-bottom: 12px;
+      min-height: 15px;
+    }
+
+    .aa-nav {
+      display: none;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .aa-nav a {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 5px 13px;
+      border-radius: var(--aa-radius-pill);
+      text-decoration: none;
+      border: 1px solid;
+      transition: opacity 0.15s, transform 0.1s;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .aa-nav a:hover {
+      opacity: 0.78;
+      transform: translateY(-1px);
+    }
+
+    .aa-nav a::after {
+      content: "↗";
+      font-size: 10px;
+      opacity: 0.75;
+    }
+
+    .aa-nav .link-ml {
+      color: #4ade80;
+      border-color: rgba(74, 222, 128, 0.32);
+      background: rgba(74, 222, 128, 0.08);
+    }
+
+    .aa-nav .link-amz {
+      color: #fb923c;
+      border-color: rgba(251, 146, 60, 0.32);
+      background: rgba(251, 146, 60, 0.07);
+    }
+
+    .aa-token-block {
+      background: var(--aa-surface-deep);
+      border: 1px solid var(--aa-border);
+      border-radius: var(--aa-radius-md);
+      padding: 12px;
+    }
+
+    .aa-token-label {
+      font-size: 10px;
+      font-weight: 600;
+      color: rgba(255, 255, 255, 0.82);
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .aa-token-label::before {
+      content: "";
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: var(--aa-red);
+      box-shadow: 0 0 7px rgba(238, 77, 45, 0.80);
+      flex-shrink: 0;
+    }
+
+    textarea#tokenOutput {
+      width: 100%;
+      height: 66px;
+      resize: none;
+      font-size: 10.5px;
+      font-family: ui-monospace, 'SFMono-Regular', Menlo, Monaco, Consolas, monospace;
+      border-radius: var(--aa-radius-sm);
+      border: 1px solid rgba(255, 255, 255, 0.10);
+      background: rgba(0, 0, 0, 0.30);
+      color: var(--aa-text);
+      padding: 8px 9px;
+      outline: none;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+
+    textarea#tokenOutput::placeholder {
+      color: var(--aa-placeholder);
+    }
+
+    textarea#tokenOutput:focus {
+      border-color: var(--aa-border-focus);
+      box-shadow: 0 0 0 2px rgba(226, 76, 48, 0.18);
+    }
+
+    #btnCopyToken {
+      margin-top: 10px;
+      width: 100%;
+      padding: 11px 14px;
+      border-radius: var(--aa-radius-md);
+      border: none;
+      cursor: pointer;
+      font-family: var(--font-inter);
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      background: linear-gradient(135deg, #e24c30, #ff7a54);
+      color: #ffffff;
+      box-shadow: none;
+      transition:
+        transform 0.08s ease,
+        filter 0.08s ease,
+        opacity 0.12s ease;
+    }
+
+    #btnCopyToken:hover:not(:disabled) {
+      transform: translateY(-2px);
+      filter: brightness(1.07);
+      box-shadow: none;
+    }
+
+    #btnCopyToken:active:not(:disabled) {
+      transform: translateY(0);
+      filter: brightness(0.97);
+      box-shadow: none;
+    }
+
+    #btnCopyToken:disabled {
+      opacity: 0.38;
+      cursor: default;
+      background: rgba(226, 76, 48, 0.22);
+      box-shadow: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="aa-card">
+    <div class="aa-inner">
+
+      <div class="aa-header">
+        <div class="aa-brand">
+          <img
+            src="icons/icon48.png"
+            alt="Afiliado Analytics"
+            class="aa-brand-icon"
+          />
+          <span class="aa-brand-name">
+            <span class="word-afiliado">Afiliado </span><span class="word-analytics">Analytics</span>
+          </span>
+        </div>
+        <span class="aa-version">Token</span>
+      </div>
+
+      <div class="aa-divider"></div>
+
+      <div class="aa-domain-row">
+        <span class="aa-domain-dot" id="domainDot"></span>
+        <span id="domainText">Aguardando site...</span>
+      </div>
+
+      <div class="aa-status" id="statusMsg">Iniciando...</div>
+
+      <div class="aa-nav" id="navLinks">
+        <a class="link-ml" href="https://www.mercadolivre.com.br" target="_blank">Acessar Mercado Livre</a>
+        <a class="link-amz" href="https://www.amazon.com.br" target="_blank">Acessar Amazon</a>
+      </div>
+
+      <div class="aa-token-block">
+        <div class="aa-token-label">Token de acesso</div>
+        <textarea
+          id="tokenOutput"
+          readonly
+          placeholder="O token será exibido ao detectar o site."
+        ></textarea>
+        <button id="btnCopyToken" disabled>Copiar Token</button>
+      </div>
+
+    </div>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>

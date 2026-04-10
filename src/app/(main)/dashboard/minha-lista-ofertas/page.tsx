@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
+import { MinhaListaOfertasMlListsPanel } from "@/app/components/minha-lista-ofertas/MinhaListaOfertasMlListsPanel";
 import { GeradorPaginationBar } from "@/app/components/shopee/GeradorPaginationBar";
 import {
   ShoppingBag,
@@ -51,7 +52,10 @@ function displayPrecoPorLista(item: Item): string {
   return por != null ? formatCurrency(por) : "—";
 }
 
+type ListaStore = "shopee" | "ml";
+
 export default function MinhaListaOfertasPage() {
+  const [listaStore, setListaStore] = useState<ListaStore>("shopee");
   const [listas, setListas] = useState<Lista[]>([]);
   const [itemsByLista, setItemsByLista] = useState<Record<string, Item[]>>({});
   const [loading, setLoading] = useState(true);
@@ -110,15 +114,17 @@ export default function MinhaListaOfertasPage() {
   }, []);
 
   useEffect(() => {
+    if (listaStore !== "shopee") return;
     setLoading(true);
     setError(null);
     loadListas().finally(() => setLoading(false));
-  }, [loadListas]);
+  }, [loadListas, listaStore]);
 
   useEffect(() => {
+    if (listaStore !== "shopee") return;
     listas.forEach((l) => loadItems(l.id));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [listas]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [listas, listaStore]);
 
   const handleDeleteItemClick = (itemId: string, listaId: string) => {
     setConfirmState({
@@ -226,30 +232,68 @@ export default function MinhaListaOfertasPage() {
   return (
     <div className="min-h-screen bg-dark-bg text-text-primary p-4 md:p-6">
       <div className="max-w-3xl mx-auto">
-        <div className="flex items-center gap-3 mb-6">
+        <div className="flex flex-wrap items-center gap-3 mb-4">
           <Link
-            href="/dashboard/gerador-links-shopee"
+            href={
+              listaStore === "shopee"
+                ? "/dashboard/gerador-links-shopee"
+                : "/dashboard/minha-lista-ofertas-ml"
+            }
             className="p-2 rounded-lg border border-dark-border bg-dark-card text-text-secondary hover:text-shopee-orange hover:border-shopee-orange/50 transition-colors"
             title="Voltar"
           >
             <ArrowLeft className="h-5 w-5" />
           </Link>
-          <img src="/shop.webp" alt="Shopee" className="w-12  object-contain" />
-          <h1 className="text-xl font-semibold">
-          
-             Minha Lista de Ofertas 
-          </h1>
+          {listaStore === "shopee" ? (
+            <img src="/shop.webp" alt="Shopee" className="w-12 object-contain" />
+          ) : (
+            <img src="/ml.png" alt="Mercado Livre" className="w-12 h-12 object-contain" />
+          )}
+          <h1 className="text-xl font-semibold">Minha Lista de Ofertas</h1>
         </div>
 
-   
+        <div
+          className="mb-6 flex rounded-xl border border-dark-border bg-dark-card p-1"
+          role="tablist"
+          aria-label="Origem da lista"
+        >
+          <button
+            type="button"
+            role="tab"
+            aria-selected={listaStore === "shopee"}
+            onClick={() => setListaStore("shopee")}
+            className={`flex-1 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
+              listaStore === "shopee"
+                ? "bg-shopee-orange text-white shadow"
+                : "text-text-secondary hover:text-text-primary"
+            }`}
+          >
+            Shopee
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={listaStore === "ml"}
+            onClick={() => setListaStore("ml")}
+            className={`flex-1 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
+              listaStore === "ml"
+                ? "bg-[#e24c30] text-white shadow"
+                : "text-text-secondary hover:text-text-primary"
+            }`}
+          >
+            Mercado Livre
+          </button>
+        </div>
 
-        {error && (
+        {listaStore === "shopee" && error && (
           <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">
             {error}
           </div>
         )}
 
-        {loading ? (
+        {listaStore === "ml" ? (
+          <MinhaListaOfertasMlListsPanel />
+        ) : loading ? (
           <div className="flex items-center justify-center py-12">
             <Loader2 className="h-8 w-8 animate-spin text-shopee-orange" />
           </div>
@@ -426,7 +470,7 @@ export default function MinhaListaOfertasPage() {
           </div>
         )}
 
-        {confirmState && (
+        {listaStore === "shopee" && confirmState && (
           <ConfirmModal
             open={!!confirmState}
             title={confirmState.title}

@@ -5,20 +5,27 @@ export function extractMlbIdFromUrl(url: string): string | null {
 
   let blob = trimmed;
   let href = trimmed;
+  let pathnameForWid = "";
   if (trimmed.includes("://")) {
     try {
       const u = new URL(trimmed);
       href = u.href;
       blob = `${u.pathname}${u.search}${u.hash}`;
+      pathnameForWid = u.pathname;
+      const widParam = u.searchParams.get("wid");
+      if (widParam && /^MLB\d+$/i.test(widParam)) return widParam.toUpperCase();
     } catch {
       blob = trimmed;
       href = trimmed;
     }
   }
 
-  // Hash/query: wid=MLB… identifica o anúncio exibido (recomendações / catálogo). Pode haver mais de um — usamos o último.
-  const widAll = [...href.matchAll(/wid=(MLB\d+)/gi)];
-  if (widAll.length > 0) return widAll[widAll.length - 1][1].toUpperCase();
+  // wid= no href inteiro: em URLs /social/… o parâmetro `ref` enorme pode conter “wid=MLB” falso.
+  const isSocialPath = /\/social\//i.test(pathnameForWid) || /mercadolivre\.com(?:\.br)?\/social\//i.test(trimmed);
+  if (!isSocialPath) {
+    const widAll = [...href.matchAll(/wid=(MLB\d+)/gi)];
+    if (widAll.length > 0) return widAll[widAll.length - 1][1].toUpperCase();
+  }
 
   const pMatch = blob.match(/\/p\/MLB(\d+)/i);
   if (pMatch) return `MLB${pMatch[1]}`;

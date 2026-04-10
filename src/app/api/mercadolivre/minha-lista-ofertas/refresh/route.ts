@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
 import { fetchMlProductMetaForStoredListItem } from "@/lib/mercadolivre/fetch-meta-for-stored-list-item";
-import { tryFetchMlClientCredentialsToken } from "@/lib/mercadolivre/oauth-app-token";
+import { parseMlExtensionSessionToCookieHeader } from "@/lib/mercadolivre/ml-session-cookie";
 import { effectiveListaOfferPromoPrice } from "@/lib/lista-ofertas-effective-promo";
 
 export const dynamic = "force-dynamic";
@@ -28,6 +28,7 @@ async function refreshOneMlRow(
   userId: string,
   row: MlRow,
   accessToken: string | null,
+  mlCookieHeader: string | null,
 ): Promise<RowOutcome> {
   const converter = String(row.converter_link ?? "").trim();
   if (!converter) {
@@ -35,7 +36,12 @@ async function refreshOneMlRow(
   }
 
   const storedPage = String(row.product_page_url ?? "").trim();
-  const meta = await fetchMlProductMetaForStoredListItem(converter, storedPage || null, accessToken);
+  const meta = await fetchMlProductMetaForStoredListItem(
+    converter,
+    storedPage || null,
+    accessToken,
+    mlCookieHeader,
+  );
   if (!meta) {
     return {
       updated: false,
@@ -85,22 +91,12 @@ export async function POST(req: Request) {
     } = await supabase.auth.getUser();
     if (!user) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
 
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("mercadolivre_client_id, mercadolivre_client_secret")
-      .eq("id", user.id)
-      .single();
-
-    const cid =
-      (profile as { mercadolivre_client_id?: string } | null)?.mercadolivre_client_id?.trim() ?? "";
-    const csec =
-      (profile as { mercadolivre_client_secret?: string } | null)?.mercadolivre_client_secret?.trim() ?? "";
-    let accessToken: string | null = null;
-    if (cid && csec) {
-      accessToken = await tryFetchMlClientCredentialsToken(cid, csec);
-    }
-
     const body = await req.json().catch(() => ({}));
+    const mlCookieHeader =
+      parseMlExtensionSessionToCookieHeader(
+        String(body?.mlSessionToken ?? body?.ml_session_token ?? "").trim(),
+      ) ?? null;
+
     const itemId = String(body?.itemId ?? body?.item_id ?? "").trim();
     const listaId = String(body?.listaId ?? body?.lista_id ?? "").trim();
     const rawItemIds = body?.itemIds ?? body?.item_ids;
@@ -170,7 +166,7 @@ export async function POST(req: Request) {
     for (let i = 0; i < rows.length; i += REFRESH_CONCURRENCY) {
       const batch = rows.slice(i, i + REFRESH_CONCURRENCY);
       const outcomes = await Promise.all(
-        batch.map((row) => refreshOneMlRow(supabase, user.id, row, accessToken)),
+        batch.map((row) => refreshOneMlRow(supabase, user.id, row, null, mlCookieHeader)),
       );
       for (const o of outcomes) {
         if (o.updated) updated += 1;
