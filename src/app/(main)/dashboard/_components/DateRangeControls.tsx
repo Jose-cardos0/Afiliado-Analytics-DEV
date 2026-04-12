@@ -44,6 +44,9 @@ export default function DateRangeControls({
     }
   }
 
+  const dateInputClass =
+    "relative z-0 min-w-[10.75rem] rounded-md border border-dark-border bg-dark-bg py-2 pl-3 pr-9 text-text-primary text-sm focus:border-shopee-orange focus:outline-none focus:ring-1 focus:ring-shopee-orange disabled:opacity-40 disabled:cursor-not-allowed";
+
   return (
     <div className="flex flex-wrap items-center gap-3 text-sm">
       <div className="flex items-center gap-2 text-text-secondary">
@@ -51,44 +54,42 @@ export default function DateRangeControls({
         <span>Período:</span>
       </div>
 
-      {/* Campo inicial — mostra TODAS as datas disponíveis (minDate..maxDate) */}
-      <input
-        type="date"
-        value={from}
-        min={minDate}
-        max={maxDate}
-        onChange={(e) => handleChangeFrom(e.target.value)}
-        disabled={disabled}
-        className="date-input rounded-md border border-dark-border bg-dark-bg px-3 py-2 text-text-primary text-sm focus:border-shopee-orange focus:outline-none focus:ring-1 focus:ring-shopee-orange disabled:opacity-40 disabled:cursor-not-allowed"
-      />
+      {/* Campo inicial — ícone branco (Lucide); WebKit: indicador nativo invisível por cima para abrir o picker */}
+      <div className="commissions-date-picker-wrap relative inline-flex shrink-0 items-center">
+        <input
+          type="date"
+          value={from}
+          min={minDate}
+          max={maxDate}
+          onChange={(e) => handleChangeFrom(e.target.value)}
+          disabled={disabled}
+          className={dateInputClass}
+        />
+        <CalendarDays
+          className="pointer-events-none absolute right-2.5 top-1/2 z-0 h-4 w-4 -translate-y-1/2 text-white"
+          aria-hidden
+        />
+      </div>
 
       <span className="text-text-secondary">até</span>
 
-      {/* Campo final — mostra TODAS as datas disponíveis (minDate..maxDate) */}
-      <input
-        type="date"
-        value={to}
-        min={minDate}
-        max={maxDate}
-        onChange={(e) => handleChangeTo(e.target.value)}
-        disabled={disabled}
-        className="date-input rounded-md border border-dark-border bg-dark-bg px-3 py-2 text-text-primary text-sm focus:border-shopee-orange focus:outline-none focus:ring-1 focus:ring-shopee-orange disabled:opacity-40 disabled:cursor-not-allowed"
-      />
+      <div className="commissions-date-picker-wrap relative inline-flex shrink-0 items-center">
+        <input
+          type="date"
+          value={to}
+          min={minDate}
+          max={maxDate}
+          onChange={(e) => handleChangeTo(e.target.value)}
+          disabled={disabled}
+          className={dateInputClass}
+        />
+        <CalendarDays
+          className="pointer-events-none absolute right-2.5 top-1/2 z-0 h-4 w-4 -translate-y-1/2 text-white"
+          aria-hidden
+        />
+      </div>
 
       {actions ? <div className="flex items-center gap-2">{actions}</div> : null}
-
-      <style jsx>{`
-        /* Chrome/Edge/Safari: dá para “recolorir” só via filter no ícone nativo */
-        .date-input::-webkit-calendar-picker-indicator {
-          opacity: 0.9;
-          cursor: pointer;
-          filter: invert(1) brightness(1.1);
-        }
-
-        .date-input:disabled::-webkit-calendar-picker-indicator {
-          opacity: 0.4;
-        }
-      `}</style>
     </div>
   );
 }
