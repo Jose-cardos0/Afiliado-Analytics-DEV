@@ -6,11 +6,13 @@ import Faq from "../components/home/Faq";
 import Pricing from "../components/home/Pricing";
 import FeaturesSection from "../components/home/Features";
 import Mockup from "../components/home/Mockup";
-import { Play } from "lucide-react";
+import { Download } from "lucide-react";
 import { motion } from "framer-motion"; // 📦 Importando o Framer Motion
 
 import Link from "next/link";
 import Image from "next/image";
+import PwaInstallHintModal from "@/app/components/PwaInstallHintModal";
+import { runPwaInstallFlow } from "@/lib/pwa-install-flow";
 
 const integrations = [
   "Shopee",
@@ -21,6 +23,7 @@ const integrations = [
 export default function HomePage() {
   const [showWhatsApp, setShowWhatsApp] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
+  const [installHintFab, setInstallHintFab] = useState<"standalone" | "browser" | null>(null);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
   const vturbContainerRef = useRef<HTMLDivElement | null>(null);
 
@@ -255,57 +258,79 @@ export default function HomePage() {
       <Pricing />
       <Faq />
 
-      {/* ══════ BOTÃO WHATSAPP ══════ */}
+      {/* ══════ BAIXAR APP + WHATSAPP (flutuantes) ══════ */}
       {showWhatsApp && (
-        <div className="fixed bottom-6 right-6 z-50">
-          <a
-            href="https://wa.me/5579999144028"
-            target="_blank"
-            rel="noopener noreferrer"
-            aria-label="Fale conosco no WhatsApp"
-            onMouseEnter={() => setIsExpanded(true)}
-            onMouseLeave={() => setIsExpanded(false)}
-            onFocus={() => setIsExpanded(true)}
-            onBlur={() => setIsExpanded(false)}
-            className={`
-              relative flex h-16 items-center overflow-hidden rounded-full bg-gradient-to-br from-[#25D366] to-[#128C7E] text-white transition-all duration-300 ease-out hover:scale-105 active:scale-95 focus:outline-none focus:ring-4 focus:ring-[#25D366]/50
-              ${prefersReducedMotion ? "" : "animate-fade-in-up"}
-              ${isExpanded ? "max-w-[230px] shadow-[0_12px_28px_rgba(37,211,102,0.4)]" : "max-w-[64px] shadow-[0_8px_24px_rgba(37,211,102,0.3)]"}
-            `}
-          >
-            <div className="flex h-16 w-16 shrink-0 items-center justify-center">
-              <Image
-                src="/iconewhatsapp.svg"
-                alt="WhatsApp"
-                width={32}
-                height={32}
-                className={`transition-transform duration-300 ${
-                  isExpanded ? "scale-100" : "scale-110"
-                }`}
-                unoptimized
-              />
-            </div>
-
-            <span
-              className={`whitespace-nowrap pr-5 text-sm font-semibold transition-all duration-300 ease-out ${
-                isExpanded ? "translate-x-0 opacity-100" : "pointer-events-none -translate-x-2 opacity-0"
-              }`}
+        <>
+          <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3">
+            <button
+              type="button"
+              onClick={async () => {
+                const result = await runPwaInstallFlow();
+                if (result === "standalone") setInstallHintFab("standalone");
+                else if (result === "browser") setInstallHintFab("browser");
+              }}
+              aria-label="Baixar o app Afiliado Analytics"
+              className={[
+                "flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#e24c30] to-[#ff6b35] text-white shadow-[0_8px_24px_rgba(226,76,48,0.35)] transition-all duration-300 ease-out hover:scale-105 active:scale-95 focus:outline-none focus:ring-4 focus:ring-[#e24c30]/45",
+                prefersReducedMotion ? "" : "animate-fade-in-up",
+              ].join(" ")}
             >
-              Fale conosco
-            </span>
-          </a>
+              <Download className="h-7 w-7" strokeWidth={2.25} aria-hidden />
+            </button>
 
-          <div
-            className={`absolute bottom-full right-0 mb-2 whitespace-nowrap rounded-lg bg-gray-800 px-4 py-2 text-sm font-medium text-white shadow-xl transition-all duration-300 ease-out ${
-              isExpanded && !prefersReducedMotion ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-2 opacity-0"
-            }`}
-          >
             <div className="relative">
-              Precisa de ajuda?
-              <div className="absolute -bottom-2 right-4 h-0 w-0 border-l-[6px] border-r-[6px] border-t-[8px] border-l-transparent border-r-transparent border-t-gray-800" />
+              <a
+                href="https://wa.me/5579999144028"
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Fale conosco no WhatsApp"
+                onMouseEnter={() => setIsExpanded(true)}
+                onMouseLeave={() => setIsExpanded(false)}
+                onFocus={() => setIsExpanded(true)}
+                onBlur={() => setIsExpanded(false)}
+                className={`
+                  relative flex h-16 items-center overflow-hidden rounded-full bg-gradient-to-br from-[#25D366] to-[#128C7E] text-white transition-all duration-300 ease-out hover:scale-105 active:scale-95 focus:outline-none focus:ring-4 focus:ring-[#25D366]/50
+                  ${prefersReducedMotion ? "" : "animate-fade-in-up"}
+                  ${isExpanded ? "max-w-[230px] shadow-[0_12px_28px_rgba(37,211,102,0.4)]" : "max-w-[64px] shadow-[0_8px_24px_rgba(37,211,102,0.3)]"}
+                `}
+              >
+                <div className="flex h-16 w-16 shrink-0 items-center justify-center">
+                  <Image
+                    src="/iconewhatsapp.svg"
+                    alt="WhatsApp"
+                    width={32}
+                    height={32}
+                    className={`transition-transform duration-300 ${
+                      isExpanded ? "scale-100" : "scale-110"
+                    }`}
+                    unoptimized
+                  />
+                </div>
+
+                <span
+                  className={`whitespace-nowrap pr-5 text-sm font-semibold transition-all duration-300 ease-out ${
+                    isExpanded ? "translate-x-0 opacity-100" : "pointer-events-none -translate-x-2 opacity-0"
+                  }`}
+                >
+                  Fale conosco
+                </span>
+              </a>
+
+              <div
+                className={`absolute bottom-full right-0 mb-2 whitespace-nowrap rounded-lg bg-gray-800 px-4 py-2 text-sm font-medium text-white shadow-xl transition-all duration-300 ease-out ${
+                  isExpanded && !prefersReducedMotion ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-2 opacity-0"
+                }`}
+              >
+                <div className="relative">
+                  Precisa de ajuda?
+                  <div className="absolute -bottom-2 right-4 h-0 w-0 border-l-[6px] border-r-[6px] border-t-[8px] border-l-transparent border-r-transparent border-t-gray-800" />
+                </div>
+              </div>
             </div>
           </div>
-        </div>
+
+          <PwaInstallHintModal hint={installHintFab} onClose={() => setInstallHintFab(null)} />
+        </>
       )}
 
       {/* ══════ KEYFRAMES CUSTOMIZADOS ══════ */}

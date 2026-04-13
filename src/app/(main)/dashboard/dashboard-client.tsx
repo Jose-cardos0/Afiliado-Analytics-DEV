@@ -196,10 +196,25 @@ function normalizeStatus(raw: unknown): CanonicalStatus {
 function isEarningStatus(status: CanonicalStatus) {
   return status === "completed" || status === "pending";
 }
+
+// ✅ Mesma lógica do buildCommissionAnalytics para classificar atribuição
+function classifyAttribution(raw: unknown): "direct" | "indirect" | "unknown" {
+  const s = stripDiacritics(safeString(raw).toLowerCase().trim());
+  if (!s) return "unknown";
+  if (s.includes("loja diferente") || s.includes("indiret") || s.includes("produto diferente") || s.includes("item diferente"))
+    return "indirect";
+  if (s.includes("mesma loja") || s.includes("diret"))
+    return "direct";
+  return "unknown";
+}
 // ─────────────────────────────────────────────────────────────────────────────
 
 type ChannelRow = ChannelData & { totalValue: number };
-type SubIdRow = SubIdData & { totalValue: number };
+type SubIdRow = SubIdData & {
+  totalValue: number;
+  directOrders: number;
+  indirectOrders: number;
+};
 
 export default function CommissionsPage() {
   const context = useSupabase();
@@ -232,10 +247,8 @@ export default function CommissionsPage() {
   const [isPending, startTransition] = useTransition();
   const [activeTab, setActiveTab] = useState(0);
 
-  // ✅ NOVO (estado do investimento, iniciando em 0)
   const [investimento, setInvestimento] = useState<number>(0);
 
-  // ✅ NOVO (formatação do input em moeda)
   function formatCurrencyInputPtBR(raw: string) {
     const digits = String(raw ?? "").replace(/\D/g, "");
     const value = digits ? Number(digits) / 100 : 0;
@@ -245,14 +258,10 @@ export default function CommissionsPage() {
     })}`;
   }
 
-  // ✅ NOVO (sincroniza investimento numérico com o estado persistido adInvestment)
   useEffect(() => {
     setInvestimento(parseMoneyPt(adInvestment));
   }, [adInvestment]);
 
-  // ✅ AJUSTE PRINCIPAL:
-  // - Se tem API, só faz fetch automático (ontem→ontem) quando NÃO houver dados salvos.
-  // - Se já existe rawData salvo, NÃO limpa nem refaz fetch ao voltar para a aba.
   useEffect(() => {
     if (isSourceLoading || isDataLoading) return;
 
@@ -274,16 +283,13 @@ export default function CommissionsPage() {
         const hasSavedData = (rawData?.length ?? 0) > 0;
         const isCsvModeWithFile = source === "csv" && !!fileName && hasSavedData;
 
-        // Se usuário está usando CSV (com arquivo), respeita e não troca pra API.
         if (isCsvModeWithFile) return;
 
-        // Se já tem dados salvos e não está em modo CSV, não refaz busca automática.
         if (hasSavedData) {
-          if (source !== "csv") setSource("api"); // só garante o modo
+          if (source !== "csv") setSource("api");
           return;
         }
 
-        // Sem dados salvos => busca período recente (últimos 7 dias) para maior chance de ter vendas
         const end = getYesterday();
         const start = (() => {
           const d = new Date(end + "T12:00:00");
@@ -319,9 +325,7 @@ export default function CommissionsPage() {
     setShopeeError(null);
     try {
       const res = await fetch(
-        `/api/shopee/conversion-report?start=${encodeURIComponent(from)}&end=${encodeURIComponent(
-          to
-        )}`
+        `/api/shopee/conversion-report?start=${encodeURIComponent(from)}&end=${encodeURIComponent(to)}`
       );
       const json = await res.json();
       if (!res.ok) throw new Error(json?.error ?? "Erro ao buscar dados na Shopee");
@@ -382,7 +386,6 @@ export default function CommissionsPage() {
 
       const channel = safeString(r["Canal"]).trim() || "N/A";
       const orderId = safeString(r["ID do pedido"]).trim();
-
       const commission = parseMoneyAny(r["Comissão líquida do afiliado(R$)"]);
       const totalValue = parseMoneyAny(r["Valor de Compra(R$)"]);
 
@@ -403,8 +406,18 @@ export default function CommissionsPage() {
       .sort((a, b) => b.commission - a.commission) as ChannelRow[];
   }, [filteredAppliedRows]);
 
+  // ✅ CORRIGIDO: usa "Tipo de atribuição" com a mesma lógica do buildCommissionAnalytics
   const subIdTableData = useMemo<SubIdRow[]>(() => {
-    const agg = new Map<string, { commission: number; totalValue: number; orderIds: Set<string> }>();
+    const agg = new Map<
+      string,
+      {
+        commission: number;
+        totalValue: number;
+        orderIds: Set<string>;
+        directOrderIds: Set<string>;
+        indirectOrderIds: Set<string>;
+      }
+    >();
 
     for (const r of filteredAppliedRows) {
       const status = normalizeStatus(r["Status do Pedido"]);
@@ -416,14 +429,29 @@ export default function CommissionsPage() {
         safeString(obj["Sub_id"]).trim() || safeString(obj["Sub_id1"]).trim() || "Sem Sub ID";
 
       const orderId = safeString(r["ID do pedido"]).trim();
-
       const commission = parseMoneyAny(r["Comissão líquida do afiliado(R$)"]);
       const totalValue = parseMoneyAny(r["Valor de Compra(R$)"]);
 
-      const current = agg.get(subId) ?? { commission: 0, totalValue: 0, orderIds: new Set<string>() };
+      // ✅ Lê "Tipo de atribuição" — mesmo campo usado pelo buildCommissionAnalytics
+      const attribution = classifyAttribution(r["Tipo de atribuição"]);
+
+      const current = agg.get(subId) ?? {
+        commission: 0,
+        totalValue: 0,
+        orderIds: new Set<string>(),
+        directOrderIds: new Set<string>(),
+        indirectOrderIds: new Set<string>(),
+      };
+
       current.commission += commission;
       current.totalValue += totalValue;
-      if (orderId) current.orderIds.add(orderId);
+
+      if (orderId) {
+        current.orderIds.add(orderId);
+        if (attribution === "direct") current.directOrderIds.add(orderId);
+        else if (attribution === "indirect") current.indirectOrderIds.add(orderId);
+      }
+
       agg.set(subId, current);
     }
 
@@ -433,6 +461,8 @@ export default function CommissionsPage() {
         commission: v.commission,
         totalValue: v.totalValue,
         orders: v.orderIds.size,
+        directOrders: v.directOrderIds.size,
+        indirectOrders: v.indirectOrderIds.size,
       }))
       .sort((a, b) => b.commission - a.commission) as SubIdRow[];
   }, [filteredAppliedRows]);
@@ -447,7 +477,6 @@ export default function CommissionsPage() {
         : 0
       : 0;
 
-  // ✅ NOVO (cálculos pedidos para a nova linha, baseados no estado investimento + comissão líquida + pedidos únicos)
   const pedidosUnicos = analytics.completedOrders + analytics.pendingOrders;
   const lucroPerf = analytics.totalCommission - investimento;
   const roiPerf = investimento > 0 ? (lucroPerf / investimento) * 100 : 0;
@@ -638,6 +667,8 @@ export default function CommissionsPage() {
               columns={[
                 { header: "Sub_id", accessor: "subId" },
                 { header: "Pedidos", accessor: "orders" },
+                { header: "P. Diretos", accessor: "directOrders" },
+                { header: "P. Indiretos", accessor: "indirectOrders" },
                 {
                   header: "Valor Total (R$)",
                   accessor: "totalValue",
@@ -692,7 +723,6 @@ export default function CommissionsPage() {
       ? `${formatDateBR(dateFromApplied)} a ${formatDateBR(dateToApplied)}`
       : null;
 
-  // ✅ NOVO: linha só aparece se usuário subiu CSV ou se está usando API
   const showPerformanceRow = (source === "csv" && !!fileName) || isApiMode;
 
   return (
@@ -702,7 +732,6 @@ export default function CommissionsPage() {
         <h1 className="text-3xl font-bold text-text-primary font-heading">Análise de Comissões</h1>
 
         <div className="flex items-center gap-4 sm:gap-6 flex-wrap justify-end">
-          {/* Controles de período — apenas modo API (agora na mesma linha do título) */}
           {showDateControls && (
             <DateRangeControls
               from={dateFromDraft}
@@ -830,60 +859,56 @@ export default function CommissionsPage() {
         </div>
       </div>
 
-      {/* ✅ NOVO: Linha de performance (abaixo dos cards e acima das abas) */}
+      {/* Linha de performance */}
       {showPerformanceRow && (
-  <div className="mt-6 border-dark-border rounded-lg px-4 py-0">
-    <div className="flex flex-col lg:flex-row lg:items-center gap-4 lg:gap-8">
-      {/* Investimento */}
-      <div className="flex items-center gap-2">
-        <TrendingUp className="h-4 w-4 text-shopee-orange flex-shrink-0" />
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-sm text-text-secondary font-semibold">
-            Investimento (opcional):
-          </span>
-          <input
-            value={adInvestment || "R$ 0,00"}
-            onChange={(e) => {
-              const formatted = formatCurrencyInputPtBR(e.target.value);
-              setAdInvestment(formatted);
-              setInvestimento(parseMoneyPt(formatted));
-            }}
-            className="w-[180px] rounded-md border border-blue-900/70 bg-dark-bg py-2 px-3 text-sm text-text-primary placeholder-text-secondary/60 focus:border-blue-900 focus:outline-none focus:ring-1 focus:ring-blue-900/70 transition-colors"
-            inputMode="numeric"
-          />
+        <div className="mt-6 border-dark-border rounded-lg px-4 py-0">
+          <div className="flex flex-col lg:flex-row lg:items-center gap-4 lg:gap-8">
+            <div className="flex items-center gap-2">
+              <TrendingUp className="h-4 w-4 text-shopee-orange flex-shrink-0" />
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-sm text-text-secondary font-semibold">
+                  Investimento (opcional):
+                </span>
+                <input
+                  value={adInvestment || "R$ 0,00"}
+                  onChange={(e) => {
+                    const formatted = formatCurrencyInputPtBR(e.target.value);
+                    setAdInvestment(formatted);
+                    setInvestimento(parseMoneyPt(formatted));
+                  }}
+                  className="w-[180px] rounded-md border border-blue-900/70 bg-dark-bg py-2 px-3 text-sm text-text-primary placeholder-text-secondary/60 focus:border-blue-900 focus:outline-none focus:ring-1 focus:ring-blue-900/70 transition-colors"
+                  inputMode="numeric"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Percent className="h-4 w-4 text-emerald-400 flex-shrink-0" />
+              <p className="text-sm text-text-secondary">
+                ROI:{" "}
+                <span className="font-semibold text-text-primary">
+                  {roiPerf.toLocaleString("pt-BR", {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })}
+                  %
+                </span>{" "}
+                <span className="text-text-secondary">({formatCurrency(lucroPerf)})</span>
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <CreditCard className="h-4 w-4 text-sky-400 flex-shrink-0" />
+              <p className="text-sm text-text-secondary">
+                CPA:{" "}
+                <span className="font-semibold text-text-primary">
+                  {formatCurrency(cpaPerf)}
+                </span>
+              </p>
+            </div>
+          </div>
         </div>
-      </div>
-
-      {/* ROI */}
-      <div className="flex items-center gap-2">
-        <Percent className="h-4 w-4 text-emerald-400 flex-shrink-0" />
-        <p className="text-sm text-text-secondary">
-          ROI:{" "}
-          <span className="font-semibold text-text-primary">
-            {roiPerf.toLocaleString("pt-BR", {
-              minimumFractionDigits: 2,
-              maximumFractionDigits: 2,
-            })}
-            %
-          </span>{" "}
-          <span className="text-text-secondary">({formatCurrency(lucroPerf)})</span>
-        </p>
-      </div>
-
-      {/* CPA */}
-      <div className="flex items-center gap-2">
-        <CreditCard className="h-4 w-4 text-sky-400 flex-shrink-0" />
-        <p className="text-sm text-text-secondary">
-          CPA:{" "}
-          <span className="font-semibold text-text-primary">
-            {formatCurrency(cpaPerf)}
-          </span>
-        </p>
-      </div>
-    </div>
-  </div>
-)}
-
+      )}
 
       {hasData ? (
         <div className="mt-4">
@@ -937,7 +962,6 @@ export default function CommissionsPage() {
               const file = files[0];
               if (!file) return;
 
-              // reutiliza seu handler existente, sem mexer no resto do código
               handleFileChange({ target: { files } } as unknown as React.ChangeEvent<HTMLInputElement>);
             }}
           />
