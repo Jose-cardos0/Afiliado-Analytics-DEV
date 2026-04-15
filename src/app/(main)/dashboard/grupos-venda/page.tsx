@@ -7,7 +7,7 @@ import {
   MessageCircle, Loader2, Trash2, AlertCircle, Search,
   Clock, PlusCircle, Info, Zap, Tag, RefreshCw,
   Play, Pause, Hash, Layers, X, ChevronLeft, ChevronRight, ChevronDown,
-  List as ListIcon, User, Settings2, Smartphone, CheckCheck,
+  List as ListIcon, User, Settings2, Smartphone, CheckCheck, Send,
 } from "lucide-react";
 import BuscarGruposModal, {
   type BuscarGruposPayload,
@@ -1396,6 +1396,8 @@ export default function GruposVendaPage() {
                               ? "Lista ML"
                               : "Lista Shopee"}{" "}
                         · {horaInicio && horaFim ? `${horaInicio}–${horaFim}` : "Definir janela"}
+                        {" "}
+                        · A cada 10 min
                       </p>
                     </div>
                     <ChevronDown
@@ -1435,6 +1437,12 @@ export default function GruposVendaPage() {
                         warn: false,
                       },
                       { icon: <Clock className="w-3.5 h-3.5 text-[#e24c30] shrink-0" />, label: "Horário", value: horaInicio && horaFim ? `${horaInicio} – ${horaFim} (máx. 14 h)` : "Defina início e fim da janela", warn: false },
+                      {
+                        icon: <Send className="w-3.5 h-3.5 text-[#e24c30] shrink-0" />,
+                        label: "Envios",
+                        value: "A cada 10 minutos",
+                        warn: false,
+                      },
                     ].map(({ icon, label, value, warn }) => (
                       <div key={label} className="flex items-start gap-3 py-2 border-b border-[#2c2c32] last:border-0 min-w-0">
                         <div className="w-6 h-6 rounded-lg bg-[#1c1c1f] border border-[#2c2c32] flex items-center justify-center shrink-0">{icon}</div>

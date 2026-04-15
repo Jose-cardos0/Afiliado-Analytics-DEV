@@ -27,9 +27,9 @@ const WHITE = "#ffffff";
 const JARDIM_BG_IMAGE = "/campflor.png";
 
 const BULLETS = [
-  "Achadinhos fofos e cupons que parecem presente",
-  "Sem pressa feia: você entra quando quiser",
-  "Tudo num clima leve — como conversar com amiga",
+  "Achadinhos fofos e cupons que parecem presente!",
+  "Entre rápido e sem burocracia!",
+  "Tudo num clima leve — como conversar com uma amiga!",
 ] as const;
 
 /** Flor estilizada (SVG artístico). */
