@@ -28,7 +28,7 @@ export async function GET() {
 
     const { data: rows, error } = await supabase
       .from("espelhamento_config")
-      .select("id, instance_id, grupo_origem_jid, grupo_destino_jid, grupo_origem_nome, grupo_destino_nome, sub_id_1, sub_id_2, sub_id_3, ativo, created_at, updated_at")
+      .select("id, instance_id, instance_name, grupo_origem_jid, grupo_destino_jid, grupo_origem_nome, grupo_destino_nome, sub_id_1, sub_id_2, sub_id_3, ativo, created_at, updated_at")
       .eq("user_id", user.id)
       .order("updated_at", { ascending: false });
 
@@ -50,7 +50,7 @@ export async function GET() {
     const data = (rows ?? []).map((r: Record<string, unknown>) => ({
       id: r.id,
       instanceId: r.instance_id,
-      nomeInstancia: names[r.instance_id as string] ?? "—",
+      nomeInstancia: (r.instance_name as string) || names[r.instance_id as string] || "—",
       grupoOrigemJid: r.grupo_origem_jid,
       grupoDestinoJid: r.grupo_destino_jid,
       grupoOrigemNome: r.grupo_origem_nome,
@@ -100,11 +100,12 @@ export async function POST(req: Request) {
 
     const { data: inst, error: instErr } = await supabase
       .from("evolution_instances")
-      .select("id")
+      .select("id, nome_instancia")
       .eq("id", instanceId)
       .eq("user_id", user.id)
       .maybeSingle();
     if (instErr || !inst) return NextResponse.json({ error: "Instância não encontrada." }, { status: 404 });
+    const instanceName = (inst as { nome_instancia?: string }).nome_instancia ?? null;
 
     const block = await assertEspelhamentoDestinationNotBlockedByContinuo(supabase, user.id, grupoDestinoJid);
     if (!block.ok) return NextResponse.json({ error: block.message }, { status: 403 });
@@ -124,6 +125,7 @@ export async function POST(req: Request) {
       .insert({
         user_id: user.id,
         instance_id: instanceId,
+        instance_name: instanceName,
         grupo_origem_jid: grupoOrigemJid,
         grupo_destino_jid: grupoDestinoJid,
         grupo_origem_nome: grupoOrigemNome,

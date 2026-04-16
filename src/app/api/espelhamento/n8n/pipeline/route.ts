@@ -101,6 +101,9 @@ export async function POST(req: NextRequest) {
     const grupoOrigemNorm = normalizeGroupJid(grupoOrigemJidRaw);
     const supabase = getServiceSupabase();
 
+    // ── Short-circuit: 1 única query leve para saber se há config ativa ──
+    // Junta instância + configs numa query só. Se não houver nenhuma config
+    // ativa para este grupo de origem, retorna instantaneamente sem gravar nada.
     let instQuery = supabase
       .from("evolution_instances")
       .select("id, user_id, nome_instancia, hash")
@@ -147,6 +150,18 @@ export async function POST(req: NextRequest) {
     }[];
     const config = matchedConfigs[0];
 
+    // ── Nenhuma config ativa → sai IMEDIATAMENTE, sem gravar no banco ──
+    if (!config) {
+      return NextResponse.json({ action: "skip", reason: "no_active_config_for_group" }, { status: 200 });
+    }
+
+    // ── Sem links Shopee → sai rápido, sem gravar ──
+    const urls = extractShopeeUrlsFromText(textoBruto);
+    if (urls.length === 0) {
+      return NextResponse.json({ action: "skip", reason: "no_shopee_links" }, { status: 200 });
+    }
+
+    // ── Daqui em diante só roda se há config ativa E links Shopee ──
     const now = new Date().toISOString();
 
     const insertPayload = async (partial: Record<string, unknown>) => {
@@ -156,33 +171,6 @@ export async function POST(req: NextRequest) {
         ...partial,
       });
     };
-
-    if (!config) {
-      await insertPayload({
-        config_id: null,
-        id_mensagem_externa: idMensagem,
-        instancia_nome: instanceName,
-        grupo_origem_jid: grupoOrigemNorm,
-        texto_entrada: textoBruto,
-        status: "ignorado",
-        erro_detalhe: "no_active_config_for_group",
-      });
-      return NextResponse.json({ action: "skip", reason: "no_active_config_for_group" }, { status: 200 });
-    }
-
-    const urls = extractShopeeUrlsFromText(textoBruto);
-    if (urls.length === 0) {
-      await insertPayload({
-        config_id: config.id,
-        id_mensagem_externa: idMensagem,
-        instancia_nome: instanceName,
-        grupo_origem_jid: grupoOrigemNorm,
-        texto_entrada: textoBruto,
-        status: "ignorado",
-        erro_detalhe: "no_shopee_links",
-      });
-      return NextResponse.json({ action: "skip", reason: "no_shopee_links" }, { status: 200 });
-    }
 
     /** Credenciais do afiliado (sua conta): generateShortLink só gera link com sua comissão. */
     const { data: profile } = await supabase
