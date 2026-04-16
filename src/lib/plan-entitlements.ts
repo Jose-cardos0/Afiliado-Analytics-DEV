@@ -152,8 +152,8 @@ const STAFF_LIMITS = {
   ati: true,
   criarCampanhaMeta: true,
   geradorCriativos: true,
-  videoExportsPerDay: 10,
-  voicegenerate: 10,
+  videoExportsPerDay: 2,
+  voicegenerate: 2,
   espelhamentogrupos: true,
   especialistagenerate: true,
 } as const satisfies PlanEntitlements;

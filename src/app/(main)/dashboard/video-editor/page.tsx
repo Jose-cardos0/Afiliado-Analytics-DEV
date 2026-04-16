@@ -26,6 +26,9 @@ import { compressImageFileToMaxBytes } from "../../../../lib/compress-image-clie
 import { compressVideoFileToMaxBytes } from "../../../../lib/compress-video-client";
 import { RENDER_PUBLISH_BLOB_MAX_BYTES } from "../../../../lib/remotion/render-limits";
 import ProFeatureGate from "../ProFeatureGate";
+import { usePlanEntitlements } from "../PlanEntitlementsContext";
+import AfiliadoCoinsHeader from "@/app/components/afiliado/AfiliadoCoinsHeader";
+import { AFILIADO_COINS_VIDEO_EDITOR_COST } from "@/lib/afiliado-coins";
 
 type Voice = { voice_id: string; name: string; preview_url: string | null; labels: Record<string, string> };
 type MusicTrack = { id: string; name: string; artist: string; duration: number; audioUrl: string; downloadUrl: string; coverUrl: string };
@@ -53,7 +56,7 @@ const selectCls = inputCls;
 const btnPrimary = "inline-flex items-center justify-center gap-2 rounded-xl bg-shopee-orange px-5 py-2.5 text-sm font-semibold text-white hover:bg-shopee-orange/90 active:scale-[0.98] disabled:opacity-40 transition-all shadow-[0_4px_16px_rgba(238,77,45,0.3)]";
 const btnSecondary = "inline-flex items-center gap-1.5 rounded-xl border border-dark-border px-4 py-2.5 text-sm font-medium text-text-secondary hover:bg-white/5 hover:border-dark-border/80 active:scale-[0.98] transition-all";
 const DAILY_LIMIT_TOOLTIP =
-  "Prezado usuário, seu limite diário do Gerador de Criativos foi atingido, para liberar mais limite diário falar com nosso suporte. Lembre-se: no momento (caso você seja Pro) só é possível gerar dois áudios + legenda e exportar dois vídeos completos no gerador. Agradecemos sua compreensão!";
+  `Prezado usuário, seu limite diário do Gerador de Criativos foi atingido. Lembre-se: no momento (caso você seja Pro) só é possível gerar dois áudios + legenda e exportar dois vídeos completos por dia. Mas não se preocupe — você ainda pode exportar vídeos usando Afiliado Coins (${AFILIADO_COINS_VIDEO_EDITOR_COST} coins por vídeo). Agradecemos sua compreensão!`;
 
 // ─── Tooltip (estilo do app: portal, bg #111, ícone Info) ─────────────────────
 function Tooltip({ text, wide }: { text: string; wide?: boolean }) {
@@ -179,6 +182,13 @@ export default function VideoEditorPageWrapper() {
 }
 
 function VideoEditorPageInner() {
+  const { usage, loading: planCtxLoading, refresh: refreshPlanUsage } =
+    usePlanEntitlements();
+  const coinsBalance =
+    typeof usage?.afiliadoCoins === "number" ? usage.afiliadoCoins : null;
+  const canPayWithCoins =
+    coinsBalance !== null && coinsBalance >= AFILIADO_COINS_VIDEO_EDITOR_COST;
+
   const [step, setStep] = useState(1);
 
   // ── Step 1: Media ──
@@ -298,7 +308,7 @@ function VideoEditorPageInner() {
   const voiceFingerprint = useMemo(() => `${voiceId}|${copyText}`, [voiceId, copyText]);
   const canRunFull =
     voicePreviewFingerprint === voiceFingerprint && voicePreviewUrl !== null;
-  const editorDailyHardBlocked = isVideoDailyLimitReached;
+  const editorDailyHardBlocked = isVideoDailyLimitReached && !canPayWithCoins;
   const voiceFullLimitBlocked =
     canRunFull && voiceFullUsedToday >= voiceFullLimitPerDay;
   const blockedByDailyLimit = voiceFullLimitBlocked || isVoiceDailyLimitReached || editorDailyHardBlocked;
@@ -823,10 +833,16 @@ function VideoEditorPageInner() {
             <p className="text-[11px] text-text-secondary/60">Shopee → IA Copy + Voz → Estilo → MP4</p>
             </div>
         </div>
-        {/* Progress */}
-        <div className="hidden md:flex items-center gap-1 text-[11px] text-text-secondary/50">
-          <span className="font-semibold text-shopee-orange">{step}</span>
-          <span>/4 etapas</span>
+        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+          <AfiliadoCoinsHeader
+            balance={coinsBalance}
+            loading={planCtxLoading}
+            onRefresh={refreshPlanUsage}
+          />
+          <div className="hidden md:flex items-center gap-1 text-[11px] text-text-secondary/50">
+            <span className="font-semibold text-shopee-orange">{step}</span>
+            <span>/4 etapas</span>
+          </div>
         </div>
       </div>
 
@@ -1898,51 +1914,110 @@ function VideoEditorPageInner() {
             {/* Export card */}
             <div className="bg-dark-card rounded-2xl border border-dark-border overflow-hidden">
               <div className="p-4 space-y-3">
-                <button
-                  type="button"
-                  disabled={
-                    exportPrep
-                    || remotionExport.state.status === "invoking"
-                    || selectedAssets.length === 0
-                    || isVideoDailyLimitReached
-                  }
-                  onClick={() => {
-                    void (async () => {
-                      setError(null);
-                      try {
-                        setExportPrep(true);
-                        const resolved = await resolveInputPropsForRender(compositionProps);
-                        setExportPrep(false);
-                        await remotionExport.startRender(resolved);
-                      } catch (e) {
-                        setExportPrep(false);
-                        const raw = e instanceof Error ? e.message : "Erro ao preparar exportação";
-                        setError(humanizeLargeRequestError(raw));
-                      }
-                    })();
-                  }}
-                  className={`w-full flex items-center justify-center gap-2 rounded-xl border py-3 text-sm font-bold transition-all ${
-                    exportPrep
-                    || remotionExport.state.status === "invoking"
-                    || selectedAssets.length === 0
-                    || isVideoDailyLimitReached
-                      ? "bg-gradient-to-r from-shopee-orange/40 to-shopee-orange/20 border-shopee-orange/30 text-shopee-orange/60 cursor-not-allowed"
-                      : "bg-gradient-to-r from-shopee-orange to-shopee-orange/90 border-shopee-orange text-white hover:opacity-95 cursor-pointer"
-                  }`}
-                >
-                  {exportPrep || remotionExport.state.status === "invoking" ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Download className="h-4 w-4" />
-                  )}
-                  {exportPrep
-                    ? "Preparando mídias..."
-                    : remotionExport.state.status === "invoking"
-                      ? "Gerando vídeo..."
-                      : isVideoDailyLimitReached
-                        ? "LIMITE DIÁRIO EXCEDIDO"
+                {/* Primary export button (within daily quota) */}
+                {!isVideoDailyLimitReached && (
+                  <button
+                    type="button"
+                    disabled={
+                      exportPrep
+                      || remotionExport.state.status === "invoking"
+                      || selectedAssets.length === 0
+                    }
+                    onClick={() => {
+                      void (async () => {
+                        setError(null);
+                        try {
+                          setExportPrep(true);
+                          const resolved = await resolveInputPropsForRender(compositionProps);
+                          setExportPrep(false);
+                          await remotionExport.startRender(resolved);
+                          void refreshPlanUsage();
+                        } catch (e) {
+                          setExportPrep(false);
+                          const raw = e instanceof Error ? e.message : "Erro ao preparar exportação";
+                          setError(humanizeLargeRequestError(raw));
+                        }
+                      })();
+                    }}
+                    className={`w-full flex items-center justify-center gap-2 rounded-xl border py-3 text-sm font-bold transition-all ${
+                      exportPrep
+                      || remotionExport.state.status === "invoking"
+                      || selectedAssets.length === 0
+                        ? "bg-gradient-to-r from-shopee-orange/40 to-shopee-orange/20 border-shopee-orange/30 text-shopee-orange/60 cursor-not-allowed"
+                        : "bg-gradient-to-r from-shopee-orange to-shopee-orange/90 border-shopee-orange text-white hover:opacity-95 cursor-pointer"
+                    }`}
+                  >
+                    {exportPrep || remotionExport.state.status === "invoking" ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Download className="h-4 w-4" />
+                    )}
+                    {exportPrep
+                      ? "Preparando mídias..."
+                      : remotionExport.state.status === "invoking"
+                        ? "Gerando vídeo..."
                         : "Exportar MP4"}
-                </button>
+                  </button>
+                )}
+
+                {/* Daily limit reached: coins fallback */}
+                {isVideoDailyLimitReached && (
+                  <div className="space-y-2">
+                    <p className="text-[10px] text-amber-400 font-semibold text-center uppercase tracking-wide">
+                      Limite diário atingido
+                    </p>
+                    <button
+                      type="button"
+                      disabled={
+                        exportPrep
+                        || remotionExport.state.status === "invoking"
+                        || selectedAssets.length === 0
+                        || !canPayWithCoins
+                      }
+                      onClick={() => {
+                        void (async () => {
+                          setError(null);
+                          try {
+                            setExportPrep(true);
+                            const resolved = await resolveInputPropsForRender(compositionProps);
+                            setExportPrep(false);
+                            await remotionExport.startRender(resolved, { useCoins: true });
+                            void refreshPlanUsage();
+                          } catch (e) {
+                            setExportPrep(false);
+                            const raw = e instanceof Error ? e.message : "Erro ao preparar exportação";
+                            setError(humanizeLargeRequestError(raw));
+                          }
+                        })();
+                      }}
+                      className={`w-full flex items-center justify-center gap-2 rounded-xl border py-3 text-sm font-bold transition-all ${
+                        exportPrep
+                        || remotionExport.state.status === "invoking"
+                        || selectedAssets.length === 0
+                        || !canPayWithCoins
+                          ? "bg-gradient-to-r from-amber-500/30 to-amber-500/10 border-amber-500/30 text-amber-400/50 cursor-not-allowed"
+                          : "bg-gradient-to-r from-amber-500 to-amber-600 border-amber-500 text-white hover:opacity-95 cursor-pointer"
+                      }`}
+                    >
+                      {exportPrep || remotionExport.state.status === "invoking" ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Zap className="h-4 w-4" />
+                      )}
+                      {exportPrep
+                        ? "Preparando mídias..."
+                        : remotionExport.state.status === "invoking"
+                          ? "Gerando vídeo..."
+                          : `Exportar com ${AFILIADO_COINS_VIDEO_EDITOR_COST} Coins`}
+                    </button>
+                    {!canPayWithCoins && (
+                      <p className="text-[10px] text-text-secondary/60 text-center leading-relaxed">
+                        Você precisa de pelo menos {AFILIADO_COINS_VIDEO_EDITOR_COST} Afiliado Coins.
+                        Clique no <strong className="text-shopee-orange">+</strong> acima para comprar.
+                      </p>
+                    )}
+                  </div>
+                )}
                 {remotionExport.state.status === "invoking" && (
                   <div className="space-y-1">
                     <p className="text-[11px] text-text-secondary/80 text-center">{remotionExport.state.phase}</p>

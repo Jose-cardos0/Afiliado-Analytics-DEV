@@ -2,6 +2,8 @@
 
 export const AFILIADO_COINS_IMAGE_COST = 30;
 export const AFILIADO_COINS_VIDEO_COST = 70;
+/** Custo em coins para gerar/exportar um vídeo no Gerador de Criativos (video-editor). */
+export const AFILIADO_COINS_VIDEO_EDITOR_COST = 40;
 /** Crédito mensal automático — Pro (calendário UTC, ver RPC `ensure_afiliado_monthly_pro_coins`). */
 export const AFILIADO_COINS_MONTHLY_PRO = 100;
 /** Staff recebe este valor por mês UTC na mesma função SQL. */

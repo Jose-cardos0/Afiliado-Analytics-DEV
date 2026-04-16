@@ -11,6 +11,8 @@ import path from "node:path";
 import { gateGeradorCriativos } from "@/lib/require-entitlements";
 import { createClient } from "../../../../../utils/supabase/server";
 import { getEntitlementsForUser, getUsageSnapshot, recordVideoExportUsage } from "@/lib/plan-server";
+import { consumeAfiliadoCoins, refundAfiliadoCoins } from "@/lib/afiliado-coins-server";
+import { AFILIADO_COINS_VIDEO_EDITOR_COST } from "@/lib/afiliado-coins";
 import { REMOTION_COMPOSITION_ID } from "../../../../../remotion/constants";
 import type { VideoInputProps } from "../../../../../remotion/types";
 import { formatUploadError } from "../../../../lib/remotion/format-upload-error";
@@ -53,16 +55,32 @@ export async function POST(req: Request) {
   const gate = await gateGeradorCriativos();
   if (!gate.allowed) return gate.response;
 
-  // Limite diário de exports
+  // Limite diário de exports (com fallback para Afiliado Coins)
   const supabase = await createClient();
   const ent = await getEntitlementsForUser(supabase, gate.userId);
+  let paidWithCoins = false;
   if (ent.videoExportsPerDay !== null) {
     const usage = await getUsageSnapshot(supabase, gate.userId);
     if (usage.videoExportsToday >= ent.videoExportsPerDay) {
-      return NextResponse.json(
-        { error: `Limite de ${ent.videoExportsPerDay} exportação(ões) por dia atingido. Tente novamente amanhã.` },
-        { status: 403 },
-      );
+      let body0: { inputProps?: VideoInputProps; useCoins?: boolean };
+      try { body0 = await req.clone().json(); } catch { body0 = {}; }
+      if (body0.useCoins) {
+        const consume = await consumeAfiliadoCoins(
+          supabase, gate.userId, AFILIADO_COINS_VIDEO_EDITOR_COST, "video_editor_export",
+        );
+        if (!consume.ok) {
+          return NextResponse.json(
+            { error: `Coins insuficientes (necessário: ${AFILIADO_COINS_VIDEO_EDITOR_COST}). Recarregue seus Afiliado Coins.` },
+            { status: 402 },
+          );
+        }
+        paidWithCoins = true;
+      } else {
+        return NextResponse.json(
+          { error: `Limite de ${ent.videoExportsPerDay} exportação(ões) por dia atingido. Use Afiliado Coins ou tente novamente amanhã.` },
+          { status: 403 },
+        );
+      }
     }
   }
 
@@ -174,6 +192,11 @@ export async function POST(req: Request) {
       await send({ type: "done", url, size });
     } catch (err) {
       console.error("render-mp4", err);
+      if (paidWithCoins) {
+        await refundAfiliadoCoins(
+          supabase, gate.userId, AFILIADO_COINS_VIDEO_EDITOR_COST, "refund_video_editor_export_failed",
+        );
+      }
       await send({
         type: "error",
         message: formatUploadError(err, "render-mp4"),

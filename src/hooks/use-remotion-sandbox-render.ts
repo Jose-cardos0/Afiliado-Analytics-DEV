@@ -18,7 +18,7 @@ export type RemotionRenderState =
 export function useRemotionSandboxRender() {
   const [state, setState] = useState<RemotionRenderState>({ status: "idle" });
 
-  const startRender = useCallback(async (inputProps: VideoInputProps) => {
+  const startRender = useCallback(async (inputProps: VideoInputProps, opts?: { useCoins?: boolean }) => {
     setState({
       status: "invoking",
       phase: "Preparando...",
@@ -30,7 +30,7 @@ export function useRemotionSandboxRender() {
       const response = await fetch("/api/remotion/render-mp4", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ inputProps }),
+        body: JSON.stringify({ inputProps, ...(opts?.useCoins ? { useCoins: true } : {}) }),
       });
 
       if (!response.ok || !response.body) {
