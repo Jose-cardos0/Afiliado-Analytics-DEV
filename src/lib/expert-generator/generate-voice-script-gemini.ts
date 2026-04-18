@@ -162,6 +162,13 @@ async function generateOnce(
     headers: { "Content-Type": "application/json; charset=utf-8" },
     body: JSON.stringify({
       contents: [{ role: "user", parts: [{ text: prompt }] }],
+      safetySettings: [
+        { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_ONLY_HIGH" },
+        { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_ONLY_HIGH" },
+        { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_ONLY_HIGH" },
+        { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_ONLY_HIGH" },
+        { category: "HARM_CATEGORY_CIVIC_INTEGRITY", threshold: "BLOCK_ONLY_HIGH" },
+      ],
       generationConfig: {
         temperature: 0.75,
         maxOutputTokens: GEMINI_TEXT_MAX_OUTPUT_TOKENS,

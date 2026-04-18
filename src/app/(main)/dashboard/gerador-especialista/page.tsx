@@ -28,6 +28,8 @@ import {
   X,
   Camera,
   Info,
+  Zap,
+  Pencil,
 } from "lucide-react";
 import ProFeatureGate from "../ProFeatureGate";
 import { usePlanEntitlements } from "../PlanEntitlementsContext";
@@ -45,6 +47,13 @@ import {
   DEFAULT_IMAGE_PROMPT,
   DEFAULT_VIDEO_PROMPT,
 } from "@/lib/expert-generator/build-prompt";
+import { humanizeVertexUserFacingMessage } from "@/lib/expert-generator/humanize-vertex-user-message";
+import {
+  AFILIADO_COINS_IMAGE_COST,
+  AFILIADO_COINS_VIDEO_COST,
+  AFILIADO_COINS_MONTHLY_PRO,
+  AFILIADO_COINS_MONTHLY_STAFF,
+} from "@/lib/afiliado-coins";
 import { compressImageFileToMaxBytes } from "@/lib/compress-image-client";
 import { humanizeLargeRequestError } from "@/lib/humanize-fetch-error";
 import camilleCardImg from "@/lib/expert-generator/expert/camille/card.png";
@@ -364,7 +373,7 @@ async function blobToBase64(blob: Blob): Promise<string> {
 }
 
 function ExpertGeneratorInner() {
-  const { usage, loading: planCtxLoading, refresh: refreshPlanUsage } =
+  const { usage, loading: planCtxLoading, refresh: refreshPlanUsage, tier } =
     usePlanEntitlements();
 
   const [productPreview, setProductPreview] = useState<string | null>(null);
@@ -446,7 +455,19 @@ function ExpertGeneratorInner() {
   const [videoDataUrl, setVideoDataUrl] = useState<string | null>(null);
   const [videoGcsUri, setVideoGcsUri] = useState<string | null>(null);
   const [imageLightboxOpen, setImageLightboxOpen] = useState(false);
+  const [resultSlotBusy, setResultSlotBusy] = useState(false);
   const customFaceInputRef = useRef<HTMLInputElement>(null);
+  const resultImageInputRef = useRef<HTMLInputElement>(null);
+
+  const coinsBalance =
+    typeof usage?.afiliadoCoins === "number" ? usage.afiliadoCoins : null;
+  const monthlyCoinReference =
+    tier === "staff" ? AFILIADO_COINS_MONTHLY_STAFF : AFILIADO_COINS_MONTHLY_PRO;
+  const showExpertGoldCostStyle =
+    coinsBalance !== null && coinsBalance < monthlyCoinReference;
+
+  const expertGoldBtnClass =
+    "w-full inline-flex items-center justify-center gap-2 rounded-xl border border-amber-500 py-3 text-sm font-bold text-white bg-gradient-to-r from-amber-500 to-amber-600 hover:opacity-95 transition-all shadow-[0_4px_16px_rgba(245,158,11,0.35)] disabled:opacity-40 disabled:cursor-not-allowed";
 
   const presets = gender === "women" ? FEMALE_PRESETS : MALE_PRESETS;
 
@@ -507,6 +528,11 @@ function ExpertGeneratorInner() {
       Boolean(productBase64) || activeProductDescription.length >= 15,
     [productBase64, activeProductDescription]
   );
+
+  const canAffordImage =
+    coinsBalance === null || coinsBalance >= AFILIADO_COINS_IMAGE_COST;
+  const canAffordVideo =
+    coinsBalance === null || coinsBalance >= AFILIADO_COINS_VIDEO_COST;
 
   const videoMotionSummaryLine = useMemo(() => {
     if (motionUseCustom) {
@@ -583,7 +609,8 @@ function ExpertGeneratorInner() {
       setScriptIaModalOpen(false);
       setScriptIaBrief("");
     } catch (e) {
-      setScriptIaErr(e instanceof Error ? e.message : "Erro ao gerar.");
+      const raw = e instanceof Error ? e.message : "Erro ao gerar.";
+      setScriptIaErr(humanizeVertexUserFacingMessage(raw));
     } finally {
       setScriptIaLoading(false);
     }
@@ -617,6 +644,32 @@ function ExpertGeneratorInner() {
       n > 0 ? ` · ${n} foto${n > 1 ? "s" : ""} referência (Nano Banana)` : "";
     return `${g} · Personalizado${c ? ` — ${c.slice(0, 120)}${c.length > 120 ? "…" : ""}` : ""}${refBit}`;
   }, [gender, modelMode, presetId, customModel, customFaceRefs.length, presets]);
+
+  const ingestGeneratedSlotImage = useCallback(async (file: File | null) => {
+    if (!file) return;
+    const ok = ["image/jpeg", "image/png", "image/webp"].includes(file.type);
+    if (!ok) {
+      setGenImgErr("Use JPEG, PNG ou WEBP.");
+      return;
+    }
+    setGenImgErr(null);
+    setResultSlotBusy(true);
+    try {
+      const maxPayload = 3_400_000;
+      const blob = await compressImageFileToMaxBytes(file, maxPayload);
+      const b64 = await blobToBase64(blob);
+      setImageResult({
+        base64: b64,
+        mime: "image/jpeg",
+      });
+      setVideoDataUrl(null);
+      setVideoGcsUri(null);
+    } catch (e) {
+      setGenImgErr(e instanceof Error ? e.message : "Erro ao processar imagem.");
+    } finally {
+      setResultSlotBusy(false);
+    }
+  }, []);
 
   const ingestProductFile = useCallback(async (file: File | null) => {
     if (!file) {
@@ -832,7 +885,8 @@ function ExpertGeneratorInner() {
       });
       void refreshPlanUsage();
     } catch (e) {
-      setGenImgErr(e instanceof Error ? e.message : "Erro ao gerar imagem.");
+      const raw = e instanceof Error ? e.message : "Erro ao gerar imagem.";
+      setGenImgErr(humanizeVertexUserFacingMessage(raw));
     } finally {
       setGenImgLoading(false);
     }
@@ -862,11 +916,11 @@ function ExpertGeneratorInner() {
           typeof j.error === "string"
             ? j.error
             : j.error?.message ?? "Falha no poll Veo.";
-        throw new Error(msg);
+        throw new Error(humanizeVertexUserFacingMessage(msg));
       }
       const errObj = j.error;
       if (errObj && typeof errObj === "object" && errObj.message) {
-        throw new Error(errObj.message);
+        throw new Error(humanizeVertexUserFacingMessage(errObj.message));
       }
       if (j.done) {
         const v = j.videos?.[0];
@@ -880,7 +934,7 @@ function ExpertGeneratorInner() {
           setVideoDataUrl(null);
         } else if ((j as { raiMediaFilteredCount?: number }).raiMediaFilteredCount) {
           throw new Error(
-            "O Veo filtrou o vídeo por políticas de segurança. Tente ajustar o prompt ou a imagem."
+            "O Veo filtrou o vídeo por políticas de segurança. As coins foram devolvidas automaticamente. Tente ajustar o prompt ou a imagem.",
           );
         } else {
           throw new Error(
@@ -942,7 +996,9 @@ function ExpertGeneratorInner() {
       await pollVeo(data.operationName);
       void refreshPlanUsage();
     } catch (e) {
-      setVeoErr(e instanceof Error ? e.message : "Erro no vídeo.");
+      const raw = e instanceof Error ? e.message : "Erro no vídeo.";
+      setVeoErr(humanizeVertexUserFacingMessage(raw));
+      void refreshPlanUsage();
     } finally {
       setVeoLoading(false);
       setVeoProgress(null);
@@ -1653,17 +1709,34 @@ function ExpertGeneratorInner() {
 
               <button
                 type="button"
-                disabled={!canGenerateImage || genImgLoading}
-                className={`w-full ${btnPrimary} py-3`}
+                disabled={
+                  !canGenerateImage ||
+                  genImgLoading ||
+                  resultSlotBusy ||
+                  !canAffordImage
+                }
+                className={
+                  showExpertGoldCostStyle ? expertGoldBtnClass : `w-full ${btnPrimary} py-3`
+                }
                 onClick={onGenerateImage}
               >
                 {genImgLoading ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
+                ) : showExpertGoldCostStyle ? (
+                  <Zap className="h-4 w-4" />
                 ) : (
                   <ImageIcon className="h-4 w-4" />
                 )}
-                Gerar imagem 
+                {showExpertGoldCostStyle
+                  ? `Gerar imagem (${AFILIADO_COINS_IMAGE_COST} Coins)`
+                  : "Gerar imagem"}
               </button>
+              {!canAffordImage ? (
+                <p className="text-center text-[11px] text-amber-400/90">
+                  Saldo insuficiente para gerar imagem ({AFILIADO_COINS_IMAGE_COST}{" "}
+                  Coins). Recarregue Afiliado Coins no topo.
+                </p>
+              ) : null}
               {!canGenerateImage ? (
                 <p className="text-center text-xs text-text-secondary">
                   Complete o passo 1 (foto ou descrição ativada com 15+
@@ -1674,25 +1747,57 @@ function ExpertGeneratorInner() {
 
             <aside className="flex flex-col p-5 lg:w-1/2 lg:flex-none lg:min-w-0 lg:min-h-0 lg:max-h-[min(88vh,860px)] border-t lg:border-t-0 border-dark-border/60 bg-dark-bg/30">
               <FieldLabel className="shrink-0">Pré-visualização</FieldLabel>
+              <input
+                id="expert-result-image-input"
+                ref={resultImageInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                className="sr-only"
+                tabIndex={-1}
+                onChange={(e) => {
+                  void ingestGeneratedSlotImage(e.target.files?.[0] ?? null);
+                  e.target.value = "";
+                }}
+              />
               <div className="mt-2 flex min-h-[220px] flex-1 flex-col rounded-xl border border-dashed border-dark-border/60 bg-dark-bg/50 p-3 overflow-hidden lg:min-h-0">
                 {imageResult ? (
                   <div className="flex h-full min-h-0 flex-1 flex-col gap-3">
-                    <button
-                      type="button"
-                      className="flex min-h-0 flex-1 w-full flex-col items-center justify-center overflow-hidden rounded-lg border border-transparent hover:border-shopee-orange/35 focus:outline-none focus-visible:ring-2 focus-visible:ring-shopee-orange/50 cursor-zoom-in group relative bg-transparent p-0"
-                      onClick={() => setImageLightboxOpen(true)}
-                      aria-label="Ampliar imagem em ecrã completo"
-                    >
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={`data:${imageResult.mime};base64,${imageResult.base64}`}
-                        alt="Imagem gerada"
-                        className="block max-h-full max-w-full object-contain rounded-lg border border-dark-border shadow-lg shadow-black/20 pointer-events-none transition-opacity group-hover:opacity-95"
-                      />
-                      <span className="absolute bottom-1 left-1/2 -translate-x-1/2 rounded-md bg-black/55 px-2 py-0.5 text-[10px] font-medium text-white/95 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none max-w-[90%] truncate">
-                        Clique para ampliar
-                      </span>
-                    </button>
+                    <div className="relative flex min-h-0 flex-1 w-full flex-col">
+                      <button
+                        type="button"
+                        className="relative flex min-h-0 flex-1 w-full flex-col items-center justify-center overflow-hidden rounded-lg border border-transparent hover:border-shopee-orange/35 focus:outline-none focus-visible:ring-2 focus-visible:ring-shopee-orange/50 cursor-zoom-in group bg-transparent p-0"
+                        onClick={() => setImageLightboxOpen(true)}
+                        aria-label="Ampliar imagem em tela cheia"
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={`data:${imageResult.mime};base64,${imageResult.base64}`}
+                          alt="Imagem gerada"
+                          className="block max-h-full max-w-full object-contain rounded-lg border border-dark-border shadow-lg shadow-black/20 pointer-events-none transition-opacity group-hover:opacity-95"
+                        />
+                        <span className="absolute bottom-1 left-1/2 -translate-x-1/2 rounded-md bg-black/55 px-2 py-0.5 text-[10px] font-medium text-white/95 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none max-w-[90%] truncate">
+                          Clique para ampliar
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        title="Trocar imagem"
+                        aria-label="Enviar outra imagem do computador ou celular"
+                        disabled={resultSlotBusy}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          resultImageInputRef.current?.click();
+                        }}
+                        className="absolute right-2 top-2 z-20 flex h-9 w-9 items-center justify-center rounded-xl border border-white/20 bg-black/75 text-white shadow-lg backdrop-blur-sm transition hover:bg-shopee-orange hover:border-shopee-orange/60 disabled:pointer-events-none disabled:opacity-40"
+                      >
+                        {resultSlotBusy ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Pencil className="h-4 w-4" />
+                        )}
+                      </button>
+                    </div>
                     <button
                       type="button"
                       onClick={downloadImage}
@@ -1725,16 +1830,33 @@ function ExpertGeneratorInner() {
                     ) : null}
                   </div>
                 ) : (
-                  <div className="flex flex-1 flex-col items-center justify-center text-center text-text-secondary px-4 py-8">
-                    <ImageIcon className="h-12 w-12 mx-auto mb-3 text-text-secondary/25" />
-                    <p className="text-sm font-medium text-text-secondary/90">
-                      A imagem gerada aparece aqui
-                    </p>
-                    <p className="text-xs mt-1.5 text-text-secondary/60 max-w-[220px]">
-                      No desktop, esta coluna fica ao lado das opções. Toque em
-                      «Gerar imagem» para começar.
-                    </p>
-                  </div>
+                  <label
+                    htmlFor="expert-result-image-input"
+                    className="flex flex-1 flex-col items-center justify-center text-center text-text-secondary px-4 py-8 cursor-pointer rounded-lg border border-transparent hover:border-shopee-orange/25 hover:bg-dark-bg/40 transition-colors"
+                  >
+                    {resultSlotBusy ? (
+                      <>
+                        <Loader2 className="h-10 w-10 mx-auto mb-3 text-shopee-orange animate-spin" />
+                        <p className="text-sm font-medium text-text-secondary/90">
+                          Processando sua imagem…
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="h-10 w-10 mx-auto mb-3 text-text-secondary/35" />
+                        <p className="text-sm font-medium text-text-secondary/90">
+                          A imagem gerada aparece aqui
+                        </p>
+                        <p className="text-xs mt-1.5 text-text-secondary/60 max-w-[240px]">
+                          Toque em «Gerar imagem» ou envie sua própria foto
+                          (JPEG/PNG/WebP) — depois pode continuar para o vídeo.
+                        </p>
+                        <span className="mt-4 text-xs font-semibold text-shopee-orange underline-offset-2 hover:underline">
+                          Escolher arquivo
+                        </span>
+                      </>
+                    )}
+                  </label>
                 )}
               </div>
             </aside>
@@ -2149,18 +2271,34 @@ function ExpertGeneratorInner() {
                   <button
                     type="button"
                     disabled={
-                      veoLoading || videoAudioMode === null
+                      veoLoading ||
+                      videoAudioMode === null ||
+                      !canAffordVideo
                     }
-                    className={`w-full ${btnPrimary} py-3`}
+                    className={
+                      showExpertGoldCostStyle
+                        ? expertGoldBtnClass
+                        : `w-full ${btnPrimary} py-3`
+                    }
                     onClick={onGenerateVideo}
                   >
                     {veoLoading ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : showExpertGoldCostStyle ? (
+                      <Zap className="h-4 w-4" />
                     ) : (
                       <Video className="h-4 w-4" />
                     )}
-                    Gerar vídeo 
+                    {showExpertGoldCostStyle
+                      ? `Gerar vídeo (${AFILIADO_COINS_VIDEO_COST} Coins)`
+                      : "Gerar vídeo"}
                   </button>
+                  {!canAffordVideo ? (
+                    <p className="text-center text-[11px] text-amber-400/90">
+                      Saldo insuficiente para vídeo ({AFILIADO_COINS_VIDEO_COST}{" "}
+                      Coins).
+                    </p>
+                  ) : null}
                   {videoAudioMode === null ? (
                     <p className="text-xs text-amber-400/90 text-center">
                       Escolha «Sem áudio» ou «Com áudio» no passo Áudio para
@@ -2176,13 +2314,30 @@ function ExpertGeneratorInner() {
                   </FieldLabel>
                   <div className="mt-2 flex min-h-[200px] flex-1 flex-col rounded-xl border border-dashed border-dark-border/60 bg-dark-bg/50 p-2 sm:p-3 overflow-hidden lg:min-h-0">
                     {videoDataUrl ? (
-                      <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-lg bg-black/25 p-1">
-                        <video
-                          src={videoDataUrl}
-                          controls
-                          className="max-h-full max-w-full object-contain rounded-lg border border-dark-border shadow-md"
-                        />
-                      </div>
+                      <>
+                        <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-lg bg-black/25 p-1">
+                          <video
+                            src={videoDataUrl}
+                            controls
+                            className="max-h-full max-w-full object-contain rounded-lg border border-dark-border shadow-md"
+                          />
+                        </div>
+                        <a
+                          href={videoDataUrl}
+                          download={`gerador-especialista-video.${
+                            videoDataUrl.startsWith("data:video/webm")
+                              ? "webm"
+                              : videoDataUrl.includes("quicktime") ||
+                                  videoDataUrl.includes("video/quicktime")
+                                ? "mov"
+                                : "mp4"
+                          }`}
+                          className={`${btnSecondary} mt-3 w-full shrink-0 justify-center gap-2 py-2.5 text-sm font-semibold`}
+                        >
+                          <Download className="h-4 w-4 shrink-0" />
+                          Download Vídeo
+                        </a>
+                      </>
                     ) : videoGcsUri ? (
                       <div className="flex min-h-0 flex-1 flex-col items-center justify-center p-4 text-center">
                         <p className="text-xs text-amber-400 break-all">

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { gateEspecialistaGenerate } from "@/lib/require-entitlements";
 import { generateVoiceScriptWithGemini } from "@/lib/expert-generator/generate-voice-script-gemini";
+import { humanizeVertexUserFacingMessage } from "@/lib/expert-generator/humanize-vertex-user-message";
 
 export const maxDuration = 60;
 
@@ -49,7 +50,10 @@ export async function POST(req: Request) {
       result.error
     );
     return NextResponse.json(
-      { error: result.error, detail: result.detail },
+      {
+        error: humanizeVertexUserFacingMessage(result.error),
+        detail: result.detail,
+      },
       { status: isKey ? 503 : 422 }
     );
   }
