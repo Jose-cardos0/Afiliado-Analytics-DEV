@@ -20,6 +20,7 @@ type ProductRow = {
   price: number | string | null;
   stripe_price_id: string | null;
   stripe_payment_link_id: string | null;
+  stripe_subid: string | null;
   allow_shipping: boolean | null;
   allow_pickup: boolean | null;
 };
@@ -37,8 +38,8 @@ type SenderRow = {
 
 export async function POST(req: Request, ctx: { params: Promise<{ subId: string }> }) {
   try {
-    const { subId } = await ctx.params;
-    if (!subId) return NextResponse.json({ error: "subId obrigatório" }, { status: 400 });
+    const { subId: slug } = await ctx.params;
+    if (!slug) return NextResponse.json({ error: "slug obrigatório" }, { status: 400 });
 
     const body = await req.json().catch(() => ({}));
     const mode = String(body?.mode ?? "shipping"); // "shipping" | "pickup"
@@ -56,9 +57,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ subId: string 
     const { data: produto, error } = await supabase
       .from("produtos_infoprodutor")
       .select(
-        "id, user_id, name, price, stripe_price_id, stripe_payment_link_id, allow_shipping, allow_pickup",
+        "id, user_id, name, price, stripe_price_id, stripe_payment_link_id, stripe_subid, allow_shipping, allow_pickup",
       )
-      .eq("stripe_subid", subId)
+      .eq("public_slug", slug)
       .eq("provider", "stripe")
       .maybeSingle();
 
@@ -133,11 +134,12 @@ export async function POST(req: Request, ctx: { params: Promise<{ subId: string 
         ? { custom_text: { submit: { message: customText.submit.message } } }
         : {}),
       success_url: `${successBase}/checkout/sucesso?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${successBase}/checkout/${encodeURIComponent(subId)}`,
+      cancel_url: `${successBase}/checkout/${encodeURIComponent(slug)}`,
       client_reference_id: row.stripe_payment_link_id ?? row.id,
       metadata: {
         produto_id: row.id,
-        sub_id: subId,
+        public_slug: slug,
+        stripe_subid: row.stripe_subid ?? "",
         stripe_payment_link_id: row.stripe_payment_link_id ?? "",
         delivery_mode: mode,
       },

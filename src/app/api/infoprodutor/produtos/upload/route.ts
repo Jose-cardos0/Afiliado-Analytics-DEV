@@ -8,7 +8,7 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient as createSupabaseAdmin } from "@supabase/supabase-js";
-import { createClient } from "@/lib/supabase-server";
+import { gateInfoprodutor } from "@/lib/require-entitlements";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -46,9 +46,8 @@ function publicUrlFor(path: string): string {
 
 export async function POST(req: NextRequest) {
   try {
-    const supaUser = await createClient();
-    const { data: { user }, error: authErr } = await supaUser.auth.getUser();
-    if (authErr || !user) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+    const gate = await gateInfoprodutor();
+    if (!gate.allowed) return gate.response;
 
     const form = await req.formData();
     const file = form.get("file");
@@ -67,14 +66,14 @@ export async function POST(req: NextRequest) {
 
     const admin = supabaseAdmin();
 
-    if (oldPath && oldPath.startsWith(`${user.id}/`)) {
+    if (oldPath && oldPath.startsWith(`${gate.userId}/`)) {
       await admin.storage.from(BUCKET).remove([oldPath]).catch(() => null);
     }
 
     const ts = Date.now();
     const rand = Math.random().toString(36).slice(2, 8);
     const ext = extForType(file.type);
-    const path = `${user.id}/${ts}-${rand}.${ext}`;
+    const path = `${gate.userId}/${ts}-${rand}.${ext}`;
 
     const { error: upErr } = await admin.storage.from(BUCKET).upload(path, file, {
       upsert: false,

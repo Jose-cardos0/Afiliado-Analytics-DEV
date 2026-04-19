@@ -8,6 +8,7 @@
 
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
+import { gateInfoprodutor } from "@/lib/require-entitlements";
 
 export const dynamic = "force-dynamic";
 
@@ -35,9 +36,9 @@ const SELECT = "id, lista_id, produto_id, product_name, description, image_url, 
 
 export async function GET(req: Request) {
   try {
+    const gate = await gateInfoprodutor();
+    if (!gate.allowed) return gate.response;
     const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
 
     const url = new URL(req.url);
     const listaId = url.searchParams.get("lista_id")?.trim();
@@ -45,7 +46,7 @@ export async function GET(req: Request) {
     let query = supabase
       .from("minha_lista_ofertas_info")
       .select(SELECT)
-      .eq("user_id", user.id)
+      .eq("user_id", gate.userId)
       .order("created_at", { ascending: false });
 
     if (listaId) query = query.eq("lista_id", listaId);
@@ -61,9 +62,9 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
+    const gate = await gateInfoprodutor();
+    if (!gate.allowed) return gate.response;
     const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
 
     const body = await req.json().catch(() => ({}));
     const listaId = String(body?.listaId ?? body?.lista_id ?? "").trim();
@@ -88,7 +89,7 @@ export async function POST(req: Request) {
         .from("produtos_infoprodutor")
         .select("id, name, description, image_url, link, price, price_old")
         .eq("id", produtoId)
-        .eq("user_id", user.id)
+        .eq("user_id", gate.userId)
         .maybeSingle();
       if (!p) return NextResponse.json({ error: "Produto não encontrado" }, { status: 404 });
       const price = p.price == null ? null : Number.isFinite(Number(p.price)) ? Number(p.price) : null;
@@ -99,7 +100,7 @@ export async function POST(req: Request) {
             ? Number(p.price_old)
             : null;
       row = {
-        user_id: user.id,
+        user_id: gate.userId,
         lista_id: listaId,
         produto_id: p.id as string,
         product_name: String(p.name ?? ""),
@@ -131,7 +132,7 @@ export async function POST(req: Request) {
             ? Number(priceOldRaw)
             : null;
       row = {
-        user_id: user.id,
+        user_id: gate.userId,
         lista_id: listaId,
         produto_id: null,
         product_name: name,
@@ -158,9 +159,9 @@ export async function POST(req: Request) {
 
 export async function DELETE(req: Request) {
   try {
+    const gate = await gateInfoprodutor();
+    if (!gate.allowed) return gate.response;
     const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
 
     const url = new URL(req.url);
     const id = url.searchParams.get("id")?.trim();
@@ -172,7 +173,7 @@ export async function DELETE(req: Request) {
         .from("minha_lista_ofertas_info")
         .delete()
         .eq("lista_id", listaId)
-        .eq("user_id", user.id);
+        .eq("user_id", gate.userId);
       if (error) return NextResponse.json({ error: error.message }, { status: 500 });
       return NextResponse.json({ ok: true });
     }
@@ -183,7 +184,7 @@ export async function DELETE(req: Request) {
       .from("minha_lista_ofertas_info")
       .delete()
       .eq("id", id)
-      .eq("user_id", user.id);
+      .eq("user_id", gate.userId);
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     return NextResponse.json({ ok: true });

@@ -9,6 +9,7 @@
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { createClient } from "@/lib/supabase-server";
+import { gateInfoprodutor } from "@/lib/require-entitlements";
 import {
   toWhatsAppUrl,
   buildPaymentLinkCustomText,
@@ -23,9 +24,9 @@ export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
   try {
+    const gate = await gateInfoprodutor();
+    if (!gate.allowed) return gate.response;
     const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
 
     const body = await req.json().catch(() => ({}));
     const id = String(body?.id ?? "").trim();
@@ -35,7 +36,7 @@ export async function POST(req: Request) {
       .from("produtos_infoprodutor")
       .select("id, user_id, provider, stripe_product_id, stripe_price_id, stripe_payment_link_id, allow_shipping, allow_pickup, shipping_cost")
       .eq("id", id)
-      .eq("user_id", user.id)
+      .eq("user_id", gate.userId)
       .maybeSingle();
     if (loadError) return NextResponse.json({ error: loadError.message }, { status: 500 });
     if (!produto) return NextResponse.json({ error: "Produto não encontrado" }, { status: 404 });
@@ -65,7 +66,7 @@ export async function POST(req: Request) {
       .select(
         "stripe_secret_key, shipping_sender_whatsapp, shipping_sender_street, shipping_sender_number, shipping_sender_complement, shipping_sender_neighborhood, shipping_sender_city, shipping_sender_uf",
       )
-      .eq("id", user.id)
+      .eq("id", gate.userId)
       .single();
     const profileRow = profile as
       | {
@@ -146,7 +147,7 @@ export async function POST(req: Request) {
         updated_at: new Date().toISOString(),
       })
       .eq("id", id)
-      .eq("user_id", user.id)
+      .eq("user_id", gate.userId)
       .select("id, link, stripe_payment_link_id")
       .maybeSingle();
 
@@ -156,7 +157,7 @@ export async function POST(req: Request) {
     const { error: syncError } = await supabase
       .from("minha_lista_ofertas_info")
       .update({ link: newLink.url })
-      .eq("user_id", user.id)
+      .eq("user_id", gate.userId)
       .eq("produto_id", id);
     if (syncError) {
       console.error("[refresh-checkout] falha sync listas:", syncError.message);

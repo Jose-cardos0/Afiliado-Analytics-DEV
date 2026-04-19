@@ -12,6 +12,7 @@
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { createClient } from "@/lib/supabase-server";
+import { gateInfoprodutor } from "@/lib/require-entitlements";
 import {
   toWhatsAppUrl,
   buildPaymentLinkCustomText,
@@ -23,6 +24,7 @@ import {
   type DeliveryMode,
 } from "@/lib/infoprod/stripe-checkout-copy";
 import { getAppPublicUrl } from "@/lib/infoprod/stripe-webhook-setup";
+import { generateUniquePublicSlug } from "@/lib/infoprod/slug";
 
 export const dynamic = "force-dynamic";
 
@@ -49,6 +51,7 @@ type Row = {
   altura_cm: number | string | null;
   largura_cm: number | string | null;
   comprimento_cm: number | string | null;
+  public_slug: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -81,13 +84,14 @@ function mapProduto(r: Record<string, unknown>) {
     alturaCm: numOrNull(r.altura_cm),
     larguraCm: numOrNull(r.largura_cm),
     comprimentoCm: numOrNull(r.comprimento_cm),
+    publicSlug: (r.public_slug as string | null) ?? null,
     createdAt: String(r.created_at ?? ""),
     updatedAt: String(r.updated_at ?? ""),
   };
 }
 
 const SELECT =
-  "id, user_id, name, description, image_url, link, price, price_old, provider, stripe_product_id, stripe_price_id, stripe_payment_link_id, stripe_subid, allow_shipping, allow_pickup, shipping_cost, stripe_account_id, thank_you_message, peso_g, altura_cm, largura_cm, comprimento_cm, created_at, updated_at";
+  "id, user_id, name, description, image_url, link, price, price_old, provider, stripe_product_id, stripe_price_id, stripe_payment_link_id, stripe_subid, allow_shipping, allow_pickup, shipping_cost, stripe_account_id, thank_you_message, peso_g, altura_cm, largura_cm, comprimento_cm, public_slug, created_at, updated_at";
 
 const SUBID_REGEX = /^[a-zA-Z0-9_\-.]+$/;
 
@@ -110,14 +114,14 @@ async function getStripeKeyForUser(
 
 export async function GET() {
   try {
+    const gate = await gateInfoprodutor();
+    if (!gate.allowed) return gate.response;
     const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
 
     const { data, error } = await supabase
       .from("produtos_infoprodutor")
       .select(SELECT)
-      .eq("user_id", user.id)
+      .eq("user_id", gate.userId)
       .order("created_at", { ascending: false });
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -126,7 +130,7 @@ export async function GET() {
     const { data: profile } = await supabase
       .from("profiles")
       .select("stripe_account_id")
-      .eq("id", user.id)
+      .eq("id", gate.userId)
       .single();
     const currentAccountId =
       (profile as { stripe_account_id?: string | null } | null)?.stripe_account_id ?? null;
@@ -149,9 +153,9 @@ export async function GET() {
 
 export async function POST(req: Request) {
   try {
+    const gate = await gateInfoprodutor();
+    if (!gate.allowed) return gate.response;
     const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
 
     const body = await req.json().catch(() => ({}));
     const provider = String(body?.provider ?? "manual").trim().toLowerCase() as "manual" | "stripe";
@@ -194,7 +198,7 @@ export async function POST(req: Request) {
         );
       }
 
-      const stripeKey = await getStripeKeyForUser(supabase, user.id);
+      const stripeKey = await getStripeKeyForUser(supabase, gate.userId);
       if (!stripeKey) {
         return NextResponse.json(
           { error: "Conecte sua conta Stripe em Configurações antes de criar produtos na Stripe." },
@@ -208,7 +212,7 @@ export async function POST(req: Request) {
         .select(
           "shipping_sender_whatsapp, shipping_sender_street, shipping_sender_number, shipping_sender_complement, shipping_sender_neighborhood, shipping_sender_city, shipping_sender_uf, stripe_account_id",
         )
-        .eq("id", user.id)
+        .eq("id", gate.userId)
         .single();
       const senderRow = senderProfile as {
         shipping_sender_whatsapp?: string | null;
@@ -338,23 +342,25 @@ export async function POST(req: Request) {
       const hasDimensions =
         allowShipping && pesoGVal !== null && alturaCmVal !== null && larguraCmVal !== null && comprimentoCmVal !== null;
 
-      // Se o produto tem dimensões cadastradas, o link compartilhado vai pro nosso
-      // checkout dinâmico (cota frete via SuperFrete com o CEP do comprador). Caso
-      // contrário, continua apontando pro Payment Link estático da Stripe.
+      // Gera slug público único pra checkout (`public_slug`). Independe de dimensões —
+      // todo produto Stripe ganha slug. Se há dimensões, o `link` aponta pro checkout
+      // dinâmico nosso; caso contrário, pro Payment Link estático da Stripe.
+      const publicSlug = await generateUniquePublicSlug(supabase, name);
       const appUrl = getAppPublicUrl();
       const publicLink =
-        hasDimensions && appUrl && stripeSubid
-          ? `${appUrl}/checkout/${encodeURIComponent(stripeSubid)}`
+        hasDimensions && appUrl
+          ? `${appUrl}/checkout/${encodeURIComponent(publicSlug)}`
           : paymentLinkUrl;
 
       const { data, error } = await supabase
         .from("produtos_infoprodutor")
         .insert({
-          user_id: user.id,
+          user_id: gate.userId,
           name,
           description: description || null,
           image_url: imageUrl || null,
           link: publicLink,
+          public_slug: publicSlug,
           price,
           price_old,
           provider: "stripe",
@@ -392,10 +398,12 @@ export async function POST(req: Request) {
     const link = String(body?.link ?? "").trim();
     if (!link) return NextResponse.json({ error: "Link do produto é obrigatório." }, { status: 400 });
 
+    const manualSlug = await generateUniquePublicSlug(supabase, name);
+
     const { data, error } = await supabase
       .from("produtos_infoprodutor")
       .insert({
-        user_id: user.id,
+        user_id: gate.userId,
         name,
         description: description || null,
         image_url: imageUrl || null,
@@ -403,6 +411,7 @@ export async function POST(req: Request) {
         price,
         price_old,
         provider: "manual",
+        public_slug: manualSlug,
       })
       .select(SELECT)
       .single();
@@ -417,9 +426,9 @@ export async function POST(req: Request) {
 
 export async function PATCH(req: Request) {
   try {
+    const gate = await gateInfoprodutor();
+    if (!gate.allowed) return gate.response;
     const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
 
     const body = await req.json().catch(() => ({}));
     const id = String(body?.id ?? "").trim();
@@ -429,7 +438,7 @@ export async function PATCH(req: Request) {
       .from("produtos_infoprodutor")
       .select(SELECT)
       .eq("id", id)
-      .eq("user_id", user.id)
+      .eq("user_id", gate.userId)
       .maybeSingle();
     if (loadError) return NextResponse.json({ error: loadError.message }, { status: 500 });
     if (!current) return NextResponse.json({ error: "Produto não encontrado" }, { status: 404 });
@@ -511,7 +520,7 @@ export async function PATCH(req: Request) {
 
       // Sincroniza name/description/image no Stripe (best-effort — mudanças cosméticas).
       if ((newName !== null || newDescription !== undefined || newImageUrl !== undefined) && currentRow.stripe_product_id) {
-        const stripeKey = await getStripeKeyForUser(supabase, user.id);
+        const stripeKey = await getStripeKeyForUser(supabase, gate.userId);
         if (stripeKey) {
           try {
             const stripe = new Stripe(stripeKey);
@@ -522,7 +531,7 @@ export async function PATCH(req: Request) {
               const { data: profile } = await supabase
                 .from("profiles")
                 .select("shipping_sender_whatsapp")
-                .eq("id", user.id)
+                .eq("id", gate.userId)
                 .single();
               const waUrl = toWhatsAppUrl(
                 (profile as { shipping_sender_whatsapp?: string | null } | null)?.shipping_sender_whatsapp ?? null,
@@ -556,7 +565,7 @@ export async function PATCH(req: Request) {
       .from("produtos_infoprodutor")
       .update(patch)
       .eq("id", id)
-      .eq("user_id", user.id)
+      .eq("user_id", gate.userId)
       .select(SELECT)
       .maybeSingle();
 
@@ -577,7 +586,7 @@ export async function PATCH(req: Request) {
       const { error: syncError } = await supabase
         .from("minha_lista_ofertas_info")
         .update(listaPatch)
-        .eq("user_id", user.id)
+        .eq("user_id", gate.userId)
         .eq("produto_id", id);
       if (syncError) {
         // Não trava a resposta — o produto já foi atualizado. Só loga.
@@ -593,9 +602,9 @@ export async function PATCH(req: Request) {
 
 export async function DELETE(req: Request) {
   try {
+    const gate = await gateInfoprodutor();
+    if (!gate.allowed) return gate.response;
     const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
 
     const url = new URL(req.url);
     const id = url.searchParams.get("id")?.trim();
@@ -605,13 +614,13 @@ export async function DELETE(req: Request) {
       .from("produtos_infoprodutor")
       .select("id, provider, stripe_product_id, stripe_payment_link_id")
       .eq("id", id)
-      .eq("user_id", user.id)
+      .eq("user_id", gate.userId)
       .maybeSingle();
 
     // Arquiva no Stripe antes de apagar do banco (Stripe não permite deletar
     // produtos com histórico, só arquivar).
     if (current && (current as { provider?: string }).provider === "stripe") {
-      const stripeKey = await getStripeKeyForUser(supabase, user.id);
+      const stripeKey = await getStripeKeyForUser(supabase, gate.userId);
       if (stripeKey) {
         try {
           const stripe = new Stripe(stripeKey);
@@ -632,7 +641,7 @@ export async function DELETE(req: Request) {
       .from("produtos_infoprodutor")
       .delete()
       .eq("id", id)
-      .eq("user_id", user.id);
+      .eq("user_id", gate.userId);
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 

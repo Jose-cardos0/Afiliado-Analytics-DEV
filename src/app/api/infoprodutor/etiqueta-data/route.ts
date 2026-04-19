@@ -9,6 +9,7 @@
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { createClient } from "@/lib/supabase-server";
+import { gateInfoprodutor } from "@/lib/require-entitlements";
 import { SHIPPING_RATE_DISPLAY_NAMES } from "@/lib/infoprod/stripe-checkout-copy";
 
 export const dynamic = "force-dynamic";
@@ -49,9 +50,9 @@ function hasMinSender(s: SenderProfile | null): boolean {
 
 export async function POST(req: Request) {
   try {
+    const gate = await gateInfoprodutor();
+    if (!gate.allowed) return gate.response;
     const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
 
     const body = await req.json().catch(() => ({}));
     const raw = Array.isArray(body?.sessionIds) ? body.sessionIds : [];
@@ -73,7 +74,7 @@ export async function POST(req: Request) {
       .select(
         "stripe_secret_key, shipping_sender_name, shipping_sender_document, shipping_sender_phone, shipping_sender_cep, shipping_sender_street, shipping_sender_number, shipping_sender_complement, shipping_sender_neighborhood, shipping_sender_city, shipping_sender_uf",
       )
-      .eq("id", user.id)
+      .eq("id", gate.userId)
       .single();
 
     const stripeKey = (profile as { stripe_secret_key?: string | null } | null)?.stripe_secret_key ?? "";
@@ -87,7 +88,7 @@ export async function POST(req: Request) {
     const { data: produtosRows } = await supabase
       .from("produtos_infoprodutor")
       .select("id, name, stripe_payment_link_id")
-      .eq("user_id", user.id)
+      .eq("user_id", gate.userId)
       .eq("provider", "stripe");
     const allowedPaymentLinks = new Map<string, { id: string; name: string }>();
     for (const p of produtosRows ?? []) {

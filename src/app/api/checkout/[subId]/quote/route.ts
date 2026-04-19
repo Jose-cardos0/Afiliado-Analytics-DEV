@@ -22,8 +22,8 @@ function num(v: unknown): number | null {
 
 export async function POST(req: Request, ctx: { params: Promise<{ subId: string }> }) {
   try {
-    const { subId } = await ctx.params;
-    if (!subId) return NextResponse.json({ error: "subId obrigatório" }, { status: 400 });
+    const { subId: slug } = await ctx.params;
+    if (!slug) return NextResponse.json({ error: "slug obrigatório" }, { status: 400 });
 
     const body = await req.json().catch(() => ({}));
     const cepDestino = String(body?.cepDestino ?? "").trim();
@@ -33,7 +33,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ subId: string 
     const { data: produto, error } = await supabase
       .from("produtos_infoprodutor")
       .select("user_id, allow_shipping, shipping_cost, peso_g, altura_cm, largura_cm, comprimento_cm")
-      .eq("stripe_subid", subId)
+      .eq("public_slug", slug)
       .eq("provider", "stripe")
       .maybeSingle();
 

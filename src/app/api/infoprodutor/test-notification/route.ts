@@ -9,15 +9,16 @@
 
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
+import { gateInfoprodutor } from "@/lib/require-entitlements";
 import { sendInfoprodNotification } from "@/lib/infoprod/send-whatsapp-seller";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
   try {
+    const gate = await gateInfoprodutor();
+    if (!gate.allowed) return gate.response;
     const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
 
     const body = await req.json().catch(() => ({}));
     const tipoAcao = body?.tipoAcao as "vendedor" | "comprador" | undefined;
@@ -41,7 +42,7 @@ export async function POST(req: Request) {
     const { data: profile } = await supabase
       .from("profiles")
       .select("shipping_sender_whatsapp")
-      .eq("id", user.id)
+      .eq("id", gate.userId)
       .single();
     const sellerWa = (profile as { shipping_sender_whatsapp?: string | null } | null)?.shipping_sender_whatsapp ?? "";
     if (!sellerWa.trim()) {
@@ -84,7 +85,7 @@ export async function POST(req: Request) {
         ].join("\n");
 
     const result = await sendInfoprodNotification({
-      userId: user.id,
+      userId: gate.userId,
       tipoAcao,
       numeroDestino: sellerWa,
       mensagem,

@@ -14,6 +14,7 @@
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { createClient } from "@/lib/supabase-server";
+import { gateInfoprodutor } from "@/lib/require-entitlements";
 
 export const dynamic = "force-dynamic";
 
@@ -50,9 +51,9 @@ type Insight = {
 
 export async function GET(req: Request) {
   try {
+    const gate = await gateInfoprodutor();
+    if (!gate.allowed) return gate.response;
     const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
 
     const url = new URL(req.url);
     const periodRaw = String(url.searchParams.get("period") ?? "30d").trim().toLowerCase();
@@ -65,7 +66,7 @@ export async function GET(req: Request) {
     const { data: tagRows } = await supabase
       .from("ati_campaign_tags")
       .select("campaign_id")
-      .eq("user_id", user.id)
+      .eq("user_id", gate.userId)
       .eq("tag", TAG_INFOP);
     const infopCampaignIds = new Set<string>((tagRows ?? []).map((r) => r.campaign_id as string));
 
@@ -99,7 +100,7 @@ export async function GET(req: Request) {
     const { data: subRows } = await supabase
       .from("ati_ad_infop_sub")
       .select("ad_id, infop_sub_id")
-      .eq("user_id", user.id);
+      .eq("user_id", gate.userId);
     const subIdByAd = new Map<string, string>();
     for (const r of subRows ?? []) {
       subIdByAd.set(String(r.ad_id), String(r.infop_sub_id));
@@ -109,7 +110,7 @@ export async function GET(req: Request) {
     const { data: produtos } = await supabase
       .from("produtos_infoprodutor")
       .select("id, name, image_url, stripe_subid, stripe_payment_link_id")
-      .eq("user_id", user.id)
+      .eq("user_id", gate.userId)
       .eq("provider", "stripe")
       .not("stripe_subid", "is", null);
     type ProdInfo = { id: string; name: string; imageUrl: string | null; paymentLinkId: string | null };
@@ -142,7 +143,7 @@ export async function GET(req: Request) {
     const { data: profile } = await supabase
       .from("profiles")
       .select("stripe_secret_key")
-      .eq("id", user.id)
+      .eq("id", gate.userId)
       .single();
     const stripeKey = (profile as { stripe_secret_key?: string | null } | null)?.stripe_secret_key ?? "";
 

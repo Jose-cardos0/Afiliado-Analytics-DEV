@@ -17,6 +17,7 @@
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { createClient } from "@/lib/supabase-server";
+import { gateInfoprodutor } from "@/lib/require-entitlements";
 import {
   toWhatsAppUrl,
   buildPaymentLinkCustomText,
@@ -27,14 +28,16 @@ import {
   type SenderSnapshot,
   type DeliveryMode,
 } from "@/lib/infoprod/stripe-checkout-copy";
+import { getAppPublicUrl } from "@/lib/infoprod/stripe-webhook-setup";
+import { generateUniquePublicSlug } from "@/lib/infoprod/slug";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
   try {
+    const gate = await gateInfoprodutor();
+    if (!gate.allowed) return gate.response;
     const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
 
     const body = await req.json().catch(() => ({}));
     const id = String(body?.id ?? "").trim();
@@ -44,10 +47,10 @@ export async function POST(req: Request) {
     const { data: produto, error: loadError } = await supabase
       .from("produtos_infoprodutor")
       .select(
-        "id, user_id, provider, name, description, image_url, price, price_old, stripe_subid, stripe_account_id, allow_shipping, allow_pickup, shipping_cost",
+        "id, user_id, provider, name, description, image_url, price, price_old, stripe_subid, stripe_account_id, allow_shipping, allow_pickup, shipping_cost, peso_g, altura_cm, largura_cm, comprimento_cm, public_slug",
       )
       .eq("id", id)
-      .eq("user_id", user.id)
+      .eq("user_id", gate.userId)
       .maybeSingle();
     if (loadError) return NextResponse.json({ error: loadError.message }, { status: 500 });
     if (!produto) return NextResponse.json({ error: "Produto não encontrado" }, { status: 404 });
@@ -64,6 +67,11 @@ export async function POST(req: Request) {
       allow_shipping: boolean | null;
       allow_pickup: boolean | null;
       shipping_cost: number | string | null;
+      peso_g: number | string | null;
+      altura_cm: number | string | null;
+      largura_cm: number | string | null;
+      comprimento_cm: number | string | null;
+      public_slug: string | null;
     };
     if (row.provider !== "stripe") {
       return NextResponse.json({ error: "Só produtos Stripe podem ser recriados." }, { status: 400 });
@@ -79,7 +87,7 @@ export async function POST(req: Request) {
       .select(
         "stripe_secret_key, stripe_account_id, shipping_sender_whatsapp, shipping_sender_street, shipping_sender_number, shipping_sender_complement, shipping_sender_neighborhood, shipping_sender_city, shipping_sender_uf",
       )
-      .eq("id", user.id)
+      .eq("id", gate.userId)
       .single();
     const profileRow = profile as
       | {
@@ -181,11 +189,29 @@ export async function POST(req: Request) {
       ...(afterCompletion ? { after_completion: afterCompletion } : {}),
     });
 
-    // 4) Atualiza DB apontando pros novos IDs + novo account
+    // 4) Atualiza DB apontando pros novos IDs + novo account.
+    // Se o produto tem dimensões cadastradas, preserva o checkout dinâmico nosso;
+    // senão, aponta pro Payment Link estático da Stripe (comportamento antigo).
+    const pesoG = row.peso_g == null ? null : Number(row.peso_g);
+    const alturaCm = row.altura_cm == null ? null : Number(row.altura_cm);
+    const larguraCm = row.largura_cm == null ? null : Number(row.largura_cm);
+    const comprimentoCm = row.comprimento_cm == null ? null : Number(row.comprimento_cm);
+    const hasDims =
+      allowShipping &&
+      pesoG !== null && pesoG > 0 &&
+      alturaCm !== null && alturaCm > 0 &&
+      larguraCm !== null && larguraCm > 0 &&
+      comprimentoCm !== null && comprimentoCm > 0;
+    const existingSlug = row.public_slug ?? null;
+    const ensuredSlug = existingSlug ?? (await generateUniquePublicSlug(supabase, row.name));
+    const appUrl = getAppPublicUrl();
+    const finalLink = hasDims && appUrl ? `${appUrl}/checkout/${encodeURIComponent(ensuredSlug)}` : newLink.url;
+
     const { data: updated, error: updateError } = await supabase
       .from("produtos_infoprodutor")
       .update({
-        link: newLink.url,
+        link: finalLink,
+        public_slug: ensuredSlug,
         stripe_product_id: newProduct.id,
         stripe_price_id: newPrice.id,
         stripe_payment_link_id: newLink.id,
@@ -193,7 +219,7 @@ export async function POST(req: Request) {
         updated_at: new Date().toISOString(),
       })
       .eq("id", id)
-      .eq("user_id", user.id)
+      .eq("user_id", gate.userId)
       .select("id, link, stripe_product_id, stripe_price_id, stripe_payment_link_id, stripe_account_id")
       .maybeSingle();
 
@@ -202,8 +228,8 @@ export async function POST(req: Request) {
     // Propaga o novo link aos snapshots das listas
     const { error: syncError } = await supabase
       .from("minha_lista_ofertas_info")
-      .update({ link: newLink.url })
-      .eq("user_id", user.id)
+      .update({ link: finalLink })
+      .eq("user_id", gate.userId)
       .eq("produto_id", id);
     if (syncError) {
       console.error("[recreate-orphan] falha sync listas:", syncError.message);

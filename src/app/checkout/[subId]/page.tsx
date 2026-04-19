@@ -10,7 +10,6 @@ type Produto = {
   imageUrl: string | null;
   price: number;
   priceOld: number | null;
-  subId: string | null;
   allowShipping: boolean;
   allowPickup: boolean;
   hasDimensions: boolean;
@@ -45,7 +44,7 @@ function maskCep(v: string): string {
 }
 
 export default function CheckoutPage({ params }: { params: Promise<{ subId: string }> }) {
-  const { subId } = use(params);
+  const { subId: slug } = use(params);
   const [info, setInfo] = useState<InfoResponse | null>(null);
   const [loadingInfo, setLoadingInfo] = useState(true);
   const [infoError, setInfoError] = useState<string | null>(null);
@@ -68,7 +67,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ subId: stri
     let alive = true;
     (async () => {
       try {
-        const res = await fetch(`/api/checkout/${encodeURIComponent(subId)}/info`);
+        const res = await fetch(`/api/checkout/${encodeURIComponent(slug)}/info`);
         const json = await res.json();
         if (!alive) return;
         if (!res.ok) throw new Error(json?.error ?? "Produto não encontrado");
@@ -83,7 +82,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ subId: stri
     return () => {
       alive = false;
     };
-  }, [subId]);
+  }, [slug]);
 
   async function calcularFrete() {
     setQuoting(true);
@@ -91,7 +90,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ subId: stri
     setOptions(null);
     setIsFallback(false);
     try {
-      const res = await fetch(`/api/checkout/${encodeURIComponent(subId)}/quote`, {
+      const res = await fetch(`/api/checkout/${encodeURIComponent(slug)}/quote`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ cepDestino: cep }),
@@ -121,7 +120,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ subId: stri
               shippingPrice: selection.option.price,
               shippingName: selection.option.name,
             };
-      const res = await fetch(`/api/checkout/${encodeURIComponent(subId)}/session`, {
+      const res = await fetch(`/api/checkout/${encodeURIComponent(slug)}/session`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),

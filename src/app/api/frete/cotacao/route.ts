@@ -1,18 +1,13 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase-server";
+import { gateInfoprodutor } from "@/lib/require-entitlements";
 import { cotarFrete } from "@/lib/frete/superfrete";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) {
-      return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
-    }
+    const gate = await gateInfoprodutor();
+    if (!gate.allowed) return gate.response;
 
     const body = await req.json().catch(() => ({}));
     const options = await cotarFrete({

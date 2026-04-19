@@ -11,6 +11,7 @@
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { createClient } from "@/lib/supabase-server";
+import { gateInfoprodutor } from "@/lib/require-entitlements";
 
 export const dynamic = "force-dynamic";
 
@@ -41,9 +42,9 @@ function buildDailySeries(fromSec: number, toSec: number): string[] {
 
 export async function GET(req: Request) {
   try {
+    const gate = await gateInfoprodutor();
+    if (!gate.allowed) return gate.response;
     const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
 
     const url = new URL(req.url);
     const periodRaw = String(url.searchParams.get("period") ?? "30d").trim().toLowerCase();
@@ -54,7 +55,7 @@ export async function GET(req: Request) {
     const { data: profile } = await supabase
       .from("profiles")
       .select("stripe_secret_key")
-      .eq("id", user.id)
+      .eq("id", gate.userId)
       .single();
     const stripeKey = (profile as { stripe_secret_key?: string | null } | null)?.stripe_secret_key ?? "";
     if (!stripeKey.trim()) {
@@ -67,7 +68,7 @@ export async function GET(req: Request) {
     const { data: produtos } = await supabase
       .from("produtos_infoprodutor")
       .select("id, name, image_url, stripe_payment_link_id")
-      .eq("user_id", user.id)
+      .eq("user_id", gate.userId)
       .eq("provider", "stripe");
 
     type ProdInfo = { id: string; name: string; imageUrl: string | null };

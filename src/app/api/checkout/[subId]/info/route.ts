@@ -55,8 +55,8 @@ function formatPickupAddress(s: SenderRow | null): string | null {
 
 export async function GET(_req: Request, ctx: { params: Promise<{ subId: string }> }) {
   try {
-    const { subId } = await ctx.params;
-    if (!subId) return NextResponse.json({ error: "subId obrigatório" }, { status: 400 });
+    const { subId: slug } = await ctx.params;
+    if (!slug) return NextResponse.json({ error: "slug obrigatório" }, { status: 400 });
 
     const supabase = createAdminClient();
     const { data: produto, error } = await supabase
@@ -64,7 +64,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ subId: string 
       .select(
         "id, user_id, name, description, image_url, price, price_old, provider, stripe_subid, allow_shipping, allow_pickup, shipping_cost, peso_g, altura_cm, largura_cm, comprimento_cm",
       )
-      .eq("stripe_subid", subId)
+      .eq("public_slug", slug)
       .eq("provider", "stripe")
       .maybeSingle();
 
@@ -99,7 +99,6 @@ export async function GET(_req: Request, ctx: { params: Promise<{ subId: string 
         imageUrl: row.image_url ?? null,
         price: num(row.price) ?? 0,
         priceOld: num(row.price_old),
-        subId: row.stripe_subid,
         allowShipping: row.allow_shipping !== false,
         allowPickup: Boolean(row.allow_pickup),
         hasDimensions,

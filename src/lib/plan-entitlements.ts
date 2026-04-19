@@ -49,6 +49,8 @@ export type PlanEntitlements = {
   videoEditorCopyPerDay: number;
   espelhamentogrupos: boolean;
   especialistagenerate: boolean;
+  /** Infoprodutor: catálogo Stripe + checkout dinâmico (frete) — liberado pra padrao/pro/staff, bloqueado em trial. */
+  infoprodutor: boolean;
 };
 
 
@@ -78,6 +80,7 @@ const PADRAO_LIMITS = {
   videoEditorCopyPerDay: 0,
   espelhamentogrupos: false,
   especialistagenerate: false,
+  infoprodutor: true,
 } as const satisfies PlanEntitlements;
 
 /** Trial por cupom: só comissões, cliques, redirecionador, gerador Shopee e 1 captura. */
@@ -106,6 +109,7 @@ const TRIAL_LIMITS = {
   videoEditorCopyPerDay: 0,
   espelhamentogrupos: false,
   especialistagenerate: false,
+  infoprodutor: false,
 } as const satisfies PlanEntitlements;
 
 const PRO_LIMITS = {
@@ -133,6 +137,7 @@ const PRO_LIMITS = {
   videoEditorCopyPerDay: 2,
   espelhamentogrupos: true,
   especialistagenerate: true,
+  infoprodutor: true,
 } as const satisfies PlanEntitlements;
 
 
@@ -162,6 +167,7 @@ const STAFF_LIMITS = {
   videoEditorCopyPerDay: 2,
   espelhamentogrupos: true,
   especialistagenerate: true,
+  infoprodutor: true,
 } as const satisfies PlanEntitlements;
 
 /** Mesma referência para legacy e padrao — alterar um não altera o outro em runtime se você clonar; aqui são iguais por definição. */
