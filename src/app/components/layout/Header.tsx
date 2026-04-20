@@ -84,7 +84,9 @@ export function Header({ onLoginClick }: HeaderProps) {
       <header className="fixed left-0 top-0 z-[200] w-full">
         <div
           className={`pointer-events-none absolute inset-0 transition-all duration-300 ${
-            scrolled ? 'bg-[#18181b]/80 shadow-[0_8px_32px_rgba(0,0,0,0.4)]' : 'bg-transparent'
+            scrolled
+              ? 'bg-[#18181b]/80 light:bg-white/85 shadow-[0_8px_32px_rgba(0,0,0,0.4)] light:shadow-[0_8px_32px_rgba(24,24,27,0.08)]'
+              : 'bg-transparent'
           }`}
         />
         <div
@@ -123,6 +125,8 @@ export function Header({ onLoginClick }: HeaderProps) {
           </nav>
 
           <div className="flex items-center gap-3">
+            <ThemeToggle />
+
             <button
               onClick={onLoginClick}
               className="hidden sm:inline-flex items-center justify-center rounded-full border-none bg-gradient-to-br from-[#e24c30] to-[#ff7a54] px-6 py-2.5 text-[14px] font-bold text-white shadow-[0_4px_20px_rgba(226,76,48,0.4)] no-underline transition-all duration-[220ms] ease-in hover:-translate-y-[2px] hover:shadow-[0_8px_32px_rgba(226,76,48,0.5)]"

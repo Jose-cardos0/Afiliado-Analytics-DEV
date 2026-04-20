@@ -61,9 +61,9 @@ export default function HomePage() {
         <div className="animate-aurora2 pointer-events-none absolute right-[10%] top-[30%] h-[500px] w-[500px] rounded-full bg-[radial-gradient(circle,rgba(124,58,237,0.18)_0%,transparent_65%)] blur-[50px]" />
         <div className="animate-aurora3 pointer-events-none absolute bottom-[10%] left-[40%] h-[400px] w-[400px] rounded-full bg-[radial-gradient(circle,rgba(6,182,212,0.12)_0%,transparent_65%)] blur-[45px]" />
 
-        {/* Grids de Fundo */}
-        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.03)_1px,transparent_1px)] bg-[size:72px_72px]" />
-        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_45%,rgba(0,0,0,0.65)_100%)]" />
+        {/* Grids de Fundo — linhas brancas no escuro, pretas no claro */}
+        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.03)_1px,transparent_1px)] light:bg-[linear-gradient(rgba(24,24,27,0.08)_1px,transparent_1px),linear-gradient(90deg,rgba(24,24,27,0.08)_1px,transparent_1px)] bg-[size:72px_72px]" />
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_45%,rgba(0,0,0,0.65)_100%)] light:bg-[radial-gradient(ellipse_at_center,transparent_55%,rgba(24,24,27,0.08)_100%)]" />
 
         <div className="relative z-10 mx-auto max-w-4xl px-6 py-32 text-center">
           

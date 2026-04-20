@@ -340,7 +340,7 @@ function PlanCard({
             <div className="pointer-events-none absolute -bottom-[60px] -left-[60px] h-[180px] w-[180px] rounded-full bg-[radial-gradient(circle,rgba(124,58,237,0.12)_0%,transparent_70%)]" />
 
             <div className="relative mb-[20px] flex min-h-[46px] items-center justify-between gap-[12px]">
-              <h3 className="font-[var(--font-space-grotesk)] text-[31px] font-extrabold bg-[linear-gradient(90deg,#ffffff_0%,#ffd9cf_20%,#ffffff_40%,#ffffff_100%)] [background-size:220%_100%] bg-clip-text text-transparent [animation:shimmer_3s_linear_infinite]">
+              <h3 className="font-[var(--font-space-grotesk)] text-[31px] font-extrabold bg-[linear-gradient(90deg,#ffffff_0%,#ffd9cf_20%,#ffffff_40%,#ffffff_100%)] light:bg-[linear-gradient(90deg,#18181b_0%,#e24c30_20%,#18181b_40%,#18181b_100%)] [background-size:220%_100%] bg-clip-text text-transparent [animation:shimmer_3s_linear_infinite]">
                 {plan.name}
               </h3>
 
