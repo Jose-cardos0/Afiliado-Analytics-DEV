@@ -934,56 +934,68 @@ export default function InfoprodutorPage() {
           </div>
         ) : null}
 
-        {/* ═══════════════ ABAS: Produtos | Vendas | Trackeamento ═══════════════ */}
+        {/* ═══════════════ ABAS: Produtos | Vendas | Trackeamento | Checkout ═══════════════ */}
         <div className="mb-4 flex items-center gap-3 flex-wrap">
-        <div role="tablist" aria-label="Seções do Infoprodutor" className="flex items-center gap-1 rounded-xl border border-[#2c2c32] bg-[#222228] p-1 w-fit">
+        <div
+          role="tablist"
+          aria-label="Seções do Infoprodutor"
+          className="flex items-center gap-1 rounded-xl border border-[#2c2c32] bg-[#222228] p-1 w-full sm:w-fit max-w-full overflow-x-auto scrollbar-thin"
+        >
           <button
             type="button"
             role="tab"
             aria-selected={activeTab === "produtos"}
             onClick={() => setActiveTab("produtos")}
-            className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold transition-colors ${
+            aria-label="Produtos"
+            title="Produtos"
+            className={`inline-flex items-center justify-center sm:justify-start gap-1.5 flex-1 sm:flex-none px-3 sm:px-4 py-2 rounded-lg text-xs font-semibold whitespace-nowrap shrink-0 transition-colors ${
               activeTab === "produtos" ? "bg-[#e24c30] text-white" : "text-[#c8c8ce] hover:bg-[#2f2f34]"
             }`}
           >
-            <Package className="w-3.5 h-3.5" />
-            Produtos
+            <Package className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
+            <span className="hidden sm:inline">Produtos</span>
           </button>
           <button
             type="button"
             role="tab"
             aria-selected={activeTab === "vendas"}
             onClick={() => setActiveTab("vendas")}
-            className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold transition-colors ${
+            aria-label="Vendas"
+            title="Vendas"
+            className={`inline-flex items-center justify-center sm:justify-start gap-1.5 flex-1 sm:flex-none px-3 sm:px-4 py-2 rounded-lg text-xs font-semibold whitespace-nowrap shrink-0 transition-colors ${
               activeTab === "vendas" ? "bg-emerald-500 text-white" : "text-[#c8c8ce] hover:bg-[#2f2f34]"
             }`}
           >
-            <ShoppingCart className="w-3.5 h-3.5" />
-            Vendas
+            <ShoppingCart className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
+            <span className="hidden sm:inline">Vendas</span>
           </button>
           <button
             type="button"
             role="tab"
             aria-selected={activeTab === "trackeamento"}
             onClick={() => setActiveTab("trackeamento")}
-            className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold transition-colors ${
+            aria-label="Trackeamento"
+            title="Trackeamento"
+            className={`inline-flex items-center justify-center sm:justify-start gap-1.5 flex-1 sm:flex-none px-3 sm:px-4 py-2 rounded-lg text-xs font-semibold whitespace-nowrap shrink-0 transition-colors ${
               activeTab === "trackeamento" ? "bg-[#635bff] text-white" : "text-[#c8c8ce] hover:bg-[#2f2f34]"
             }`}
           >
-            <CreditCard className="w-3.5 h-3.5" />
-            Trackeamento
+            <CreditCard className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
+            <span className="hidden sm:inline">Trackeamento</span>
           </button>
           <button
             type="button"
             role="tab"
             aria-selected={activeTab === "custom-checkout"}
             onClick={() => setActiveTab("custom-checkout")}
-            className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold transition-colors ${
+            aria-label="Checkout"
+            title="Checkout"
+            className={`inline-flex items-center justify-center sm:justify-start gap-1.5 flex-1 sm:flex-none px-3 sm:px-4 py-2 rounded-lg text-xs font-semibold whitespace-nowrap shrink-0 transition-colors ${
               activeTab === "custom-checkout" ? "bg-[#a855f7] text-white" : "text-[#c8c8ce] hover:bg-[#2f2f34]"
             }`}
           >
-            <ImageIcon className="w-3.5 h-3.5" />
-            Custom Checkout
+            <ImageIcon className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
+            <span className="hidden sm:inline">Checkout</span>
           </button>
         </div>
 

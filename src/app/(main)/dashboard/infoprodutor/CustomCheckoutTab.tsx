@@ -386,10 +386,50 @@ export default function CustomCheckoutTab() {
               <span className="text-xs text-text-secondary hidden sm:inline">Tempo real</span>
             </div>
           </div>
-          <div className="relative flex h-[min(78vh,820px)] max-h-[min(78vh,820px)] flex-col overflow-hidden bg-black/30">
-            <div className="flex min-h-0 flex-1 items-center justify-center p-3 sm:p-4">
-              {previewDevice === "mobile" ? (
-                <div className="flex justify-center">
+          <div className="relative flex h-[min(70vh,560px)] lg:h-[min(78vh,820px)] max-h-[min(70vh,560px)] lg:max-h-[min(78vh,820px)] flex-col overflow-hidden bg-black/30">
+            <div className="flex min-h-0 flex-1 items-center justify-center p-2 sm:p-3 lg:p-4">
+              {/* ─── Mobile/tablet admin ─── */}
+              <div className="lg:hidden w-full h-full flex items-center justify-center">
+                {previewDevice === "mobile" ? (
+                  /* Mockup CSS de celular, escalado pra caber em qualquer container estreito */
+                  <div className="scale-[0.80] sm:scale-100 origin-center">
+                    <div
+                      className="relative mx-auto shadow-2xl"
+                      style={{ width: 320, height: 640, background: "#0a0a0b", borderRadius: 42, padding: 8 }}
+                    >
+                      <span aria-hidden className="absolute bg-[#1a1a1e]" style={{ left: -2, top: 110, width: 3, height: 30, borderRadius: 2 }} />
+                      <span aria-hidden className="absolute bg-[#1a1a1e]" style={{ right: -2, top: 140, width: 3, height: 60, borderRadius: 2 }} />
+                      <div
+                        className="relative w-full h-full overflow-hidden"
+                        style={{ borderRadius: 34, background: state.mode === "light" ? "#f5f5f7" : "#18181b" }}
+                      >
+                        <div
+                          aria-hidden
+                          className="absolute left-1/2 -translate-x-1/2 z-[10] bg-black"
+                          style={{ top: 8, width: 96, height: 22, borderRadius: 14 }}
+                        />
+                        <PreviewViewportShim referenceWidth={390}>
+                          <CheckoutPreview state={state} device={previewDevice} />
+                        </PreviewViewportShim>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  /* Desktop preview sem chrome de notebook — só o checkout renderizado a 720px escalado */
+                  <div
+                    className="w-full h-full overflow-hidden rounded-xl border border-dark-border shadow-lg"
+                    style={{ background: state.mode === "light" ? "#f5f5f7" : "#18181b" }}
+                  >
+                    <PreviewViewportShim referenceWidth={720} enabled>
+                      <CheckoutPreview state={state} device={previewDevice} />
+                    </PreviewViewportShim>
+                  </div>
+                )}
+              </div>
+
+              {/* ─── Desktop admin: mockup de celular ou notebook ─── */}
+              <div className="hidden lg:flex justify-center">
+                {previewDevice === "mobile" ? (
                   <div
                     className="relative mx-auto shadow-2xl"
                     style={{ width: 320, height: 640, background: "#0a0a0b", borderRadius: 42, padding: 8 }}
@@ -410,9 +450,7 @@ export default function CustomCheckoutTab() {
                       </PreviewViewportShim>
                     </div>
                   </div>
-                </div>
-              ) : (
-                <div className="flex justify-center">
+                ) : (
                   <div className="isolate relative mx-auto inline-block max-w-[min(900px,100%)] leading-none">
                     <div
                       className="absolute z-[1] overflow-hidden rounded-md"
@@ -432,8 +470,8 @@ export default function CustomCheckoutTab() {
                       draggable={false}
                     />
                   </div>
-                </div>
-              )}
+                )}
+              </div>
             </div>
           </div>
         </div>

@@ -118,7 +118,7 @@ export function SaleNotificationsToast({
   return (
     <div
       key={notif.id}
-      className="fixed top-14 right-4 z-[60] max-w-[320px] animate-slide-in-right"
+      className="fixed top-32 right-4 sm:top-20 z-[60] max-w-[320px] animate-slide-in-right"
       role="status"
       aria-live="polite"
     >
@@ -292,7 +292,7 @@ export function ViewersBadge({ min, max }: { min: number; max: number }) {
   }, [lo, hi]);
 
   return (
-    <div className="fixed top-4 right-4 z-[55] pointer-events-none">
+    <div className="fixed top-20 right-4 sm:top-4 z-[55] pointer-events-none">
       <div className="flex items-center gap-2 sm:gap-2.5 rounded-full border border-white/10 bg-black/35 backdrop-blur-md px-3 py-1.5 sm:px-4 sm:py-2 shadow-lg">
         <span className="relative flex h-2 w-2 sm:h-2.5 sm:w-2.5">
           <span className="absolute inset-0 rounded-full bg-emerald-400 animate-ping opacity-75" />
