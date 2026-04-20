@@ -395,13 +395,13 @@ export default function CustomCheckoutTab() {
                   <div className="scale-[0.80] sm:scale-100 origin-center">
                     <div
                       className="relative mx-auto shadow-2xl"
-                      style={{ width: 320, height: 640, background: "#0a0a0b", borderRadius: 42, padding: 8 }}
+                      style={{ width: 320, height: 640, background: "#0a0a0b", borderRadius: 30, padding: 8 }}
                     >
                       <span aria-hidden className="absolute bg-[#1a1a1e]" style={{ left: -2, top: 110, width: 3, height: 30, borderRadius: 2 }} />
                       <span aria-hidden className="absolute bg-[#1a1a1e]" style={{ right: -2, top: 140, width: 3, height: 60, borderRadius: 2 }} />
                       <div
                         className="relative w-full h-full overflow-hidden"
-                        style={{ borderRadius: 34, background: state.mode === "light" ? "#f5f5f7" : "#18181b" }}
+                        style={{ borderRadius: 22, background: state.mode === "light" ? "#f5f5f7" : "#18181b" }}
                       >
                         <div
                           aria-hidden
