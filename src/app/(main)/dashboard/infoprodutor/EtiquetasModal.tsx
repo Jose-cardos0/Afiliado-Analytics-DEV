@@ -106,14 +106,33 @@ export default function EtiquetasModal({
       className="etiqueta-modal-overlay fixed inset-0 z-50 bg-black/70 backdrop-blur-sm overflow-y-auto print:static print:bg-white print:backdrop-blur-none print:overflow-visible"
       onClick={onClose}
     >
-      {/* CSS local: impressão corta todo resto da página, só mostra as etiquetas */}
+      {/* CSS local: impressão corta todo resto da página, só mostra as etiquetas.
+       * Estratégia visibility-based: o modal não é filho direto de <body>
+       * (está aninhado em main > página), então a regra antiga `body > *:not(...)`
+       * escondia também o ancestral do modal. Com `visibility: hidden` em tudo
+       * e `visible` só na árvore do modal, só as etiquetas aparecem no papel.
+       */}
       <style>{`
         @media print {
           @page { size: A6 portrait; margin: 6mm; }
-          body > *:not(.etiqueta-modal-overlay) { display: none !important; }
-          .etiqueta-modal-overlay { position: static !important; background: white !important; height: auto !important; overflow: visible !important; }
-          .etiqueta-modal-chrome { display: none !important; }
-          .etiqueta-modal-body { padding: 0 !important; }
+          html, body { background: white !important; }
+          body * { visibility: hidden !important; }
+          .etiqueta-modal-overlay,
+          .etiqueta-modal-overlay * { visibility: visible !important; }
+          .etiqueta-modal-chrome,
+          .etiqueta-modal-chrome * { display: none !important; }
+          .etiqueta-modal-overlay {
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            right: 0 !important;
+            width: 100% !important;
+            height: auto !important;
+            background: white !important;
+            overflow: visible !important;
+            backdrop-filter: none !important;
+          }
+          .etiqueta-modal-body { padding: 0 !important; background: white !important; border: none !important; }
           .etiqueta-sheet { box-shadow: none !important; border-radius: 0 !important; margin: 0 !important; page-break-inside: avoid; break-inside: avoid; }
           .etiqueta-sheet + .etiqueta-sheet { page-break-before: always; break-before: page; }
         }
