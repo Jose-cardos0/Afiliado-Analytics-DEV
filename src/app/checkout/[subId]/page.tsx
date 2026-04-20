@@ -223,11 +223,12 @@ export default function CheckoutPage({ params }: { params: Promise<{ subId: stri
   return (
     <div className="min-h-screen px-4 py-10" style={{ background: palette.bg, color: palette.text }}>
       <div className="max-w-2xl mx-auto space-y-6">
-        {/* Banner customizado do afiliado (se configurado) */}
+        {/* Banner customizado do afiliado (se configurado). Altura fixa + object-cover
+            pra sempre virar banner — não importa o tamanho da imagem enviada. */}
         {headerImageUrl ? (
           <div className="rounded-xl overflow-hidden border" style={{ borderColor: palette.cardBorder }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={headerImageUrl} alt="" className="w-full h-auto object-cover" />
+            <img src={headerImageUrl} alt="" className="w-full h-28 sm:h-36 md:h-44 object-cover" />
           </div>
         ) : null}
 
