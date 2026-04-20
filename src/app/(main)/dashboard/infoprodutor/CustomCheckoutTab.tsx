@@ -454,7 +454,7 @@ export default function CustomCheckoutTab() {
                   <div className="isolate relative mx-auto inline-block max-w-[min(900px,100%)] leading-none">
                     <div
                       className="absolute z-[1] overflow-hidden rounded-md"
-                      style={{ top: "5%", left: "14%", right: "14%", bottom: "31%" }}
+                      style={{ top: "4.0%", left: "13.8%", right: "12.8%", bottom: "32%" }}
                     >
                       <PreviewViewportShim referenceWidth={1200} enabled={false}>
                         <CheckoutPreview state={state} device={previewDevice} />
