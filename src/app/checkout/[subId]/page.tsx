@@ -21,6 +21,7 @@ import {
   useStripe,
   useElements,
 } from "@stripe/react-stripe-js";
+import WhatsAppInputBR from "@/app/components/ui/WhatsAppInputBR";
 import {
   SaleNotificationsToast,
   CountdownBar,
@@ -727,12 +728,9 @@ function PaymentSection({
         <label className="block text-[11px] font-semibold" style={{ color: palette.textMuted }}>
           WhatsApp (com DDD)
         </label>
-        <input
-          type="tel"
+        <WhatsAppInputBR
           value={buyerWhatsapp}
-          onChange={(e) => setBuyerWhatsapp(e.target.value)}
-          placeholder="(11) 99999-9999"
-          className="w-full rounded-xl px-3 py-2.5 text-[13px] border outline-none focus:border-[#635bff]"
+          onChange={setBuyerWhatsapp}
           style={{ background: palette.inputBg, borderColor: palette.inputBorder, color: palette.text }}
         />
       </div>
@@ -759,12 +757,9 @@ function PaymentSection({
         <label className="block text-[11px] font-semibold" style={{ color: palette.textMuted }}>
           WhatsApp (com DDD)
         </label>
-        <input
-          type="tel"
+        <WhatsAppInputBR
           value={buyerWhatsapp}
-          onChange={(e) => setBuyerWhatsapp(e.target.value)}
-          placeholder="(11) 99999-9999"
-          className="w-full rounded-xl px-3 py-2.5 text-[13px] border outline-none focus:border-[#635bff]"
+          onChange={setBuyerWhatsapp}
           style={{ background: palette.inputBg, borderColor: palette.inputBorder, color: palette.text }}
         />
       </div>
