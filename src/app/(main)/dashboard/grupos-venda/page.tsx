@@ -1663,74 +1663,76 @@ export default function GruposVendaPage() {
                   )}
                 </div>
 
-                {/* Sub IDs — desktop: sempre expandido */}
-                <div className="hidden md:flex flex-col gap-3 min-w-0">
-                  <FieldLabel>
-                    <span className="inline-flex items-center gap-1 flex-wrap">
-                      <Tag className="w-2.5 h-2.5" /> Sub IDs de Rastreamento
-                      <span className="text-[8px] normal-case tracking-normal font-normal text-[#a0a0a0] ml-1">(opcional)</span>
-                    </span>
-                  </FieldLabel>
-                  <div className="flex flex-col gap-2">
-                    {[
-                      { label: "Canal", value: subId1, setter: setSubId1, ph: "Ex: Whtasapp" },
-                      { label: "Lista", value: subId2, setter: setSubId2, ph: "Ex: Camisa Anime" },
-                      { label: "Campanha", value: subId3, setter: setSubId3, ph: "Ex: Natal" },
-                    ].map(({ label, value, setter, ph }) => (
-                      <div key={label} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-1.5 sm:gap-3">
-                        <span className="text-[8px] text-[#a0a0a0] uppercase tracking-widest font-bold w-full sm:w-16 shrink-0">{label}</span>
-                        <input type="text" value={value} onChange={(e) => setter(e.target.value)} placeholder={ph}
-                          className="w-full flex-1 bg-[#222228] border border-[#3e3e3e] rounded-lg px-3 py-2.5 sm:py-2 text-[10px] text-white placeholder:text-[#868686] focus:border-[#e24c30] outline-none transition" />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Sub IDs — mobile: dropdown estilo instância, começa recolhido */}
-                <div className="md:hidden min-w-0 flex flex-col gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setMobileSubIdsOpen((o) => !o)}
-                    aria-expanded={mobileSubIdsOpen}
-                    className="w-full flex items-center justify-between gap-3 rounded-xl bg-[#1a1a1c] border border-[#2c2c32] px-4 py-3 text-left transition hover:border-[#3e3e3e] active:scale-[0.99]"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[9px] font-bold text-[#d8d8d8] uppercase tracking-widest flex items-center gap-1.5">
-                        <Tag className="w-2.5 h-2.5 text-[#e24c30] shrink-0" />
-                        Sub IDs de Rastreamento
-                        <span className="text-[8px] normal-case tracking-normal font-normal text-[#a0a0a0]">(opcional)</span>
-                      </p>
-                      <p className="text-[10px] text-[#f0f0f2] mt-1 truncate">{subIdsMobileSummary}</p>
-                    </div>
-                    <ChevronDown
-                      className={cn(
-                        "w-4 h-4 shrink-0 text-[#f0f0f2] transition-transform duration-200",
-                        mobileSubIdsOpen && "rotate-180",
-                      )}
-                      aria-hidden
-                    />
-                  </button>
-                  {mobileSubIdsOpen && (
-                    <div className="flex flex-col gap-2 pl-0.5 pt-1 border border-[#2c2c32] rounded-xl bg-[#222228]/50 p-3">
+                {/* Sub IDs — desktop: sempre expandido (apenas em modo keywords ou listas não-shopee) */}
+                {(contentMode === "keywords" || offerListSource !== "shopee") && (
+                  <div className="hidden md:flex flex-col gap-3 min-w-0">
+                    <FieldLabel>
+                      <span className="inline-flex items-center gap-1 flex-wrap">
+                        <Tag className="w-2.5 h-2.5" /> Sub IDs de Rastreamento
+                        <span className="text-[8px] normal-case tracking-normal font-normal text-[#a0a0a0] ml-1">(opcional)</span>
+                      </span>
+                    </FieldLabel>
+                    <div className="flex flex-col gap-2">
                       {[
-                        { label: "Canal", value: subId1, setter: setSubId1, ph: "Ex: Whtasapp" },
-                        { label: "Lista", value: subId2, setter: setSubId2, ph: "Ex: Camisa Anime" },
-                        { label: "Campanha", value: subId3, setter: setSubId3, ph: "Ex: Natal" },
+                        { label: "subId1", value: subId1, setter: setSubId1, ph: "Canal (ex: Whatsapp)" },
+                        { label: "subId2", value: subId2, setter: setSubId2, ph: "Lista (ex: Camisa Anime)" },
+                        { label: "subId3", value: subId3, setter: setSubId3, ph: "Campanha (ex: Natal)" },
                       ].map(({ label, value, setter, ph }) => (
-                        <div key={label} className="flex flex-col gap-1.5">
-                          <span className="text-[8px] text-[#a0a0a0] uppercase tracking-widest font-bold">{label}</span>
-                          <input
-                            type="text"
-                            value={value}
-                            onChange={(e) => setter(e.target.value)}
-                            placeholder={ph}
-                            className="w-full bg-[#222228] border border-[#3e3e3e] rounded-lg px-3 py-2.5 text-[10px] text-white placeholder:text-[#868686] focus:border-[#e24c30] outline-none transition"
-                          />
+                        <div key={label} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-1.5 sm:gap-3">
+                          <input type="text" value={value} onChange={(e) => setter(e.target.value)} placeholder={ph}
+                            className="w-full flex-1 bg-[#222228] border border-[#3e3e3e] rounded-lg px-3 py-2.5 sm:py-2 text-[10px] text-white placeholder:text-[#868686] focus:border-[#e24c30] outline-none transition" />
                         </div>
                       ))}
                     </div>
-                  )}
-                </div>
+                  </div>
+                )}
+
+                {/* Sub IDs — mobile: dropdown estilo instância, começa recolhido (apenas em modo keywords ou listas não-shopee) */}
+                {(contentMode === "keywords" || offerListSource !== "shopee") && (
+                  <div className="md:hidden min-w-0 flex flex-col gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setMobileSubIdsOpen((o) => !o)}
+                      aria-expanded={mobileSubIdsOpen}
+                      className="w-full flex items-center justify-between gap-3 rounded-xl bg-[#1a1a1c] border border-[#2c2c32] px-4 py-3 text-left transition hover:border-[#3e3e3e] active:scale-[0.99]"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[9px] font-bold text-[#d8d8d8] uppercase tracking-widest flex items-center gap-1.5">
+                          <Tag className="w-2.5 h-2.5 text-[#e24c30] shrink-0" />
+                          Sub IDs de Rastreamento
+                          <span className="text-[8px] normal-case tracking-normal font-normal text-[#a0a0a0]">(opcional)</span>
+                        </p>
+                        <p className="text-[10px] text-[#f0f0f2] mt-1 truncate">{subIdsMobileSummary}</p>
+                      </div>
+                      <ChevronDown
+                        className={cn(
+                          "w-4 h-4 shrink-0 text-[#f0f0f2] transition-transform duration-200",
+                          mobileSubIdsOpen && "rotate-180",
+                        )}
+                        aria-hidden
+                      />
+                    </button>
+                    {mobileSubIdsOpen && (
+                      <div className="flex flex-col gap-2 pl-0.5 pt-1 border border-[#2c2c32] rounded-xl bg-[#222228]/50 p-3">
+                        {[
+                          { label: "subId1", value: subId1, setter: setSubId1, ph: "Canal (ex: Whatsapp)" },
+                          { label: "subId2", value: subId2, setter: setSubId2, ph: "Lista (ex: Camisa Anime)" },
+                          { label: "subId3", value: subId3, setter: setSubId3, ph: "Campanha (ex: Natal)" },
+                        ].map(({ label, value, setter, ph }) => (
+                          <div key={label} className="flex flex-col gap-1.5">
+                            <input
+                              type="text"
+                              value={value}
+                              onChange={(e) => setter(e.target.value)}
+                              placeholder={ph}
+                              className="w-full bg-[#222228] border border-[#3e3e3e] rounded-lg px-3 py-2.5 text-[10px] text-white placeholder:text-[#868686] focus:border-[#e24c30] outline-none transition"
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
