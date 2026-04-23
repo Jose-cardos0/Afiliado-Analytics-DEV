@@ -40,7 +40,8 @@ function getServiceSupabase() {
 async function resolve(
   instanceName: string,
   grupoOrigemJidRaw: string,
-  userIdFilter: string
+  userIdFilter: string,
+  apikeyFilter: string
 ): Promise<{ active: boolean; reason?: string }> {
   if (!instanceName || !grupoOrigemJidRaw) {
     return { active: false, reason: "missing_params" };
@@ -53,12 +54,13 @@ async function resolve(
     .from("evolution_instances")
     .select("id, user_id")
     .eq("nome_instancia", instanceName);
+  if (apikeyFilter) instQuery = instQuery.eq("hash", apikeyFilter);
   if (userIdFilter) instQuery = instQuery.eq("user_id", userIdFilter);
   const { data: instList, error: instErr } = await instQuery;
   if (instErr) return { active: false, reason: "instance_query_error" };
   if (!instList?.length) return { active: false, reason: "instance_not_found" };
 
-  if (instList.length > 1 && !userIdFilter) {
+  if (instList.length > 1 && !userIdFilter && !apikeyFilter) {
     return { active: true, reason: "ambiguous_instance" };
   }
 
@@ -86,8 +88,9 @@ export async function GET(req: NextRequest) {
   const instanceName = (url.searchParams.get("instance") ?? "").trim();
   const grupoOrigemJid = (url.searchParams.get("grupo") ?? "").trim();
   const userIdFilter = (url.searchParams.get("userId") ?? "").trim();
+  const apikeyFilter = (url.searchParams.get("apikey") ?? "").trim();
   try {
-    const result = await resolve(instanceName, grupoOrigemJid, userIdFilter);
+    const result = await resolve(instanceName, grupoOrigemJid, userIdFilter, apikeyFilter);
     return NextResponse.json(result);
   } catch (e) {
     const msg = e instanceof Error ? e.message : "erro";
@@ -104,7 +107,8 @@ export async function POST(req: NextRequest) {
     const instanceName = typeof body.instanceName === "string" ? body.instanceName.trim() : "";
     const grupoOrigemJid = typeof body.grupoOrigemJid === "string" ? body.grupoOrigemJid.trim() : "";
     const userIdFilter = typeof body.userId === "string" ? body.userId.trim() : "";
-    const result = await resolve(instanceName, grupoOrigemJid, userIdFilter);
+    const apikeyFilter = typeof body.apikey === "string" ? body.apikey.trim() : "";
+    const result = await resolve(instanceName, grupoOrigemJid, userIdFilter, apikeyFilter);
     return NextResponse.json(result);
   } catch (e) {
     const msg = e instanceof Error ? e.message : "erro";
