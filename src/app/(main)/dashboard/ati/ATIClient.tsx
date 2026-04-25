@@ -218,7 +218,6 @@ function AdAccordionItem({
   onEditAd,
   onReloadAti,
   campaignIsInfoP = false,
-  campaignIsGrupos = false,
 }: {
   row: ATICreativeRow;
   dateLabel: string;
@@ -238,8 +237,6 @@ function AdAccordionItem({
   onReloadAti: () => Promise<void>;
   /** Se a campanha-pai está marcada como InfoP, exibimos o bloco de SubId InfoP. */
   campaignIsInfoP?: boolean;
-  /** Se a campanha-pai está marcada como Grupos, exibimos o bloco de Sub ID Shopee. */
-  campaignIsGrupos?: boolean;
 }) {
   const isOpen = expandedId === row.adId;
   const [shopeeSubDraft, setShopeeSubDraft] = useState(() => row.shopeeSubId ?? row.subId ?? "");
@@ -358,8 +355,7 @@ function AdAccordionItem({
 
       {isOpen && (
         <div className="border-t border-dark-border bg-dark-bg/30 p-4 space-y-4">
-          {/* Shopee SubId: só renderiza se a campanha-pai está marcada como Grupos (dados permanecem salvos no banco independente disso). */}
-          {campaignIsGrupos ? (
+          {/* Shopee SubId: cruzamento com vendas Shopee */}
           <div className="rounded-lg border border-dark-border/80 bg-dark-card/50 p-3 space-y-2">
             <p className="text-xs font-semibold text-text-primary flex items-center gap-1.5">
               <ShoppingBag className="h-3.5 w-3.5 text-shopee-orange" />
@@ -437,7 +433,6 @@ function AdAccordionItem({
               </p>
             )}
           </div>
-          ) : null}
 
           {/* ── SubId InfoP (cruzamento com produtos Stripe) — só aparece em campanhas marcadas como InfoP ── */}
           {campaignIsInfoP ? (
@@ -2037,7 +2032,6 @@ export default function ATIClient() {
                                     }}
                                     onReloadAti={load}
                                     campaignIsInfoP={campaignIdsInfoP.includes(camp.campaignId)}
-                                    campaignIsGrupos={campaignIdsTraficoGrupos.includes(camp.campaignId)}
                                   />
                                 ))}
                               </div>
@@ -2453,15 +2447,15 @@ export default function ATIClient() {
           onClick={() => { if (!pauseConfirmLoading) setPauseConfirm(null); }}
         >
           <div
-            className="w-full max-w-sm bg-dark-card border border-amber-500/25 rounded-2xl shadow-2xl overflow-hidden"
+            className="w-full max-w-sm bg-dark-card border border-shopee-orange/25 rounded-2xl shadow-2xl overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
 
 
             {/* Ícone + Título */}
             <div className="flex flex-col items-center px-6 pt-6 pb-3 gap-3">
-              <div className="w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center">
-                <PauseCircle className="h-7 w-7 text-amber-400" aria-hidden="true" />
+              <div className="w-14 h-14 rounded-2xl bg-shopee-orange/10 border border-shopee-orange/30 flex items-center justify-center">
+                <PauseCircle className="h-7 w-7 text-shopee-orange" aria-hidden="true" />
               </div>
               <div className="text-center">
                 <h2 className="text-base font-bold text-text-primary">
@@ -2474,9 +2468,9 @@ export default function ATIClient() {
             </div>
 
             {/* Aviso */}
-            <div className="mx-5 mb-4 rounded-xl bg-amber-500/8 border border-amber-500/20 px-3 py-2.5 flex items-start gap-2">
-              <AlertCircle className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" aria-hidden="true" />
-              <p className="text-xs text-amber-200/80 leading-relaxed">
+            <div className="mx-5 mb-4 rounded-xl bg-shopee-orange/8 border border-shopee-orange/20 px-3 py-2.5 flex items-start gap-2">
+              <AlertCircle className="h-4 w-4 text-shopee-orange shrink-0 mt-0.5" aria-hidden="true" />
+              <p className="text-xs text-shopee-orange/90 leading-relaxed font-medium">
                 Este item será pausado no Meta imediatamente. Você pode reativar a qualquer momento.
               </p>
             </div>
@@ -2495,7 +2489,7 @@ export default function ATIClient() {
                 type="button"
                 disabled={pauseConfirmLoading}
                 onClick={handleConfirmPause}
-                className="flex-1 rounded-xl bg-amber-500 py-3 text-sm font-semibold text-white hover:bg-amber-400 disabled:opacity-50 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                className="flex-1 rounded-xl bg-shopee-orange py-3 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50 transition-all flex items-center justify-center gap-2 cursor-pointer"
               >
                 {pauseConfirmLoading ? (
                   <>
