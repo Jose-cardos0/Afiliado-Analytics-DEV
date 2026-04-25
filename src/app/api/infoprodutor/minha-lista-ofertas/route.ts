@@ -47,7 +47,7 @@ export async function GET(req: Request) {
       .from("minha_lista_ofertas_info")
       .select(SELECT)
       .eq("user_id", gate.userId)
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: true });
 
     if (listaId) query = query.eq("lista_id", listaId);
 
@@ -152,6 +152,39 @@ export async function POST(req: Request) {
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     return NextResponse.json({ data: mapItem(data as Record<string, unknown>) });
+  } catch (e) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : "Erro" }, { status: 500 });
+  }
+}
+
+export async function PATCH(req: Request) {
+  try {
+    const gate = await gateInfoprodutor();
+    if (!gate.allowed) return gate.response;
+    const supabase = await createClient();
+
+    const body = await req.json().catch(() => ({}));
+    const itemIds = body?.itemIds || body?.item_ids;
+    const listaIdForReorder = body?.listaId || body?.lista_id;
+
+    if (Array.isArray(itemIds) && listaIdForReorder) {
+      const now = new Date();
+      for (let i = 0; i < itemIds.length; i++) {
+        const id = itemIds[i];
+        // O primeiro item (i=0) terá a data mais antiga
+        // O último item terá a data mais recente
+        const newDate = new Date(now.getTime() - (itemIds.length - i) * 1000);
+        await supabase
+          .from("minha_lista_ofertas_info")
+          .update({ created_at: newDate.toISOString() })
+          .eq("id", id)
+          .eq("user_id", gate.userId)
+          .eq("lista_id", listaIdForReorder);
+      }
+      return NextResponse.json({ ok: true });
+    }
+
+    return NextResponse.json({ error: "itemIds e listaId são obrigatórios" }, { status: 400 });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Erro" }, { status: 500 });
   }

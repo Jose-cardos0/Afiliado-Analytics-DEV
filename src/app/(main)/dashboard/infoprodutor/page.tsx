@@ -27,7 +27,11 @@ import {
   AlertTriangle,
   RefreshCw,
   MessageCircle,
+  GripVertical,
+  ArrowUp,
+  ArrowDown,
 } from "lucide-react";
+import { Reorder } from "framer-motion";
 import Link from "next/link";
 import ConfirmModal from "@/app/components/ui/ConfirmModal";
 import Toolist from "@/app/components/ui/Toolist";
@@ -214,6 +218,8 @@ export default function InfoprodutorPage() {
   const [addToListaOpen, setAddToListaOpen] = useState(false);
   const [targetListaId, setTargetListaId] = useState("");
   const [addingToLista, setAddingToLista] = useState(false);
+  const [isSyncingOrder, setIsSyncingOrder] = useState(false);
+  const saveTimeoutRef = useRef<Record<string, NodeJS.Timeout>>({});
 
   // ─── Estado: feedback / confirmações ───────────────────────────────────────
   const [error, setError] = useState<string | null>(null);
@@ -319,6 +325,81 @@ export default function InfoprodutorPage() {
       }
       return next;
     });
+  };
+
+  const handleReorder = (listaId: string, newOrder: Item[]) => {
+    setItemsByLista((prev) => {
+      const allItems = [...(prev[listaId] ?? [])];
+      const filter = (filterByLista[listaId] ?? "").trim().toLowerCase();
+      const page = pageByLista[listaId] ?? 1;
+
+      if (filter) {
+        // Se houver filtro, o reorder é complexo. 
+        // Simplificamos: atualizamos apenas os itens visíveis no array original.
+        const filteredIndices = allItems
+          .map((item, idx) => ((item.productName || "").toLowerCase().includes(filter) ? idx : -1))
+          .filter((idx) => idx !== -1);
+        
+        const from = (page - 1) * ITEMS_PER_PAGE;
+        const to = from + ITEMS_PER_PAGE;
+        const pageIndices = filteredIndices.slice(from, to);
+
+        pageIndices.forEach((originalIdx, i) => {
+          if (newOrder[i]) {
+            allItems[originalIdx] = newOrder[i];
+          }
+        });
+      } else {
+        const from = (page - 1) * ITEMS_PER_PAGE;
+        allItems.splice(from, newOrder.length, ...newOrder);
+      }
+
+      return { ...prev, [listaId]: allItems };
+    });
+  };
+
+  const saveNewOrder = async (listaId: string) => {
+    // Cancela qualquer salvamento pendente para esta lista
+    if (saveTimeoutRef.current[listaId]) {
+      clearTimeout(saveTimeoutRef.current[listaId]);
+    }
+
+    // Agenda o salvamento para 500ms a partir de agora
+    saveTimeoutRef.current[listaId] = setTimeout(async () => {
+      const items = itemsByLista[listaId] || [];
+      if (items.length === 0) return;
+
+      setIsSyncingOrder(true);
+      try {
+        const res = await fetch("/api/infoprodutor/minha-lista-ofertas", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            listaId,
+            itemIds: items.map((i) => i.id),
+          }),
+        });
+
+        if (!res.ok) throw new Error("Erro ao salvar ordem");
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Erro ao salvar nova ordem");
+      } finally {
+        setIsSyncingOrder(false);
+        delete saveTimeoutRef.current[listaId];
+      }
+    }, 500);
+  };
+
+  const moveItem = (listaId: string, index: number, direction: "up" | "down") => {
+    const items = [...(itemsByLista[listaId] ?? [])];
+    const newIndex = direction === "up" ? index - 1 : index + 1;
+    if (newIndex < 0 || newIndex >= items.length) return;
+
+    const [removed] = items.splice(index, 1);
+    items.splice(newIndex, 0, removed);
+    
+    setItemsByLista((prev) => ({ ...prev, [listaId]: items }));
+    void saveNewOrder(listaId);
   };
 
   // ─── Formulário: imagem ────────────────────────────────────────────────────
@@ -1956,7 +2037,7 @@ export default function InfoprodutorPage() {
                             <button
                               type="button"
                               onClick={() => askDeleteLista(lista.id)}
-                              className="flex items-center gap-1 px-2 py-1.5 rounded-md border border-[#3e3e46] text-[#d2d2d2] text-xs hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/30"
+                              className="flex items-center gap-1 px-2 py-1.5 rounded-md border border-[#3e3e46] text-[#d2d2d2] text-xs hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/30 disabled:opacity-40"
                               title="Apagar lista"
                             >
                               <Trash2 className="h-3.5 w-3.5" /> Apagar
@@ -1976,79 +2057,105 @@ export default function InfoprodutorPage() {
                               </p>
                             ) : (
                               <>
-                                <div className="mb-3 flex items-center gap-2">
-                                  <Search className="h-4 w-4 text-[#a0a0a0] shrink-0" />
-                                  <input
-                                    type="text"
-                                    value={filterByLista[lista.id] ?? ""}
-                                    onChange={(e) => {
-                                      setFilterByLista((prev) => ({ ...prev, [lista.id]: e.target.value }));
-                                      setPageByLista((prev) => ({ ...prev, [lista.id]: 1 }));
-                                    }}
-                                    placeholder="Filtrar por nome do produto..."
-                                    className="flex-1 px-3 py-2 rounded-lg border border-[#2c2c32] bg-[#222228] text-[#f0f0f2] text-sm placeholder:text-[#6b6b72]"
-                                  />
-                                </div>
-                                <ul className="space-y-4">
-                                  {slice.map((item) => (
-                                    <li
+                                    <div className="mb-3 flex items-center gap-2">
+                                      <Search className="h-4 w-4 text-[#a0a0a0] shrink-0" />
+                                      <input
+                                        type="text"
+                                        value={filterByLista[lista.id] ?? ""}
+                                        onChange={(e) => {
+                                          setFilterByLista((prev) => ({ ...prev, [lista.id]: e.target.value }));
+                                          setPageByLista((prev) => ({ ...prev, [lista.id]: 1 }));
+                                        }}
+                                        placeholder="Filtrar por nome do produto..."
+                                        className="flex-1 px-3 py-2 rounded-lg border border-[#2c2c32] bg-[#222228] text-[#f0f0f2] text-sm placeholder:text-[#6b6b72]"
+                                      />
+                                    </div>
+
+                                <Reorder.Group
+                                  axis="y"
+                                  values={slice}
+                                  onReorder={(newOrder) => handleReorder(lista.id, newOrder)}
+                                  className="space-y-4"
+                                >
+                                  {slice.map((item, idx) => (
+                                    <Reorder.Item
                                       key={item.id}
-                                      className="flex gap-4 p-3 rounded-xl border border-[#2c2c32] bg-[#222228]"
+                                      value={item}
+                                      onDragEnd={() => saveNewOrder(lista.id)}
+                                      whileDrag={{ 
+                                        scale: 1.02, 
+                                        boxShadow: "0px 10px 30px rgba(0,0,0,0.5)",
+                                        zIndex: 50 
+                                      }}
+                                      transition={{ type: "spring", stiffness: 300, damping: 30 }}
+                                      className="flex gap-4 p-3 rounded-xl border border-[#2c2c32] bg-[#222228] relative group hover:border-[#3e3e46] transition-colors touch-none"
                                     >
-                                      {item.imageUrl ? (
-                                        // eslint-disable-next-line @next/next/no-img-element
-                                        <img
-                                          src={item.imageUrl}
-                                          alt=""
-                                          className="w-20 h-20 object-cover rounded-lg bg-white shrink-0 border border-[#2c2c32]"
-                                        />
-                                      ) : (
-                                        <div className="w-20 h-20 rounded-lg bg-[#1c1c1f] shrink-0 flex items-center justify-center border border-[#2c2c32] text-[#6b6b72]">
-                                          <ImageIcon className="w-5 h-5" />
-                                        </div>
-                                      )}
-                                      <div className="flex-1 min-w-0">
-                                        <p className="text-sm font-medium text-[#f0f0f2] leading-snug">
-                                          ✨ {item.productName || "Produto"}
-                                        </p>
-                                        {item.description ? (
-                                          <p className="text-[11px] text-[#9a9aa2] leading-snug mt-1 whitespace-pre-wrap break-words line-clamp-3">
-                                            {item.description}
-                                          </p>
-                                        ) : null}
-                                        <InfoprodPriceLine price={item.price} priceOld={item.priceOld} size="md" />
-                                        <p className="text-sm font-medium text-[#f0f0f2] mt-1">
-                                          🛒 GARANTA O SEU - CLIQUE NO LINK 👇
-                                        </p>
-                                        <a
-                                          href={item.link}
-                                          target="_blank"
-                                          rel="noopener noreferrer"
-                                          className="text-sm text-emerald-400 hover:underline break-all text-left"
-                                        >
-                                          {item.link}
-                                        </a>
-                                        <div className="flex items-center gap-2 mt-2">
-                                          <a
-                                            href={item.link}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="text-xs text-[#e24c30] hover:underline flex items-center gap-1"
-                                          >
-                                            <ExternalLink className="h-3 w-3" /> Abrir link
-                                          </a>
-                                          <button
-                                            type="button"
-                                            onClick={() => askDeleteItem(item.id, lista.id)}
-                                            className="text-xs text-red-400 hover:underline flex items-center gap-1 ml-auto"
-                                          >
-                                            <Trash2 className="h-3 w-3" /> Remover
-                                          </button>
+                                      <div className="absolute left-1.5 top-1/2 -translate-y-1/2 text-[#3e3e46] group-hover:text-[#6b6b72] cursor-grab active:cursor-grabbing p-1">
+                                        <GripVertical className="h-4 w-4" />
+                                      </div>
+
+                                      <div className="pl-6 flex gap-4 w-full">
+                                        {item.imageUrl ? (
+                                          <img
+                                            src={item.imageUrl}
+                                            alt=""
+                                            className="w-20 h-20 object-contain rounded-lg bg-white shrink-0 border border-[#2c2c32]"
+                                          />
+                                        ) : (
+                                          <div className="w-20 h-20 rounded-lg bg-[#1c1c1f] shrink-0 flex items-center justify-center border border-[#2c2c32] text-[#6b6b72] text-xs">
+                                            —
+                                          </div>
+                                        )}
+                                        <div className="flex-1 min-w-0">
+                                          <div className="flex items-start justify-between gap-2">
+                                            <p className="text-sm font-medium text-[#f0f0f2] leading-snug">
+                                              ✨ {item.productName || "Produto"}
+                                            </p>
+                                            
+                                            <div className="flex flex-col gap-1">
+                                              <button
+                                                type="button"
+                                                onClick={() => moveItem(lista.id, idx, "up")}
+                                                disabled={idx === 0}
+                                                className="p-1 rounded bg-[#2c2c32] text-[#a0a0a0] hover:text-white disabled:opacity-30 transition-colors"
+                                                title="Mover para cima"
+                                              >
+                                                <ArrowUp className="h-3 w-3" />
+                                              </button>
+                                              <button
+                                                type="button"
+                                                onClick={() => moveItem(lista.id, idx, "down")}
+                                                disabled={idx === (itemsByLista[lista.id]?.length ?? 0) - 1}
+                                                className="p-1 rounded bg-[#2c2c32] text-[#a0a0a0] hover:text-white disabled:opacity-30 transition-colors"
+                                                title="Mover para baixo"
+                                              >
+                                                <ArrowDown className="h-3 w-3" />
+                                              </button>
+                                            </div>
+                                          </div>
+                                          <InfoprodPriceLine price={item.price} priceOld={item.priceOld} />
+                                          <div className="flex items-center gap-2 mt-2">
+                                            <a
+                                              href={item.link}
+                                              target="_blank"
+                                              rel="noopener noreferrer"
+                                              className="text-xs text-[#e24c30] hover:underline flex items-center gap-1"
+                                            >
+                                              <ExternalLink className="h-3 w-3" /> Link
+                                            </a>
+                                            <button
+                                              type="button"
+                                              onClick={() => askDeleteItem(item.id, lista.id)}
+                                              className="text-xs text-red-400 hover:underline flex items-center gap-1 ml-auto"
+                                            >
+                                              <Trash2 className="h-3 w-3" /> Remover
+                                            </button>
+                                          </div>
                                         </div>
                                       </div>
-                                    </li>
+                                    </Reorder.Item>
                                   ))}
-                                </ul>
+                                </Reorder.Group>
                                 {totalPages > 1 && (
                                   <GeradorPaginationBar
                                     className="mt-4 border-t border-[#2c2c32] pt-3"
