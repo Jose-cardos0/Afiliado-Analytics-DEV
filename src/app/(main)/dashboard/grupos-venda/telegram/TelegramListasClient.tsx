@@ -13,6 +13,9 @@ import {
   Pencil,
   X,
   Users,
+  Zap,
+  XCircle,
+  ChevronDown,
 } from "lucide-react";
 
 type TelegramBot = {
@@ -70,9 +73,12 @@ export default function TelegramListasClient() {
 
   const [removingId, setRemovingId] = useState<string | null>(null);
 
-  // Modal
+  // Modal CRUD
   const [modalOpen, setModalOpen] = useState(false);
   const [editingListaId, setEditingListaId] = useState<string | null>(null);
+
+  // Modal de disparo
+  const [disparoLista, setDisparoLista] = useState<TelegramListaResumo | null>(null);
 
   const loadAll = async () => {
     setLoading(true);
@@ -265,7 +271,17 @@ export default function TelegramListasClient() {
                   <Users className="h-3.5 w-3.5" />
                   {l.groups_count} grupo{l.groups_count === 1 ? "" : "s"}
                 </div>
-                <div className="flex items-center gap-2 mt-1">
+                <div className="flex items-center gap-2 mt-1 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => setDisparoLista(l)}
+                    disabled={l.groups_count === 0}
+                    className="inline-flex items-center gap-1 rounded-md border border-emerald-500/50 bg-emerald-500/10 px-2 py-1 text-xs font-semibold text-emerald-400 hover:bg-emerald-500/20 disabled:opacity-40 disabled:cursor-not-allowed"
+                    title={l.groups_count === 0 ? "Adicione grupos à lista primeiro" : "Disparar mensagem agora"}
+                  >
+                    <Zap className="h-3.5 w-3.5" />
+                    Disparar
+                  </button>
                   <button
                     type="button"
                     onClick={() => openEditModal(l.id)}
@@ -300,6 +316,14 @@ export default function TelegramListasClient() {
           editingListaId={editingListaId}
           onClose={closeModal}
           onSaved={handleSaved}
+        />
+      )}
+
+      {disparoLista && (
+        <DisparoModal
+          lista={disparoLista}
+          botUsername={botById.get(disparoLista.bot_id)?.bot_username ?? ""}
+          onClose={() => setDisparoLista(null)}
         />
       )}
     </section>
@@ -602,6 +626,263 @@ function ListaModal({
             {isEdit ? "Salvar alterações" : "Criar lista"}
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────────
+// Modal de disparo manual
+// ────────────────────────────────────────────────────────────────────────────────
+
+type DisparoResultado = {
+  sent: number;
+  failed: number;
+  total: number;
+  results: { chat_id: string; ok: boolean; error?: string }[];
+};
+
+function DisparoModal({
+  lista,
+  botUsername,
+  onClose,
+}: {
+  lista: TelegramListaResumo;
+  botUsername: string;
+  onClose: () => void;
+}) {
+  const [text, setText] = useState("");
+  const [imageUrl, setImageUrl] = useState("");
+  const [parseMode, setParseMode] = useState<"" | "HTML" | "MarkdownV2">("");
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+
+  const [sending, setSending] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [result, setResult] = useState<DisparoResultado | null>(null);
+
+  const handleSend = async () => {
+    if (!text.trim() && !imageUrl.trim()) {
+      setErr("Escreva uma mensagem ou informe uma URL de imagem.");
+      return;
+    }
+    setSending(true);
+    setErr(null);
+    setResult(null);
+    try {
+      const r = await fetch("/api/telegram/disparar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          lista_id: lista.id,
+          text: text.trim(),
+          image_url: imageUrl.trim() || undefined,
+          parse_mode: parseMode || undefined,
+        }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error ?? "Erro ao disparar");
+      setResult(j as DisparoResultado);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Erro");
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const reset = () => {
+    setResult(null);
+    setErr(null);
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="rounded-xl border border-dark-border bg-dark-card p-5 shadow-xl max-w-lg w-full max-h-[90vh] flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-base font-semibold text-text-primary flex items-center gap-2">
+            <Zap className="h-4 w-4 text-emerald-400" />
+            Disparar nesta lista
+          </h3>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded p-1 text-text-secondary hover:bg-dark-bg hover:text-text-primary"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="rounded-md border border-dark-border bg-dark-bg/40 px-3 py-2 mb-3 text-xs">
+          <p className="font-medium text-text-primary">{lista.nome_lista}</p>
+          <p className="text-text-secondary mt-0.5">
+            {botUsername ? `@${botUsername}` : "bot"} · {lista.groups_count} grupo
+            {lista.groups_count === 1 ? "" : "s"} receberão a mensagem
+          </p>
+        </div>
+
+        {err && (
+          <div className="flex items-center gap-2 p-2.5 mb-3 rounded-md border border-red-500/30 bg-red-500/10 text-red-400 text-xs">
+            <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0" />
+            {err}
+          </div>
+        )}
+
+        {result ? (
+          <div className="space-y-3 overflow-y-auto pr-1">
+            <div
+              className={`rounded-lg border p-3 text-sm flex items-start gap-2 ${
+                result.failed === 0
+                  ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
+                  : result.sent === 0
+                    ? "border-red-500/30 bg-red-500/10 text-red-400"
+                    : "border-amber-500/30 bg-amber-500/10 text-amber-300"
+              }`}
+            >
+              {result.failed === 0 ? (
+                <CheckCircle2 className="h-4 w-4 flex-shrink-0 mt-0.5" />
+              ) : (
+                <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+              )}
+              <div>
+                <p className="font-semibold">
+                  {result.sent}/{result.total} enviadas
+                </p>
+                {result.failed > 0 && (
+                  <p className="text-xs mt-0.5">{result.failed} falha(s) — detalhes abaixo</p>
+                )}
+              </div>
+            </div>
+
+            {result.failed > 0 && (
+              <div>
+                <p className="text-xs font-medium text-text-secondary mb-1">Erros:</p>
+                <ul className="space-y-1 max-h-48 overflow-y-auto pr-1 border border-dark-border rounded-md bg-dark-bg p-2">
+                  {result.results
+                    .filter((r) => !r.ok)
+                    .map((r) => (
+                      <li
+                        key={r.chat_id}
+                        className="flex items-start gap-2 text-xs text-red-400 px-1.5 py-1"
+                      >
+                        <XCircle className="h-3 w-3 flex-shrink-0 mt-0.5" />
+                        <div className="min-w-0">
+                          <p className="font-mono text-[11px]">{r.chat_id}</p>
+                          <p className="break-words">{r.error}</p>
+                        </div>
+                      </li>
+                    ))}
+                </ul>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-dark-border">
+              <button
+                type="button"
+                onClick={reset}
+                className="rounded-md border border-dark-border px-4 py-2 text-sm font-medium text-text-secondary hover:text-text-primary"
+              >
+                Disparar outra
+              </button>
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded-md px-4 py-2 text-sm font-semibold text-white bg-sky-600 hover:bg-sky-500"
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="space-y-3 overflow-y-auto pr-1">
+              <div>
+                <label className="block text-xs font-medium text-text-secondary mb-1">
+                  Mensagem *
+                </label>
+                <textarea
+                  value={text}
+                  onChange={(e) => setText(e.target.value)}
+                  placeholder="Digite a mensagem que será enviada..."
+                  rows={6}
+                  className="w-full rounded-md border border-dark-border bg-dark-bg py-2 px-3 text-text-primary text-sm resize-y"
+                />
+                <p className="text-[11px] text-text-secondary mt-1">
+                  {text.length} caracteres
+                  {imageUrl.trim() ? " (será usado como legenda da imagem)" : ""}
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-text-secondary mb-1">
+                  URL de imagem (opcional)
+                </label>
+                <input
+                  type="url"
+                  value={imageUrl}
+                  onChange={(e) => setImageUrl(e.target.value)}
+                  placeholder="https://..."
+                  className="w-full rounded-md border border-dark-border bg-dark-bg py-2 px-3 text-text-primary text-sm"
+                />
+                <p className="text-[11px] text-text-secondary mt-1">
+                  Se preenchida, será enviada com a mensagem como legenda.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setAdvancedOpen((v) => !v)}
+                className="inline-flex items-center gap-1 text-[11px] text-text-secondary hover:text-text-primary"
+              >
+                <ChevronDown
+                  className={`h-3 w-3 transition-transform ${advancedOpen ? "rotate-180" : ""}`}
+                />
+                Opções avançadas
+              </button>
+              {advancedOpen && (
+                <div>
+                  <label className="block text-xs font-medium text-text-secondary mb-1">
+                    Formatação
+                  </label>
+                  <select
+                    value={parseMode}
+                    onChange={(e) =>
+                      setParseMode(e.target.value as "" | "HTML" | "MarkdownV2")
+                    }
+                    className="w-full rounded-md border border-dark-border bg-dark-bg py-2 px-3 text-text-primary text-sm"
+                  >
+                    <option value="">Texto puro (sem formatação)</option>
+                    <option value="HTML">HTML (&lt;b&gt;, &lt;i&gt;, &lt;a&gt;)</option>
+                    <option value="MarkdownV2">MarkdownV2 (*bold*, _italic_)</option>
+                  </select>
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-2 pt-4 border-t border-dark-border mt-3">
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded-md border border-dark-border px-4 py-2 text-sm font-medium text-text-secondary hover:text-text-primary"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleSend}
+                disabled={sending || (!text.trim() && !imageUrl.trim())}
+                className="inline-flex items-center gap-2 rounded-md px-4 py-2 text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60"
+              >
+                {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
+                Disparar agora
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
