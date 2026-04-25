@@ -4,7 +4,7 @@ import { useState } from "react";
 import { IdCard, Megaphone, MessageCircle, ChevronRight, ShoppingBag, CreditCard } from "lucide-react";
 import ShopeeIntegrationCard from "./ShopeeIntegrationCard";
 import MetaIntegrationCard from "./MetaIntegrationCard";
-import EvolutionIntegrationCard from "./EvolutionIntegrationCard";
+import MessagingChannelsCard from "./MessagingChannelsCard";
 import MercadoLivreIntegrationCard from "./MercadoLivreIntegrationCard";
 import StripeIntegrationCard from "./StripeIntegrationCard";
 import ShippingProfileCard from "./ShippingProfileCard";
@@ -58,8 +58,8 @@ const CARDS: {
   },
   {
     key: "evolution",
-    title: "Integração WhatsApp",
-    description: "Instâncias WhatsApp",
+    title: "Integração WhatsApp + Telegram",
+    description: "Instâncias WhatsApp e bots Telegram",
     icon: MessageCircle,
   },
   {
@@ -180,7 +180,7 @@ export default function ConfiguracoesClient({
       )}
       {openSection === "evolution" && (
         <div className="animate-in fade-in duration-200">
-          <EvolutionIntegrationCard />
+          <MessagingChannelsCard />
         </div>
       )}
       {openSection === "stripe" && (
