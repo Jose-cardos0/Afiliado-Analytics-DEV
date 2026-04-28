@@ -52,20 +52,35 @@ export async function GET(req: Request) {
       );
     }
 
-    const apiUrl = `${GRAPH_BASE}/${ad_account_id}/advideos?fields=id,title,source,length,picture&access_token=${encodeURIComponent(token)}`;
+    // `status` traz `video_status` ("processing" | "ready" | "error" | etc.).
+    // O Meta entrega `picture` mesmo durante processamento (placeholder preto),
+    // então só `picture` não basta para detectar quando o vídeo está pronto.
+    const apiUrl = `${GRAPH_BASE}/${ad_account_id}/advideos?fields=id,title,source,length,picture,status&access_token=${encodeURIComponent(token)}`;
     const res = await fetch(apiUrl);
     const json = (await res.json()) as {
-      data?: Array<{ id: string; title?: string; source?: string; length?: number; picture?: string }>;
+      data?: Array<{
+        id: string;
+        title?: string;
+        source?: string;
+        length?: number;
+        picture?: string;
+        status?: { video_status?: string };
+      }>;
       error?: { message: string };
     };
     if (json.error) throw new Error(json.error.message || "Meta API error");
-    const videos = (json.data ?? []).map((v) => ({
-      id: v.id,
-      title: v.title || v.id,
-      source: v.source || null,
-      length: v.length ?? null,
-      picture: v.picture || null,
-    }));
+    const videos = (json.data ?? []).map((v) => {
+      const videoStatus = v.status?.video_status ?? null;
+      return {
+        id: v.id,
+        title: v.title || v.id,
+        source: v.source || null,
+        length: v.length ?? null,
+        picture: v.picture || null,
+        status: videoStatus,
+        ready: videoStatus === "ready",
+      };
+    });
     return NextResponse.json({ videos });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Erro ao listar vídeos";
