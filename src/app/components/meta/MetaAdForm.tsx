@@ -6,6 +6,7 @@ import { META_CALL_TO_ACTIONS } from "@/lib/meta-ads-constants";
 import { MetaFormLabel } from "@/app/components/meta/MetaFormLabel";
 import MetaSearchablePicker from "@/app/components/meta/MetaSearchablePicker";
 import ShopeeLinkHistoryPickButton from "@/app/components/shopee/ShopeeLinkHistoryPickButton";
+import { uploadMetaAdVideo } from "@/lib/meta-ad-video-upload";
 
 type Page = { id: string; name: string };
 type Pixel = { id: string; name: string };
@@ -389,14 +390,9 @@ export default function MetaAdForm({
                   if (!f || !adAccountId) return;
                   setUploadingVideo(true);
                   try {
-                    const form = new FormData();
-                    form.set("file", f);
-                    form.set("ad_account_id", adAccountId);
-                    const res = await fetch("/api/meta/advideos", { method: "POST", body: form });
-                    const json = await res.json();
-                    if (!res.ok) throw new Error(json?.error ?? "Erro");
-                    setVideoId(json.video_id);
-                    setLibraryVideos((prev) => [{ id: json.video_id, title: json.video_id, source: null, length: null, picture: null }, ...prev]);
+                    const { videoId: newVideoId } = await uploadMetaAdVideo(f, adAccountId);
+                    setVideoId(newVideoId);
+                    setLibraryVideos((prev) => [{ id: newVideoId, title: newVideoId, source: null, length: null, picture: null }, ...prev]);
                   } finally {
                     setUploadingVideo(false);
                     e.target.value = "";

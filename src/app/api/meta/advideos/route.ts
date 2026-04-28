@@ -2,9 +2,14 @@
  * Lista vídeos da biblioteca do Meta (Ad Videos) da conta.
  * GET /api/meta/advideos?ad_account_id=act_xxx
  *
- * Upload de vídeo para a biblioteca.
+ * Cria um vídeo na biblioteca a partir de uma URL pública.
+ * O upload do arquivo em si acontece direto do browser para o Supabase Storage
+ * (signed upload URL emitida em /api/meta/advideos/signed-upload), evitando o
+ * limite de 4.5MB no body de Route Handlers da Vercel. Aqui só passamos a
+ * `file_url` para o Meta, que faz o download de forma assíncrona.
+ *
  * POST /api/meta/advideos
- * Body: multipart/form-data com "file" (vídeo) e "ad_account_id"
+ * Body: JSON { ad_account_id: string, file_url: string, title?: string }
  */
 
 import { NextResponse } from "next/server";
@@ -84,34 +89,39 @@ export async function POST(req: Request) {
       );
     }
 
-    const formData = await req.formData();
-    const file = formData.get("file") as File | null;
-    const ad_account_id = formData.get("ad_account_id")?.toString()?.trim();
+    const body = (await req.json().catch(() => ({}))) as {
+      ad_account_id?: string;
+      file_url?: string;
+      title?: string;
+    };
 
-    if (!file || !ad_account_id) {
+    const ad_account_id = body.ad_account_id?.trim();
+    const file_url = body.file_url?.trim();
+
+    if (!ad_account_id || !file_url) {
       return NextResponse.json(
-        { error: "Envie 'file' (vídeo) e 'ad_account_id'." },
+        { error: "Envie 'ad_account_id' e 'file_url'." },
         { status: 400 }
       );
     }
 
-    const contentType = file.type;
-    const isVideo = contentType.startsWith("video/");
-    if (!isVideo) {
+    if (!/^https:\/\//i.test(file_url)) {
       return NextResponse.json(
-        { error: "O arquivo deve ser um vídeo (MP4, etc.)." },
+        { error: "file_url precisa ser HTTPS." },
         { status: 400 }
       );
     }
 
-    const metaFormData = new FormData();
-    metaFormData.set("access_token", token);
-    metaFormData.set("source", file);
+    const params = new URLSearchParams();
+    params.set("access_token", token);
+    params.set("file_url", file_url);
+    if (body.title?.trim()) params.set("title", body.title.trim());
 
     const url = `${GRAPH_BASE}/${ad_account_id}/advideos`;
     const res = await fetch(url, {
       method: "POST",
-      body: metaFormData,
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: params.toString(),
     });
     const json = (await res.json()) as {
       id?: string;

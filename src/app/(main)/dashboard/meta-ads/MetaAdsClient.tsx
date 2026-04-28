@@ -42,6 +42,7 @@ import {
   getDefaultGoalForObjective,
   isMetaLeadsWebsiteConversionEvent,
 } from "@/lib/meta-ads-constants";
+import { uploadMetaAdVideo } from "@/lib/meta-ad-video-upload";
 
 type AdAccount = { id: string; name: string; business_id?: string };
 type Page = { id: string; name: string; instagram_account?: { id: string; username: string } | null };
@@ -523,12 +524,9 @@ export default function MetaAdsClient() {
     if (!adAccountId) return;
     setUploadingVideo(true); setError(null);
     try {
-      const form = new FormData(); form.set("file", file); form.set("ad_account_id", adAccountId);
-      const res = await fetch("/api/meta/advideos", { method: "POST", body: form });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json?.error ?? "Erro ao enviar");
-      setVideoId(json.video_id);
-      setLibraryVideos((prev) => [{ id: json.video_id, title: json.video_id, source: null, length: null, picture: null }, ...prev]);
+      const { videoId: newVideoId } = await uploadMetaAdVideo(file, adAccountId);
+      setVideoId(newVideoId);
+      setLibraryVideos((prev) => [{ id: newVideoId, title: newVideoId, source: null, length: null, picture: null }, ...prev]);
     } catch (err) { setError(err instanceof Error ? err.message : "Erro ao enviar vídeo"); }
     finally { setUploadingVideo(false); }
   };
