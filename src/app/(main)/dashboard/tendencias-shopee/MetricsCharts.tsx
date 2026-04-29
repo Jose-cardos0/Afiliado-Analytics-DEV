@@ -39,6 +39,7 @@ type Product = {
   price?: number | null;
   priceMin?: number | null;
   sparkline?: number[];
+  categoryIds?: number[];
 };
 
 type CategoryRow = {
@@ -97,7 +98,7 @@ export function MetricsCharts<T extends ClickableProduct>({
   // Registra controllers/elements que o Chart.js v4 exige por instância.
   // Idempotente — pode rodar em todo mount.
   useEffect(() => {
-    ChartJS.register(ArcElement, BubbleController);
+    ChartJS.register(ArcElement, BubbleController, TreemapController, TreemapElement);
   }, []);
 
   // ── Pizza: top produtos por score ───────────────────────────────────────
@@ -437,6 +438,141 @@ export function MetricsCharts<T extends ClickableProduct>({
       .slice(0, 30);
   }, [products]);
 
+  // ── Treemap: vendas agregadas por categoria ────────────────────────────
+  // Cruza `products[i].categoryIds` × `categories[i].name` somando `sales`.
+  // Cada categoria vira uma caixa proporcional ao volume; cor escurece com
+  // o tamanho (mais vendas = laranja mais saturado).
+  const categoryVolume = useMemo(() => {
+    const nameById = new Map<number, string>();
+    for (const c of categories) {
+      if (c.name) nameById.set(c.categoryId, c.name);
+    }
+    const byCat = new Map<number, { name: string; sales: number; count: number }>();
+    for (const p of products) {
+      for (const cid of p.categoryIds ?? []) {
+        const name = nameById.get(cid);
+        if (!name) continue; // ignora categorias sem nome (UI fica limpa)
+        const acc = byCat.get(cid) ?? { name, sales: 0, count: 0 };
+        acc.sales += p.sales ?? 0;
+        acc.count += 1;
+        byCat.set(cid, acc);
+      }
+    }
+    return [...byCat.values()]
+      .filter((c) => c.sales > 0)
+      .sort((a, b) => b.sales - a.sales)
+      .slice(0, 12);
+  }, [products, categories]);
+
+  const treemapMaxSales = useMemo(
+    () => Math.max(1, ...categoryVolume.map((c) => c.sales)),
+    [categoryVolume],
+  );
+
+  const treemapData = useMemo(
+    () => ({
+      datasets: [
+        {
+          tree: categoryVolume,
+          key: "sales",
+          backgroundColor: (ctx: { type?: string; raw?: { _data?: { sales?: number } } }) => {
+            if (ctx.type !== "data") return "transparent";
+            const sales = ctx.raw?._data?.sales ?? 0;
+            const t = sales / treemapMaxSales;
+            // 0.35 → 0.95: garante contraste mesmo em caixas pequenas
+            const alpha = 0.35 + t * 0.6;
+            return `rgba(238,77,45,${alpha.toFixed(2)})`;
+          },
+          borderColor: "rgba(0,0,0,0.35)",
+          borderWidth: 1,
+          spacing: 1.5,
+          labels: {
+            display: true,
+            align: "left",
+            position: "top",
+            color: "#ffffff",
+            font: { size: 11, weight: "bold" as const },
+            padding: 6,
+            formatter: (ctx: { raw?: { _data?: { name?: string; sales?: number } } }) => {
+              const d = ctx.raw?._data;
+              if (!d?.name) return "";
+              return [d.name, formatInt(d.sales ?? 0) + " vendas"];
+            },
+          },
+        },
+      ],
+    }),
+    [categoryVolume, treemapMaxSales],
+  );
+
+  const treemapOptions = useMemo(
+    () => ({
+      maintainAspectRatio: false,
+      responsive: true,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: colors.tooltipBg,
+          titleColor: colors.tooltipTitle,
+          bodyColor: colors.tooltipBody,
+          borderColor: colors.tooltipBorder,
+          borderWidth: 1,
+          callbacks: {
+            title: (items: Array<{ raw?: { _data?: { name?: string } } }>) =>
+              items[0]?.raw?._data?.name ?? "",
+            label: (ctx: { raw?: { _data?: { sales?: number; count?: number } } }) => {
+              const d = ctx.raw?._data;
+              if (!d) return "";
+              return `${formatInt(d.sales ?? 0)} vendas · ${d.count ?? 0} produtos`;
+            },
+          },
+        },
+        datalabels: { display: false },
+      },
+    }),
+    [colors],
+  );
+
+  // ── Word cloud: palavras mais frequentes nos top 50 produtos ───────────
+  // Tokenizar nome → minúsculas → remover stop words + ruído (unidades,
+  // números curtos). Mantém termos comerciais relevantes ("kit", "premium",
+  // "feminino"...) — esses ARE os trending keywords do mercado.
+  const STOP_WORDS_PT = useMemo(
+    () =>
+      new Set([
+        "de", "do", "da", "dos", "das",
+        "para", "pra", "por",
+        "com", "sem",
+        "em", "no", "na", "nos", "nas",
+        "ou", "e",
+        "a", "o", "as", "os",
+        "um", "uma", "uns", "umas",
+        "que", "se",
+        // unidades e ruído numérico:
+        "cm", "mm", "ml", "kg", "pcs", "und", "uni",
+      ]),
+    [],
+  );
+
+  const wordCloudTags = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const p of products.slice(0, 60)) {
+      const tokens = p.productName
+        .toLowerCase()
+        .replace(/[^a-zà-ÿ\s]/gi, " ")
+        .split(/\s+/)
+        .filter((w) => w.length >= 4 && !STOP_WORDS_PT.has(w));
+      for (const t of tokens) {
+        counts.set(t, (counts.get(t) ?? 0) + 1);
+      }
+    }
+    return [...counts.entries()]
+      .filter(([, c]) => c >= 2) // só palavras que aparecem ≥ 2x
+      .map(([value, count]) => ({ value, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 30);
+  }, [products, STOP_WORDS_PT]);
+
   return (
     <div className="space-y-3">
       {/* Linha 1: Pizza + Linha (existentes) */}
@@ -532,7 +668,64 @@ export function MetricsCharts<T extends ClickableProduct>({
         )}
       </ChartCard>
 
-      {/* Linha 4: Live ticker estilo bolsa */}
+      {/* Linha 4: Treemap categorias × volume + Word cloud nomes */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        <ChartCard
+          title="Mapa do mercado · vendas por categoria"
+          subtitle="Tamanho da caixa = vendas agregadas · cor = intensidade do volume"
+        >
+          {categoryVolume.length === 0 ? (
+            <EmptyState text="Aguardando próxima varredura pra mapear nomes das categorias." />
+          ) : (
+            <div className="h-72">
+              <TreemapChart
+                type="treemap"
+                data={treemapData as never}
+                options={treemapOptions as never}
+              />
+            </div>
+          )}
+        </ChartCard>
+
+        <ChartCard
+          title="Palavras-chave em alta"
+          subtitle="Tokens mais frequentes nos nomes dos top 60 — use no copy de criativos"
+        >
+          {wordCloudTags.length === 0 ? (
+            <EmptyState text="Aguardando dados pra extrair palavras." />
+          ) : (
+            <div className="h-72 flex items-center justify-center px-2 overflow-hidden">
+              <TagCloud
+                minSize={11}
+                maxSize={30}
+                tags={wordCloudTags}
+                disableRandomColor
+                renderer={(tag, size) => (
+                  <span
+                    key={tag.value}
+                    style={{
+                      fontSize: `${size}px`,
+                      lineHeight: 1.4,
+                      margin: "0 6px",
+                      display: "inline-block",
+                      // Gradiente de cor por frequência: maior = mais saturado.
+                      // tag.count está no range [min, max] da nuvem.
+                      color: `rgba(238,77,45,${0.55 + (size - 11) / (30 - 11) * 0.45})`,
+                      fontWeight: size > 20 ? 800 : size > 15 ? 600 : 500,
+                      cursor: "default",
+                    }}
+                    title={`${tag.value} — ${tag.count} ocorrências`}
+                  >
+                    {tag.value}
+                  </span>
+                )}
+              />
+            </div>
+          )}
+        </ChartCard>
+      </div>
+
+      {/* Linha 5: Live ticker estilo bolsa */}
       {tickerItems.length > 0 ? (
         <div className="rounded-xl border border-[#2c2c32] light:border-zinc-200 bg-[#1c1c1f] light:bg-white overflow-hidden">
           <div className="px-4 py-2 border-b border-[#2c2c32] light:border-zinc-200 flex items-center gap-2">
