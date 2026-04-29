@@ -151,56 +151,6 @@ function useCountUp(target: number) {
   return display;
 }
 
-/**
- * Gera frases dinâmicas pro console "IA · Análise contínua" baseado nos stats
- * reais. Cada poll, sorteia uma frase relevante; se não houver dado suficiente
- * pra um insight específico, cai num pool genérico. Isso dá a sensação de que
- * a IA está "lendo" o snapshot atual, não rolando texto pré-definido.
- */
-function buildAiInsights(args: {
-  stats: ApiResponse["stats"] | null;
-  hottestCategoryName: string | null;
-  shops: ShopAgg[];
-  topProduct: TrendProduct | null;
-}): string[] {
-  const { stats, hottestCategoryName, shops, topProduct } = args;
-  const out: string[] = [];
-
-  if (stats?.total) {
-    out.push(`Analisando ${stats.total} produtos no top da Shopee...`);
-  }
-  if (stats?.viralCount && stats.viralCount > 0) {
-    out.push(`${stats.viralCount} oportunidades classificadas como virais agora.`);
-  }
-  if (stats?.avgCommission && stats.avgCommission > 0) {
-    out.push(`Comissão média do mercado: ${stats.avgCommission.toFixed(1)}% — ${
-      stats.avgCommission >= 15 ? "boa janela" : "abaixo da média histórica"
-    }.`);
-  }
-  if (hottestCategoryName) {
-    out.push(`Categoria "${hottestCategoryName}" lidera o snapshot atual.`);
-  }
-  if (topProduct?.shopName && topProduct.score >= 75) {
-    out.push(
-      `Detectado: "${topProduct.productName.slice(0, 40)}${topProduct.productName.length > 40 ? "…" : ""}" (${topProduct.shopName}) com score ${topProduct.score}.`,
-    );
-  }
-  if (shops.length > 0) {
-    const top = shops[0];
-    out.push(`Loja "${top.shopName}" tem ${top.productCount} produtos no top.`);
-  }
-  if (stats?.totalSalesAggregate && stats.totalSalesAggregate > 0) {
-    out.push(
-      `Volume agregado: ${formatInt(stats.totalSalesAggregate)} unidades vendidas pelos produtos rastreados.`,
-    );
-  }
-  // Fallback genérico
-  out.push("Cruzando comissões com volume de vendas...");
-  out.push("Detectando ofertas relâmpago via variação de preço...");
-  out.push("Verificando ratings e qualidade dos vendedores...");
-  return out;
-}
-
 export default function TendenciasShopeeClient({
   hasShopeeCredentials,
   userEmail,
@@ -214,8 +164,6 @@ export default function TendenciasShopeeClient({
   const [tab, setTab] = useState<TabKey>("shoia");
   const [activeCategoryId, setActiveCategoryId] = useState<number | null>(null);
   const [filter, setFilter] = useState("");
-  const [aiPhraseIdx, setAiPhraseIdx] = useState(0);
-  const [aiTyped, setAiTyped] = useState("");
   const [heartbeatPulse, setHeartbeatPulse] = useState(false);
 
   const [listas, setListas] = useState<Lista[]>([]);
@@ -366,37 +314,6 @@ export default function TendenciasShopeeClient({
     );
   }, [data?.stats.hottestCategoryId, data?.categoriesAvailable]);
 
-  const aiInsights = useMemo(
-    () =>
-      buildAiInsights({
-        stats: data?.stats ?? null,
-        hottestCategoryName,
-        shops,
-        topProduct: data?.products[0] ?? null,
-      }),
-    [data?.stats, hottestCategoryName, shops, data?.products],
-  );
-
-  // Console "engenheiro de IA": typewriter rotacionando insights dinâmicos.
-  useEffect(() => {
-    if (aiInsights.length === 0) return;
-    const phrase = aiInsights[aiPhraseIdx % aiInsights.length];
-    let i = 0;
-    setAiTyped("");
-    const typer = setInterval(() => {
-      i += 1;
-      setAiTyped(phrase.slice(0, i));
-      if (i >= phrase.length) clearInterval(typer);
-    }, 28);
-    const rotate = setTimeout(() => {
-      setAiPhraseIdx((idx) => (idx + 1) % aiInsights.length);
-    }, 4500);
-    return () => {
-      clearInterval(typer);
-      clearTimeout(rotate);
-    };
-  }, [aiPhraseIdx, aiInsights]);
-
   const filteredProducts = useMemo(() => {
     if (!data?.products) return [];
     const q = filter.trim().toLowerCase();
@@ -494,7 +411,6 @@ export default function TendenciasShopeeClient({
         <PageHeader />
 
         <AiConsole
-          aiTyped={aiTyped}
           heartbeatPulse={heartbeatPulse}
           stagnant={data?.stagnant ?? true}
           fetchedAt={data?.fetchedAt ?? null}
@@ -833,19 +749,17 @@ function PageHeader() {
 }
 
 function AiConsole({
-  aiTyped,
   heartbeatPulse,
   stagnant,
   fetchedAt,
 }: {
-  aiTyped: string;
   heartbeatPulse: boolean;
   stagnant: boolean;
   fetchedAt: string | null;
 }) {
   return (
     <div className="rounded-xl border border-[#2c2c32] bg-[#101015] light:border-zinc-200 light:bg-white overflow-hidden">
-      <div className="px-4 py-2.5 border-b border-[#2c2c32] light:border-zinc-200 flex items-center gap-2">
+      <div className="px-4 py-2.5 flex items-center gap-2">
         <Sparkles className="w-3.5 h-3.5 text-[#ee4d2d] animate-pulse" />
         <span className="text-[10px] uppercase tracking-widest font-bold text-[#ee4d2d]">
           IA · Análise contínua
@@ -860,11 +774,6 @@ function AiConsole({
           />
           {stagnant ? "Snapshot pausado" : "Monitorando em tempo real"} · atualizado {formatRelative(fetchedAt)}
         </span>
-      </div>
-      <div className="px-4 py-3 font-mono text-[12px] text-[#ee4d2d] flex items-center gap-2">
-        <span className="text-[#5a5a64] light:text-zinc-400">{">"}</span>
-        <span className="truncate">{aiTyped}</span>
-        <span className="inline-block w-1.5 h-3.5 bg-[#ee4d2d] animate-blink" />
       </div>
     </div>
   );
