@@ -18,7 +18,8 @@
     { "path": "/api/telegram/cron-disparo", "schedule": "*/10 * * * *" },
     { "path": "/api/cron/espelhamento-payloads-retention", "schedule": "0 * * * *" },
     { "path": "/api/cron/cleanup-meta-ad-videos", "schedule": "0 6 * * *" },
-    { "path": "/api/gpl/cron-sync", "schedule": "*/30 * * * *" }
+    { "path": "/api/gpl/cron-sync", "schedule": "*/30 * * * *" },
+    { "path": "/api/cron/shopee-trends", "schedule": "0 * * * *" }
   ],
   "rewrites": [
     {

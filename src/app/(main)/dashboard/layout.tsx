@@ -26,6 +26,7 @@ import {
   Globe,
   Zap,
   Bot,
+  Flame,
   ChevronDown,
 } from "lucide-react";
 import { usePathname } from "next/navigation";
@@ -76,6 +77,11 @@ const navSections: NavSection[] = [
           title: "Análise de Comissões",
           href: "/dashboard",
           icon: <BarChart3 className="h-4 w-4" />,
+        },
+        {
+          title: "Tendências Shopee",
+          href: "/dashboard/tendencias-shopee",
+          icon: <Flame className="h-4 w-4" />,
         },
         {
           title: "Análise de Cliques",
