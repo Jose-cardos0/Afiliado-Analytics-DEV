@@ -39,6 +39,7 @@ import { shouldShowPaidPlanUpsellInDashboard } from "@/lib/dashboard-paid-plan-u
 import DashboardPaidPlanUpsell from "./DashboardPaidPlanUpsell";
 import type { PlanEntitlements } from "@/lib/plan-entitlements";
 import { MERCADOLIVRE_UX_COMING_SOON } from "@/lib/mercadolivre-ux-coming-soon";
+import { META_ADS_MAINTENANCE } from "@/lib/meta-ads-maintenance";
 
 type ProSidebarFeature =
   | "ati"
@@ -134,6 +135,10 @@ const navSections: NavSection[] = [
           icon: <Megaphone className="h-4 w-4" />,
           proOnly: true,
           proFeature: "criarCampanhaMeta",
+          // Escondido enquanto META_ADS_MAINTENANCE estiver true. A página
+          // direta `/dashboard/meta-ads` ainda mostra o card de manutenção
+          // se alguém colar a URL no browser.
+          hidden: META_ADS_MAINTENANCE,
         },
       ],
     },
@@ -298,14 +303,28 @@ function NavGroupItem({
             const mlNavComingSoon =
               MERCADOLIVRE_UX_COMING_SOON &&
               item.href === "/dashboard/minha-lista-ofertas-ml";
+            const metaAdsDown =
+              META_ADS_MAINTENANCE && item.href === "/dashboard/meta-ads";
+
+            // Pra rotas em manutenção: bloqueamos navegação no clique pra
+            // evitar 404/erro. O usuário vê badge "Em manutenção" + lock.
+            const handleClick = (e: React.MouseEvent) => {
+              if (metaAdsDown) {
+                e.preventDefault();
+                return;
+              }
+              onItemClick();
+            };
 
             return (
               <Link
                 key={item.href}
-                href={item.href}
-                onClick={onItemClick}
+                href={metaAdsDown ? "#" : item.href}
+                onClick={handleClick}
                 aria-current={isActive ? "page" : undefined}
-                className={`sidebar-sub-item${isActive ? " sidebar-sub-item--active" : ""}${item.locked ? " sidebar-sub-item--locked" : ""}`}
+                aria-disabled={metaAdsDown ? true : undefined}
+                className={`sidebar-sub-item${isActive ? " sidebar-sub-item--active" : ""}${item.locked || metaAdsDown ? " sidebar-sub-item--locked" : ""}`}
+                style={metaAdsDown ? { cursor: "not-allowed", opacity: 0.6 } : undefined}
               >
                 <span className="sidebar-sub-item__dot" aria-hidden="true" />
                 <span className="sidebar-sub-item__icon">{item.icon}</span>
@@ -317,7 +336,7 @@ function NavGroupItem({
                   </span>
                 )}
 
-                {item.locked && (
+                {(item.locked || metaAdsDown) && (
                   <Lock className="sidebar-sub-item__lock" aria-hidden="true" />
                 )}
               </Link>
