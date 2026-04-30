@@ -7,6 +7,8 @@ import {
   ArrowLeft,
   Award,
   BarChart3,
+  ChevronLeft,
+  ChevronRight,
   Copy,
   ExternalLink,
   Flame,
@@ -37,6 +39,7 @@ import { MetricsCharts } from "./MetricsCharts";
 import { MontarListaWizard } from "./MontarListaWizard";
 import { ShoiaListsSection } from "./ShoiaListsSection";
 import { AddToListModal, ConvertLinkModal, type ProductSummary } from "./TendenciasModals";
+import { WelcomeVideoOverlay } from "./WelcomeVideoOverlay";
 
 const Line = dynamic(() => import("react-chartjs-2").then((m) => m.Line), { ssr: false });
 
@@ -406,7 +409,11 @@ export default function TendenciasShopeeClient({
   };
 
   return (
-    <div className="bg-dark-bg light:bg-zinc-50 min-h-[calc(100vh-4rem)]">
+    <div className="bg-dark-bg light:bg-zinc-50 min-h-[calc(100vh-4rem)] relative">
+      {/* Overlay de boas-vindas (1x/dia, posição absoluta dentro da página
+          — não cobre header/sidebar/footer da layout) */}
+      <WelcomeVideoOverlay />
+
       <div className="container mx-auto px-4 py-6 sm:py-8 space-y-4">
         <PageHeader />
 
@@ -900,38 +907,83 @@ function TabsBar({
     { key: "flash", label: "Oferta Relâmpago", icon: <Zap className="w-3.5 h-3.5" />, badge: flashCount },
     { key: "category", label: "Por Categoria", icon: <Tag className="w-3.5 h-3.5" />, badge: categoriesCount },
   ];
+
+  // Mobile: índice atual + handlers de prev/next pra navegar com setas.
+  const currentIdx = tabs.findIndex((t) => t.key === tab);
+  const prevTab = currentIdx > 0 ? tabs[currentIdx - 1] : null;
+  const nextTab = currentIdx < tabs.length - 1 ? tabs[currentIdx + 1] : null;
+  const activeTab = tabs[currentIdx] ?? tabs[0];
+
   return (
-    <div className="flex gap-1.5 overflow-x-auto pb-1 -mx-1 px-1">
-      {tabs.map((t) => {
-        const active = tab === t.key;
-        return (
-          <button
-            key={t.key}
-            type="button"
-            onClick={() => onChange(t.key)}
-            className={`shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[11px] font-semibold transition-all ${
-              active
-                ? "border-[#ee4d2d] bg-[#ee4d2d] text-white shadow-[0_0_12px_rgba(238,77,45,0.3)]"
-                : "border-[#3e3e46] light:border-zinc-300 bg-[#222228] light:bg-white text-[#c8c8ce] light:text-zinc-700 hover:bg-[#2f2f34] light:hover:bg-zinc-100"
-            }`}
-          >
-            {t.icon}
-            {t.label}
-            {t.badge != null && t.badge > 0 ? (
-              <span
-                className={`inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[9px] font-bold ${
-                  active
-                    ? "bg-white/20 text-white"
-                    : "bg-[#3e3e46] light:bg-zinc-200 text-[#c8c8ce] light:text-zinc-700"
-                }`}
-              >
-                {t.badge}
-              </span>
-            ) : null}
-          </button>
-        );
-      })}
-    </div>
+    <>
+      {/* Desktop: lista horizontal completa (>= sm) */}
+      <div className="hidden sm:flex gap-1.5 flex-wrap pb-1 -mx-1 px-1">
+        {tabs.map((t) => {
+          const active = tab === t.key;
+          return (
+            <button
+              key={t.key}
+              type="button"
+              onClick={() => onChange(t.key)}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[11px] font-semibold transition-all ${
+                active
+                  ? "border-[#ee4d2d] bg-[#ee4d2d] text-white shadow-[0_0_12px_rgba(238,77,45,0.3)]"
+                  : "border-[#3e3e46] light:border-zinc-300 bg-[#222228] light:bg-white text-[#c8c8ce] light:text-zinc-700 hover:bg-[#2f2f34] light:hover:bg-zinc-100"
+              }`}
+            >
+              {t.icon}
+              {t.label}
+              {t.badge != null && t.badge > 0 ? (
+                <span
+                  className={`inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[9px] font-bold ${
+                    active
+                      ? "bg-white/20 text-white"
+                      : "bg-[#3e3e46] light:bg-zinc-200 text-[#c8c8ce] light:text-zinc-700"
+                  }`}
+                >
+                  {t.badge}
+                </span>
+              ) : null}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Mobile: aba ativa central + setas < > (visual igual ao "Filtrar" /
+          "Atualizar" — neutro). Aba ativa só ganha um destaque sutil de borda
+          laranja pra sinalizar seleção sem ficar berrante. */}
+      <div className="flex sm:hidden items-center gap-2">
+        <button
+          type="button"
+          onClick={() => prevTab && onChange(prevTab.key)}
+          disabled={!prevTab}
+          aria-label="Aba anterior"
+          className="inline-flex items-center justify-center w-9 h-9 shrink-0 rounded-lg border border-[#3e3e46] light:border-zinc-300 bg-[#222228] light:bg-white text-[#c8c8ce] light:text-zinc-700 hover:bg-[#2f2f34] light:hover:bg-zinc-100 disabled:opacity-30 disabled:cursor-not-allowed"
+        >
+          <ChevronLeft className="w-4 h-4" />
+        </button>
+
+        <div className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#ee4d2d]/60 bg-[#222228] light:bg-white text-[#c8c8ce] light:text-zinc-700 text-[11px] font-semibold">
+          <span className="text-[#ee4d2d]">{activeTab.icon}</span>
+          {activeTab.label}
+          {activeTab.badge != null && activeTab.badge > 0 ? (
+            <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[9px] font-bold bg-[#3e3e46] light:bg-zinc-200 text-[#c8c8ce] light:text-zinc-700">
+              {activeTab.badge}
+            </span>
+          ) : null}
+        </div>
+
+        <button
+          type="button"
+          onClick={() => nextTab && onChange(nextTab.key)}
+          disabled={!nextTab}
+          aria-label="Próxima aba"
+          className="inline-flex items-center justify-center w-9 h-9 shrink-0 rounded-lg border border-[#3e3e46] light:border-zinc-300 bg-[#222228] light:bg-white text-[#c8c8ce] light:text-zinc-700 hover:bg-[#2f2f34] light:hover:bg-zinc-100 disabled:opacity-30 disabled:cursor-not-allowed"
+        >
+          <ChevronRight className="w-4 h-4" />
+        </button>
+      </div>
+    </>
   );
 }
 

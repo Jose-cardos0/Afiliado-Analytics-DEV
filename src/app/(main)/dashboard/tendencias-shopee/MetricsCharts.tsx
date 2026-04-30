@@ -19,7 +19,6 @@
 import { useEffect, useMemo } from "react";
 import dynamic from "next/dynamic";
 import { ArcElement, BubbleController, Chart as ChartJS, LogarithmicScale } from "chart.js";
-import { TreemapController, TreemapElement } from "chartjs-chart-treemap";
 import { TagCloud } from "react-tagcloud";
 import { useChartColors } from "@/app/components/theme/useChartColors";
 import { ArrowDown, ArrowUp, TrendingUp } from "lucide-react";
@@ -28,7 +27,6 @@ const Pie = dynamic(() => import("react-chartjs-2").then((m) => m.Pie), { ssr: f
 const Line = dynamic(() => import("react-chartjs-2").then((m) => m.Line), { ssr: false });
 const Bubble = dynamic(() => import("react-chartjs-2").then((m) => m.Bubble), { ssr: false });
 const Bar = dynamic(() => import("react-chartjs-2").then((m) => m.Bar), { ssr: false });
-const TreemapChart = dynamic(() => import("react-chartjs-2").then((m) => m.Chart), { ssr: false });
 
 type Product = {
   itemId: number;
@@ -101,13 +99,7 @@ export function MetricsCharts<T extends ClickableProduct>({
   // LogarithmicScale: usado no eixo X do bubble chart (vendas variam de 100
   // a 10k+, log evita que outliers comprimam o resto).
   useEffect(() => {
-    ChartJS.register(
-      ArcElement,
-      BubbleController,
-      LogarithmicScale,
-      TreemapController,
-      TreemapElement,
-    );
+    ChartJS.register(ArcElement, BubbleController, LogarithmicScale);
   }, []);
 
   // ── Pizza: top produtos por score ───────────────────────────────────────
@@ -137,6 +129,10 @@ export function MetricsCharts<T extends ClickableProduct>({
     () => ({
       responsive: true,
       maintainAspectRatio: false,
+      // Sem animation no update — evita o "flicker" cada vez que o polling
+      // de 5s traz dados (mesmo quando os dados são iguais, a referência muda
+      // e o Chart.js dispara animação por default).
+      animation: false as const,
       onHover: (event: unknown, elements: unknown[]) => {
         const ev = event as { native?: { target?: HTMLElement } };
         const target = ev.native?.target;
@@ -206,6 +202,7 @@ export function MetricsCharts<T extends ClickableProduct>({
     () => ({
       responsive: true,
       maintainAspectRatio: false,
+      animation: false as const,
       plugins: {
         legend: { display: false },
         tooltip: {
@@ -287,6 +284,7 @@ export function MetricsCharts<T extends ClickableProduct>({
     () => ({
       responsive: true,
       maintainAspectRatio: false,
+      animation: false as const,
       onHover: (event: unknown, elements: unknown[]) => {
         const ev = event as { native?: { target?: HTMLElement } };
         const target = ev.native?.target;
@@ -388,6 +386,7 @@ export function MetricsCharts<T extends ClickableProduct>({
     () => ({
       responsive: true,
       maintainAspectRatio: false,
+      animation: false as const,
       plugins: {
         legend: { display: false },
         tooltip: {
@@ -454,21 +453,24 @@ export function MetricsCharts<T extends ClickableProduct>({
       .slice(0, 30);
   }, [products]);
 
-  // ── Treemap: vendas agregadas por categoria ────────────────────────────
+  // ── Bolas flutuantes: vendas agregadas por categoria ──────────────────
   // Cruza `products[i].categoryIds` × `categories[i].name` somando `sales`.
-  // Cada categoria vira uma caixa proporcional ao volume; cor escurece com
+  // Cada categoria vira uma bola proporcional ao volume; cor escurece com
   // o tamanho (mais vendas = laranja mais saturado).
   const categoryVolume = useMemo(() => {
     const nameById = new Map<number, string>();
     for (const c of categories) {
       if (c.name) nameById.set(c.categoryId, c.name);
     }
-    const byCat = new Map<number, { name: string; sales: number; count: number }>();
+    const byCat = new Map<
+      number,
+      { categoryId: number; name: string; sales: number; count: number }
+    >();
     for (const p of products) {
       for (const cid of p.categoryIds ?? []) {
         const name = nameById.get(cid);
         if (!name) continue; // ignora categorias sem nome (UI fica limpa)
-        const acc = byCat.get(cid) ?? { name, sales: 0, count: 0 };
+        const acc = byCat.get(cid) ?? { categoryId: cid, name, sales: 0, count: 0 };
         acc.sales += p.sales ?? 0;
         acc.count += 1;
         byCat.set(cid, acc);
@@ -480,73 +482,9 @@ export function MetricsCharts<T extends ClickableProduct>({
       .slice(0, 12);
   }, [products, categories]);
 
-  const treemapMaxSales = useMemo(
+  const categoryMaxSales = useMemo(
     () => Math.max(1, ...categoryVolume.map((c) => c.sales)),
     [categoryVolume],
-  );
-
-  const treemapData = useMemo(
-    () => ({
-      datasets: [
-        {
-          tree: categoryVolume,
-          key: "sales",
-          backgroundColor: (ctx: { type?: string; raw?: { _data?: { sales?: number } } }) => {
-            if (ctx.type !== "data") return "transparent";
-            const sales = ctx.raw?._data?.sales ?? 0;
-            const t = sales / treemapMaxSales;
-            // 0.35 → 0.95: garante contraste mesmo em caixas pequenas
-            const alpha = 0.35 + t * 0.6;
-            return `rgba(238,77,45,${alpha.toFixed(2)})`;
-          },
-          borderColor: "rgba(0,0,0,0.35)",
-          borderWidth: 1,
-          spacing: 1.5,
-          labels: {
-            display: true,
-            align: "left",
-            position: "top",
-            color: "#ffffff",
-            font: { size: 11, weight: "bold" as const },
-            padding: 6,
-            formatter: (ctx: { raw?: { _data?: { name?: string; sales?: number } } }) => {
-              const d = ctx.raw?._data;
-              if (!d?.name) return "";
-              return [d.name, formatInt(d.sales ?? 0) + " vendas"];
-            },
-          },
-        },
-      ],
-    }),
-    [categoryVolume, treemapMaxSales],
-  );
-
-  const treemapOptions = useMemo(
-    () => ({
-      maintainAspectRatio: false,
-      responsive: true,
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          backgroundColor: colors.tooltipBg,
-          titleColor: colors.tooltipTitle,
-          bodyColor: colors.tooltipBody,
-          borderColor: colors.tooltipBorder,
-          borderWidth: 1,
-          callbacks: {
-            title: (items: Array<{ raw?: { _data?: { name?: string } } }>) =>
-              items[0]?.raw?._data?.name ?? "",
-            label: (ctx: { raw?: { _data?: { sales?: number; count?: number } } }) => {
-              const d = ctx.raw?._data;
-              if (!d) return "";
-              return `${formatInt(d.sales ?? 0)} vendas · ${d.count ?? 0} produtos`;
-            },
-          },
-        },
-        datalabels: { display: false },
-      },
-    }),
-    [colors],
   );
 
   // ── Word cloud: palavras mais frequentes nos top 50 produtos ───────────
@@ -703,18 +641,12 @@ export function MetricsCharts<T extends ClickableProduct>({
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         <ChartCard
           title="Mapa do mercado · vendas por categoria"
-          subtitle="Tamanho da caixa = vendas agregadas · cor = intensidade do volume"
+          subtitle="Vendas e quantidade de produtos lado-a-lado"
         >
           {categoryVolume.length === 0 ? (
             <EmptyState text="Aguardando próxima varredura pra mapear nomes das categorias." />
           ) : (
-            <div className="h-72">
-              <TreemapChart
-                type="treemap"
-                data={treemapData as never}
-                options={treemapOptions as never}
-              />
-            </div>
+            <CategoryLines items={categoryVolume} colors={colors} />
           )}
         </ChartCard>
 
@@ -845,6 +777,142 @@ function ChartCard({
         <p className="text-[9px] text-[#7a7a80] light:text-zinc-500 mb-2">{subtitle}</p>
       ) : null}
       {children}
+    </div>
+  );
+}
+
+/** Multi-line chart com curvas suaves (tension 0.4) — duas séries:
+ *  Vendas (laranja brand) e Produtos (laranja claro tracejado), cada uma com
+ *  seu próprio eixo Y. Visual estilo "smooth lines" típico de dashboards
+ *  modernos. Pontos visíveis nas interseções, fill suave embaixo da linha
+ *  principal, legend no topo. */
+function CategoryLines({
+  items,
+  colors,
+}: {
+  items: Array<{ name: string; sales: number; count: number; categoryId: number }>;
+  colors: ReturnType<typeof useChartColors>;
+}) {
+  const data = {
+    labels: items.map((c) =>
+      c.name.length > 14 ? `${c.name.slice(0, 12)}…` : c.name,
+    ),
+    datasets: [
+      {
+        label: "Vendas",
+        data: items.map((c) => c.sales),
+        borderColor: "#ee4d2d",
+        backgroundColor: "rgba(238,77,45,0.15)",
+        tension: 0.4,
+        fill: true,
+        pointRadius: 5,
+        pointHoverRadius: 7,
+        pointBackgroundColor: "#ee4d2d",
+        pointBorderColor: "#fff",
+        pointBorderWidth: 2,
+        borderWidth: 3,
+        yAxisID: "y",
+      },
+      {
+        label: "Produtos",
+        data: items.map((c) => c.count),
+        borderColor: "#fb923c",
+        backgroundColor: "rgba(251,146,60,0.08)",
+        tension: 0.4,
+        fill: false,
+        pointRadius: 4,
+        pointHoverRadius: 6,
+        pointBackgroundColor: "#fb923c",
+        pointBorderColor: "#fff",
+        pointBorderWidth: 2,
+        borderWidth: 2.5,
+        borderDash: [4, 3],
+        yAxisID: "y1",
+      },
+    ],
+  };
+
+  const options = {
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: false as const,
+    interaction: {
+      mode: "index" as const,
+      intersect: false,
+    },
+    plugins: {
+      legend: {
+        position: "top" as const,
+        align: "center" as const,
+        labels: {
+          color: colors.text,
+          font: { size: 11, weight: 600 as const },
+          boxWidth: 14,
+          boxHeight: 8,
+          usePointStyle: true,
+          pointStyle: "rectRounded" as const,
+          padding: 12,
+        },
+      },
+      tooltip: {
+        backgroundColor: colors.tooltipBg,
+        titleColor: colors.tooltipTitle,
+        bodyColor: colors.tooltipBody,
+        borderColor: "#ee4d2d",
+        borderWidth: 1,
+        padding: 10,
+        callbacks: {
+          title: (ctxs: Array<{ dataIndex: number }>) => {
+            const item = items[ctxs[0]?.dataIndex];
+            return item?.name ?? "";
+          },
+          label: (ctx: { dataset: { label?: string }; parsed: { y: number } }) => {
+            const isVendas = ctx.dataset.label === "Vendas";
+            const value = isVendas
+              ? `${formatInt(ctx.parsed.y)} vendas`
+              : `${ctx.parsed.y} produtos`;
+            return `  ${ctx.dataset.label}: ${value}`;
+          },
+        },
+      },
+      datalabels: { display: false },
+    },
+    scales: {
+      x: {
+        ticks: {
+          color: colors.textSecondary,
+          font: { size: 9 },
+          maxRotation: 30,
+          minRotation: 0,
+        },
+        grid: { display: false },
+      },
+      y: {
+        type: "linear" as const,
+        position: "left" as const,
+        ticks: {
+          color: colors.textSecondary,
+          font: { size: 9 },
+          callback: (v: number | string) => {
+            const n = Number(v);
+            return n >= 1000 ? `${(n / 1000).toFixed(0)}k` : `${n}`;
+          },
+        },
+        grid: { color: colors.grid },
+        beginAtZero: true,
+      },
+      y1: {
+        type: "linear" as const,
+        position: "right" as const,
+        display: false,
+        beginAtZero: true,
+      },
+    },
+  };
+
+  return (
+    <div className="h-72 px-2">
+      <Line data={data} options={options as never} />
     </div>
   );
 }
