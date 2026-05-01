@@ -1,9 +1,52 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Image from 'next/image'
 import { motion } from 'framer-motion'
 import { useLoginModal } from '@/app/components/auth/LoginModalProvider'
+
+/** Alterna /voando1.png e /voando2.png a cada 500 ms (efeito GIF). */
+function AlternatingAstronaut() {
+  const [frame, setFrame] = useState(0)
+
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      setFrame((f) => (f === 0 ? 1 : 0))
+    }, 500)
+    return () => window.clearInterval(id)
+  }, [])
+
+  const COMMON =
+    "absolute inset-0 z-0 pointer-events-none select-none object-contain mix-blend-screen drop-shadow-[0_18px_40px_rgba(255,107,53,0.35)] light:mix-blend-multiply light:drop-shadow-[0_18px_40px_rgba(234,88,12,0.28)] "
+
+  return (
+    <motion.div
+      className="pointer-events-none relative z-10 mx-auto mb-4 aspect-square w-[clamp(160px,18vw,240px)]"
+      initial={{ opacity: 0, y: '42%' }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, margin: '-40px' }}
+      transition={{ duration: 0.9, ease: [0.22, 1, 0.36, 1] }}
+      aria-hidden
+    >
+      <Image
+        src="/voando1.png"
+        alt=""
+        width={1024}
+        height={1024}
+        priority={false}
+        className={`${COMMON} ${frame === 0 ? 'opacity-95' : 'opacity-0'}`}
+      />
+      <Image
+        src="/voando2.png"
+        alt=""
+        width={1024}
+        height={1024}
+        priority={false}
+        className={`${COMMON} ${frame === 1 ? 'opacity-95' : 'opacity-0'}`}
+      />
+    </motion.div>
+  )
+}
 
 type SubscriptionPlan = {
   name: string
@@ -564,7 +607,6 @@ export default function Pricing() {
       <div className="pointer-events-none absolute left-1/2 top-[30%] h-[600px] w-[1000px] -translate-x-1/2 -translate-y-1/2 rounded-[50%] bg-[radial-gradient(ellipse,rgba(124,58,237,0.12)_0%,transparent_65%)] blur-[40px]" />
 
 
-
       <div className="relative mx-auto max-w-[1120px]">
         <motion.div
           initial={{ opacity: 0, y: 30 }}
@@ -573,6 +615,7 @@ export default function Pricing() {
           transition={{ duration: 0.6, ease: 'easeOut' }}
           className="mb-[30px] text-center relative z-10"
         >
+          <AlternatingAstronaut />
           {/* ── Glow laranja agora amarrado ao título ── */}
           <div
             className="pointer-events-none absolute left-1/2 top-[35%] -translate-x-1/2 -translate-y-1/2 h-[450px] w-[1300px] z-0"
@@ -583,10 +626,14 @@ export default function Pricing() {
             aria-hidden="true"
           />
 
+
           <h2 className="relative z-10 mb-[16px] font-[var(--font-space-grotesk)] text-[clamp(1.9rem,5vw,3.4rem)] font-black leading-[1.1] tracking-[-1.5px] text-[#fff]">
             Escolha o plano ideal para{' '}
-            <span className="bg-gradient-to-r from-[#ff6b35] via-[#e24c30] to-[#ff9a6c] bg-clip-text text-transparent">
-              vender mais
+            <span className="relative inline-block align-baseline">
+             
+              <span className="relative z-10 bg-gradient-to-r from-[#ff6b35] via-[#e24c30] to-[#ff9a6c] bg-clip-text text-transparent">
+                vender mais
+              </span>
             </span>
             <br /> com previsibilidade
           </h2>
@@ -594,6 +641,7 @@ export default function Pricing() {
           <p className="relative z-10 mx-auto mb-[35px] max-w-[560px] font-['Inter'] text-[17px] leading-[1.7] text-[rgba(255,255,255,0.64)]">
             Você tem 7 dias de garantia incondicional ou seu dinheiro de volta.
           </p>
+          
 
           <BillingSelector
             quarterly={quarterly}
