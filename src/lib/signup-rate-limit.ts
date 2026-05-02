@@ -78,7 +78,6 @@ export async function checkAndIncrementSignupRateLimit(
   if (selErr) {
     // Falha de leitura (tabela inexistente, RLS, etc.) — log e libera.
     // Preferimos liberar a errar 500 em todo signup.
-    // eslint-disable-next-line no-console
     console.error("[signup-rate-limit] select error:", selErr.message);
     return { allowed: true, remaining: config.maxAttempts };
   }

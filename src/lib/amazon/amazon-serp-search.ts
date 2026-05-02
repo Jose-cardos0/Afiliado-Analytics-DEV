@@ -423,7 +423,11 @@ function parseAmazonSerpHtml(html: string, limit: number): AmazonSerpProduct[] {
     const chunk = html.slice(card.pos, end);
     const title = extractTitle(chunk, asin);
     const imageUrl = extractImage(chunk, asin);
-    let { promo, original } = extractPrices(chunk);
+    // `original` e `dr` podem ser zerados pelo sanity check abaixo (descontos
+    // absurdos), por isso ficam mutáveis. `promo` nunca muda — fica const.
+    const prices = extractPrices(chunk);
+    const promo = prices.promo;
+    let original = prices.original;
     let dr =
       original != null && promo != null && original > promo
         ? discountFromPrices(promo, original)
